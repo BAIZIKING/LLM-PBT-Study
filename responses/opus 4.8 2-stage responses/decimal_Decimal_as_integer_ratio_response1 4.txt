@@ -1,0 +1,9 @@
+1. The result is always a tuple (pair) of exactly two integers (n, d).
+
+2. The denominator d is always strictly positive (d > 0).
+
+3. The fraction is in lowest terms, meaning the greatest common divisor of |n| and d is 1.
+
+4. The ratio n/d exactly equals the original Decimal value (i.e., reconstructing the Decimal or comparing as exact rationals yields the same value).
+
+5. The sign of the numerator n matches the sign of the original Decimal value (n is negative for negative Decimals, zero for zero, and positive for positive Decimals).

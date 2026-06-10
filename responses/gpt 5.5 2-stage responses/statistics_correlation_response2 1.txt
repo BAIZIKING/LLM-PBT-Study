@@ -1,0 +1,121 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+_VALUES = st.integers(min_value=-1_000, max_value=1_000)
+_SCALE = st.integers(min_value=1, max_value=20)
+_OFFSET = st.integers(min_value=-1_000, max_value=1_000)
+
+
+def _is_nonconstant(values):
+    return len(set(values)) > 1
+
+
+def _valid_pair_lists():
+    return st.lists(
+        st.tuples(_VALUES, _VALUES),
+        min_size=2,
+        max_size=40,
+    ).filter(
+        lambda pairs: _is_nonconstant([x for x, _ in pairs])
+        and _is_nonconstant([y for _, y in pairs])
+    )
+
+
+def _nonconstant_list():
+    return st.lists(
+        _VALUES,
+        min_size=2,
+        max_size=40,
+    ).filter(_is_nonconstant)
+
+
+def _close(a, b, tolerance=1e-10):
+    return abs(a - b) <= tolerance
+
+
+@given(st.data())
+def test_statistics_correlation_result_is_between_minus_one_and_one(data):
+    pairs = data.draw(_valid_pair_lists())
+    method = data.draw(st.sampled_from(["linear", "ranked"]))
+
+    x = [a for a, _ in pairs]
+    y = [b for _, b in pairs]
+
+    result = statistics.correlation(x, y, method=method)
+
+    assert -1.0 - 1e-12 <= result <= 1.0 + 1e-12
+
+
+@given(st.data())
+def test_statistics_correlation_is_symmetric(data):
+    pairs = data.draw(_valid_pair_lists())
+    method = data.draw(st.sampled_from(["linear", "ranked"]))
+
+    x = [a for a, _ in pairs]
+    y = [b for _, b in pairs]
+
+    forward = statistics.correlation(x, y, method=method)
+    backward = statistics.correlation(y, x, method=method)
+
+    assert _close(forward, backward)
+
+
+@given(st.data())
+def test_statistics_correlation_linear_perfect_positive_and_negative_relationships(data):
+    x = data.draw(_nonconstant_list())
+    scale = data.draw(_SCALE)
+    offset = data.draw(_OFFSET)
+
+    y_positive = [scale * value + offset for value in x]
+    y_negative = [-scale * value + offset for value in x]
+
+    positive_result = statistics.correlation(x, y_positive, method="linear")
+    negative_result = statistics.correlation(x, y_negative, method="linear")
+
+    assert _close(positive_result, 1.0)
+    assert _close(negative_result, -1.0)
+
+
+@given(st.data())
+def test_statistics_correlation_linear_is_invariant_under_positive_scaling_and_translation(data):
+    pairs = data.draw(_valid_pair_lists())
+
+    x = [a for a, _ in pairs]
+    y = [b for _, b in pairs]
+
+    x_scale = data.draw(_SCALE)
+    y_scale = data.draw(_SCALE)
+    x_offset = data.draw(_OFFSET)
+    y_offset = data.draw(_OFFSET)
+
+    transformed_x = [x_scale * value + x_offset for value in x]
+    transformed_y = [y_scale * value + y_offset for value in y]
+
+    original = statistics.correlation(x, y, method="linear")
+    transformed = statistics.correlation(transformed_x, transformed_y, method="linear")
+
+    assert _close(original, transformed)
+
+
+@given(st.data())
+def test_statistics_correlation_ranked_is_invariant_under_monotonic_transformations(data):
+    pairs = data.draw(_valid_pair_lists())
+
+    x = [a for a, _ in pairs]
+    y = [b for _, b in pairs]
+
+    scale = data.draw(_SCALE)
+    offset = data.draw(_OFFSET)
+
+    increasing_x = [scale * value + offset for value in x]
+    decreasing_x = [-scale * value + offset for value in x]
+
+    original = statistics.correlation(x, y, method="ranked")
+    increasing = statistics.correlation(increasing_x, y, method="ranked")
+    decreasing = statistics.correlation(decreasing_x, y, method="ranked")
+
+    assert _close(increasing, original)
+    assert _close(decreasing, -original)
+# End program
+```

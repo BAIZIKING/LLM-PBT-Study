@@ -1,0 +1,9 @@
+1. The flow_value returned should equal the net outflow from the source node, i.e., the sum of flows on edges leaving the source minus the sum of flows on edges entering the source as recorded in flow_dict.
+
+2. The flow_value returned should equal the net inflow into the sink node, i.e., the total flow arriving at the sink as recorded in flow_dict.
+
+3. For every node other than the source and the sink, flow conservation must hold: the total flow into the node must equal the total flow out of the node according to flow_dict.
+
+4. For every edge in the graph, the flow assigned in flow_dict must not exceed the edge's capacity (and must be non-negative for edges in a directed graph), respecting infinite capacity where the capacity attribute is absent.
+
+5. The flow_value should be non-negative, and it should be independent of the choice of flow_func (i.e., different valid flow algorithms should produce the same maximum flow value for the same input).

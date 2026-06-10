@@ -1,0 +1,136 @@
+from hypothesis import given, strategies as st
+import networkx
+
+def _draw_graph(data):
+    graph_class = data.draw(
+        st.sampled_from([
+            networkx.Graph,
+            networkx.DiGraph,
+            networkx.MultiGraph,
+            networkx.MultiDiGraph,
+        ])
+    )
+    node_count = data.draw(st.integers(min_value=0, max_value=8))
+    G = graph_class()
+    nodes = list(range(node_count))
+    G.add_nodes_from(nodes)
+
+    if nodes:
+        edge_count = data.draw(st.integers(min_value=0, max_value=25))
+        edges = data.draw(
+            st.lists(
+                st.tuples(
+                    st.sampled_from(nodes),
+                    st.sampled_from(nodes),
+                    st.booleans(),
+                    st.integers(min_value=0, max_value=20),
+                ),
+                min_size=edge_count,
+                max_size=edge_count,
+            )
+        )
+        for u, v, has_weight, weight in edges:
+            if has_weight:
+                G.add_edge(u, v, w=weight)
+            else:
+                G.add_edge(u, v)
+
+    return G
+
+
+def _expected_degrees(G, weight=None):
+    expected = {node: 0 for node in G.nodes}
+
+    if G.is_multigraph():
+        edges = G.edges(keys=True, data=True)
+        for u, v, _, attrs in edges:
+            value = 1 if weight is None else attrs.get(weight, 1)
+            expected[u] += value
+            expected[v] += value
+    else:
+        edges = G.edges(data=True)
+        for u, v, attrs in edges:
+            value = 1 if weight is None else attrs.get(weight, 1)
+            expected[u] += value
+            expected[v] += value
+
+    return expected
+
+
+def _total_edge_weight(G, weight):
+    total = 0
+
+    if G.is_multigraph():
+        edges = G.edges(keys=True, data=True)
+        for _, _, _, attrs in edges:
+            total += attrs.get(weight, 1)
+    else:
+        edges = G.edges(data=True)
+        for _, _, attrs in edges:
+            total += attrs.get(weight, 1)
+
+    return total
+
+
+@given(st.data())
+def test_networkx_degree_all_nodes_property(data):
+    G = _draw_graph(data)
+
+    result = dict(networkx.degree(G))
+
+    assert set(result.keys()) == set(G.nodes)
+    assert len(result) == G.number_of_nodes()
+
+
+@given(st.data())
+def test_networkx_degree_nbunch_filters_to_existing_nodes_property(data):
+    G = _draw_graph(data)
+
+    possible_nbunch_values = list(range(-5, G.number_of_nodes() + 6))
+    nbunch = data.draw(
+        st.lists(
+            st.sampled_from(possible_nbunch_values),
+            unique=True,
+            max_size=len(possible_nbunch_values),
+        )
+    )
+
+    result = dict(networkx.degree(G, nbunch=nbunch))
+    expected_nodes = set(nbunch) & set(G.nodes)
+
+    assert set(result.keys()) == expected_nodes
+
+
+@given(st.data())
+def test_networkx_degree_unweighted_values_property(data):
+    G = _draw_graph(data)
+
+    result = dict(networkx.degree(G, weight=None))
+    expected = _expected_degrees(G, weight=None)
+
+    assert result == expected
+    assert all(isinstance(degree, int) for degree in result.values())
+    assert all(degree >= 0 for degree in result.values())
+
+
+@given(st.data())
+def test_networkx_degree_weighted_values_property(data):
+    G = _draw_graph(data)
+
+    result = dict(networkx.degree(G, weight="w"))
+    expected = _expected_degrees(G, weight="w")
+
+    assert result == expected
+
+
+@given(st.data())
+def test_networkx_degree_handshake_sum_property(data):
+    G = _draw_graph(data)
+
+    unweighted_degree_sum = sum(dict(networkx.degree(G, weight=None)).values())
+    weighted_degree_sum = sum(dict(networkx.degree(G, weight="w")).values())
+
+    assert unweighted_degree_sum == 2 * G.number_of_edges()
+    assert weighted_degree_sum == 2 * _total_edge_weight(G, weight="w")
+
+# End program

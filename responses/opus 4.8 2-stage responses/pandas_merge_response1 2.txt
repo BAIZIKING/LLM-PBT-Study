@@ -1,0 +1,11 @@
+Here are five properties of `pandas.merge` suitable for property-based testing:
+
+1. **Cross-join row count**: When `how='cross'`, the number of rows in the output equals the product of the number of rows in `left` and `right` (i.e., `len(left) * len(right)`), and the output columns are exactly the union of left and right columns (with suffixes applied to overlapping names).
+
+2. **Inner join is a subset of outer join**: For the same merge keys, the set of rows produced by an inner join is a subset of those produced by an outer join, and the inner join row count is always less than or equal to the left, right, and outer join row counts.
+
+3. **Indicator value correctness**: When `indicator=True`, every row in the output has a `_merge` value of exactly one of `"left_only"`, `"right_only"`, or `"both"`; and when `how='inner'`, all values must be `"both"`, while for `how='left'` no value can be `"right_only"`, and for `how='right'` no value can be `"left_only"`.
+
+4. **Output column structure**: The output's columns consist of all columns from `left` and `right`, where non-key overlapping column names receive the specified suffixes (`_x`, `_y` by default), and the total number of output columns is predictable from the input column sets and merge keys.
+
+5. **Left join preserves all left keys**: When `how='left'`, every key present in `left` appears in the output (with the left key order preserved), and the output row count is at least `len(left)`; symmetrically, when `how='right'`, every key in `right` appears in the output and row count is at least `len(right)`.

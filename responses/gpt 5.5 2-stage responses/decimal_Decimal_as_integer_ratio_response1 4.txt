@@ -1,0 +1,9 @@
+1. For any finite Decimal input, the result is a 2-tuple `(n, d)` where both `n` and `d` are integers.
+
+2. The denominator `d` is always strictly positive.
+
+3. The fraction `n / d` represents exactly the same numeric value as the input Decimal.
+
+4. The fraction is in lowest terms: `gcd(abs(n), d) == 1`.
+
+5. For non-finite inputs, infinities raise `OverflowError` and NaNs raise `ValueError` instead of returning a ratio.

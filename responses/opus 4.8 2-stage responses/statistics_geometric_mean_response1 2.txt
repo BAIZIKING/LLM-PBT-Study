@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `statistics.geometric_mean`:
+
+1. **Bounds property**: The geometric mean of a dataset is always greater than or equal to the minimum value and less than or equal to the maximum value of the input data (it lies within the range of the data).
+
+2. **Single element identity**: For a dataset containing a single positive value, the geometric mean equals that value.
+
+3. **Equality with arithmetic mean for identical values**: When all values in the dataset are equal (to some positive constant `c`), the geometric mean equals `c`.
+
+4. **Scaling property**: Multiplying every element of the dataset by a positive constant `k` multiplies the geometric mean by the same factor `k` (i.e., `geometric_mean(k*x_i) == k * geometric_mean(x_i)`).
+
+5. **Product/exponential definition**: The geometric mean equals the exponential of the arithmetic mean of the natural logarithms of the data (i.e., `geometric_mean(data) == exp(mean(log(x_i)))`), equivalently the nth root of the product of all n values.

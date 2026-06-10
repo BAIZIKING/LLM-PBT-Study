@@ -1,0 +1,76 @@
+from hypothesis import given, strategies as st
+import statistics
+from decimal import Decimal
+
+# Summary: Generate homogeneous numeric iterables covering empty data, singletons, odd/even lengths,
+# repeated values, negative/positive values, ints, bounded finite floats, Fractions, and Decimals.
+# Also vary the container form between list, tuple, iterator, and generator. Check that empty input
+# raises StatisticsError; otherwise check the documented median rule: middle item for odd length,
+# mean of the two middle items for even length.
+@given(st.data())
+def test_statistics_median(data):
+    values = data.draw(
+        st.one_of(
+            st.lists(st.integers(min_value=-10**12, max_value=10**12), max_size=100),
+            st.lists(
+                st.floats(
+                    min_value=-10**100,
+                    max_value=10**100,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                max_size=100,
+            ),
+            st.lists(
+                st.fractions(
+                    min_value=-10**6,
+                    max_value=10**6,
+                    max_denominator=10**4,
+                ),
+                max_size=100,
+            ),
+            st.lists(
+                st.decimals(
+                    min_value=Decimal("-1000000"),
+                    max_value=Decimal("1000000"),
+                    allow_nan=False,
+                    allow_infinity=False,
+                    places=6,
+                ),
+                max_size=100,
+            ),
+        )
+    )
+
+    container_kind = data.draw(st.sampled_from(["list", "tuple", "iterator", "generator"]))
+
+    if container_kind == "list":
+        data_arg = list(values)
+    elif container_kind == "tuple":
+        data_arg = tuple(values)
+    elif container_kind == "iterator":
+        data_arg = iter(values)
+    else:
+        data_arg = (x for x in values)
+
+    if not values:
+        try:
+            statistics.median(data_arg)
+        except statistics.StatisticsError:
+            return
+        assert False, "median() should raise StatisticsError for empty data"
+
+    sorted_values = sorted(values)
+    n = len(sorted_values)
+    mid = n // 2
+
+    if n % 2:
+        expected = sorted_values[mid]
+    else:
+        expected = (sorted_values[mid - 1] + sorted_values[mid]) / 2
+
+    result = statistics.median(data_arg)
+
+    assert result == expected
+    assert sorted_values[0] <= result <= sorted_values[-1]
+# End program

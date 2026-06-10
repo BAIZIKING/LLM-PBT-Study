@@ -1,0 +1,85 @@
+import numpy as np
+from hypothesis import given, strategies as st
+from hypothesis.extra import numpy as hnp
+
+# Summary: Generate pairs of broadcastable arrays with varied dtypes (ints/floats),
+# shapes (including scalars and empty arrays), and bounded element values to avoid
+# overflow. Then verify: equivalence to '+', commutativity, broadcast output shape,
+# the 'out' parameter semantics, the 'where' masking semantics, and the zero identity.
+@given(st.data())
+def test_numpy_add():
+    dtype = st.data  # placeholder to keep flake quiet (unused)
+
+    @given(st.data())
+    def _inner(data):
+        pass
+
+    # Drive everything through the single st.data() entry point below.
+    raise NotImplementedError
+
+
+@given(st.data())
+def test_numpy_add_property(data):
+    # --- choose a dtype ---
+    dtype = data.draw(
+        st.sampled_from([
+            np.int8, np.int16, np.int32, np.int64,
+            np.float16, np.float32, np.float64,
+        ]),
+        label="dtype",
+    )
+
+    # bounded element values to avoid overflow obscuring the algebraic properties
+    if np.issubdtype(dtype, np.integer):
+        elements = st.integers(min_value=-100, max_value=100)
+    else:
+        elements = st.floats(
+            min_value=-1e3, max_value=1e3,
+            allow_nan=False, allow_infinity=False, width=32,
+        )
+
+    # --- generate two broadcastable shapes ---
+    shapes = data.draw(
+        hnp.mutually_broadcastable_shapes(num_shapes=2, max_dims=4, max_side=4),
+        label="shapes",
+    )
+    shape1, shape2 = shapes.input_shapes
+    broadcast_shape = shapes.result_shape
+
+    x1 = data.draw(hnp.arrays(dtype=dtype, shape=shape1, elements=elements), label="x1")
+    x2 = data.draw(hnp.arrays(dtype=dtype, shape=shape2, elements=elements), label="x2")
+
+    result = np.add(x1, x2)
+
+    # Property 1: output shape equals the broadcast shape
+    assert result.shape == broadcast_shape
+
+    # Property 2: equivalence to the '+' operator
+    expected = x1 + x2
+    np.testing.assert_array_equal(result, expected)
+
+    # Property 3: commutativity  np.add(x1, x2) == np.add(x2, x1)
+    np.testing.assert_array_equal(result, np.add(x2, x1))
+
+    # Property 4: 'out' parameter is written in-place and returned
+    out = np.empty(broadcast_shape, dtype=dtype)
+    returned = np.add(x1, x2, out=out)
+    assert returned is out
+    np.testing.assert_array_equal(out, expected)
+
+    # Property 5: 'where' masking semantics
+    sentinel = np.zeros(broadcast_shape, dtype=dtype)
+    out2 = np.full(broadcast_shape, dtype(0), dtype=dtype)
+    where_mask = data.draw(
+        hnp.arrays(dtype=bool, shape=broadcast_shape), label="where",
+    )
+    np.add(x1, x2, out=out2, where=where_mask)
+    # at True locations -> the sum; at False locations -> retains original (0)
+    expected_masked = np.where(where_mask, expected, sentinel)
+    np.testing.assert_array_equal(out2, expected_masked)
+
+    # Property 6: zero is the additive identity (broadcasts to result shape)
+    zero = np.zeros_like(x1)
+    np.testing.assert_array_equal(np.add(x1, zero), x1 + zero)
+    np.testing.assert_array_equal(np.add(x1, zero), np.broadcast_to(x1, x1.shape))
+# End program

@@ -1,0 +1,119 @@
+```python
+from hypothesis import given, strategies as st, settings, assume
+import networkx as nx
+
+
+# Strategy to generate a directed acyclic graph (DAG) with at least one node.
+# networkx.lowest_common_ancestor requires a DAG (it raises on cycles), so we
+# build edges that always point from a lower-indexed node to a higher-indexed
+# node, which guarantees acyclicity. We keep node counts small to avoid very
+# large inputs / overflows.
+@st.composite
+def dags(draw):
+    n = draw(st.integers(min_value=1, max_value=12))
+    nodes = list(range(n))
+    # Generate edges only of the form (u, v) with u < v to ensure a DAG.
+    possible_edges = [(u, v) for u in range(n) for v in range(u + 1, n)]
+    edges = draw(
+        st.lists(st.sampled_from(possible_edges), max_size=len(possible_edges))
+        if possible_edges
+        else st.just([])
+    )
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+def _ancestors_incl_self(G, node):
+    return nx.ancestors(G, node) | {node}
+
+
+# Property 1: Symmetry of arguments.
+@given(st.data())
+def test_networkx_lowest_common_ancestor_symmetry():
+    G = st.data().draw  # placeholder to satisfy format; real draw below
+    data = _get_data_fixture()
+    G = data.draw(dags())
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    r1 = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    r2 = nx.lowest_common_ancestor(G, n2, n1, default=sentinel)
+    assert r1 == r2
+# End program
+```
+
+Let me rewrite this cleanly following the exact required format with a single combined test using `st.data()`.
+
+```python
+from hypothesis import given, strategies as st
+import networkx
+
+
+@st.composite
+def dags(draw):
+    n = draw(st.integers(min_value=1, max_value=12))
+    nodes = list(range(n))
+    possible_edges = [(u, v) for u in range(n) for v in range(u + 1, n)]
+    if possible_edges:
+        edges = draw(
+            st.lists(st.sampled_from(possible_edges), max_size=len(possible_edges))
+        )
+    else:
+        edges = []
+    G = networkx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+def _ancestors_incl_self(G, node):
+    return networkx.ancestors(G, node) | {node}
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_property(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+
+    sentinel = object()
+    result = networkx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+
+    anc1 = _ancestors_incl_self(G, n1)
+    anc2 = _ancestors_incl_self(G, n2)
+    common = anc1 & anc2
+
+    # Property 1: Symmetry of arguments.
+    result_rev = networkx.lowest_common_ancestor(G, n2, n1, default=sentinel)
+    assert result == result_rev
+
+    # Property 4: Default returned iff no common ancestor exists.
+    if not common:
+        assert result is sentinel
+    else:
+        assert result is not sentinel
+
+    if result is not sentinel:
+        # Property 2: Result is a valid common ancestor of both nodes.
+        assert result in common
+
+        # Property 3: Result is the lowest among common ancestors.
+        # No other common ancestor may be a proper descendant of result;
+        # equivalently, result is reachable from every common ancestor.
+        descendants_of_result = networkx.descendants(G, result) | {result}
+        for c in common:
+            # c must not be a proper descendant of result
+            if c != result:
+                assert c not in (networkx.descendants(G, result))
+            # result must be reachable from c (result is "lowest")
+            assert result in (networkx.descendants(G, c) | {c})
+
+    # Property 5: Self-pair gives the node itself.
+    self_result = networkx.lowest_common_ancestor(G, n1, n1, default=sentinel)
+    assert self_result == n1
+# End program
+```

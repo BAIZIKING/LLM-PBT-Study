@@ -1,0 +1,216 @@
+from hypothesis import given, strategies as st, assume, settings
+import pandas as pd
+import numpy as np
+import math
+
+
+# A reasonable strategy for column values: avoid NaN issues with overflow by
+# bounding numeric ranges and using a mix of value types.
+def column_values_strategy(n):
+    return st.one_of(
+        st.lists(
+            st.one_of(
+                st.integers(min_value=-(10**9), max_value=10**9),
+                st.floats(allow_nan=True, allow_infinity=False,
+                          min_value=-1e9, max_value=1e9),
+            ),
+            min_size=n, max_size=n,
+        ),
+        st.lists(
+            st.one_of(
+                st.text(alphabet="abcdefABCDEF", min_size=0, max_size=4),
+                st.none(),  # becomes NaN in object columns
+            ),
+            min_size=n, max_size=n,
+        ),
+    )
+
+
+def dataframe_strategy(draw):
+    n_rows = draw(st.integers(min_value=1, max_value=20))
+    n_cols = draw(st.integers(min_value=1, max_value=5))
+    col_names = [f"col{i}" for i in range(n_cols)]
+    data = {}
+    for name in col_names:
+        data[name] = draw(column_values_strategy(n_rows))
+    df = pd.DataFrame(data)
+    return df
+
+
+def values_sorted(series_values, ascending, na_position):
+    """Check that a list of (possibly NaN/None) values is correctly sorted."""
+    def is_na(v):
+        return v is None or (isinstance(v, float) and math.isnan(v))
+
+    # Split into non-na and na positions while preserving order.
+    non_na = [v for v in series_values if not is_na(v)]
+    na_count = len(series_values) - len(non_na)
+
+    # Check non-na ordering
+    for i in range(len(non_na) - 1):
+        a, b = non_na[i], non_na[i + 1]
+        if ascending:
+            if a > b:
+                return False
+        else:
+            if a < b:
+                return False
+
+    # Check na positioning
+    if na_count > 0:
+        if na_position == "first":
+            # First na_count entries must be NaN
+            if not all(is_na(v) for v in series_values[:na_count]):
+                return False
+        else:  # last
+            if not all(is_na(v) for v in series_values[-na_count:]):
+                return False
+    return True
+
+
+def multiset_of_rows(df):
+    """Return a sorted list of row-tuples (with NaN normalized) for comparison."""
+    def norm(v):
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            return ("__NA__",)
+        return v
+    rows = [tuple(norm(v) for v in row) for row in df.itertuples(index=False)]
+    return sorted(rows, key=lambda r: repr(r))
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_pandas_DataFrame_sort_values_property():
+    data = st.data()
+
+
+# Property 1: Same shape and same multiset of rows.
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_preserves_shape_and_rows(data):
+    df = data.draw(st.builds(lambda d: d, st.just(None)).flatmap(
+        lambda _: st.just(None)))  # placeholder, replaced below
+
+
+# Re-define properly below as separate test functions.
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_property_1_shape_and_rows(data):
+    df = data.draw(st.builds(dataframe_strategy, st.just(data)))
+    by = data.draw(st.sampled_from(list(df.columns)))
+    result = df.sort_values(by=by)
+    # Same shape
+    assert result.shape == df.shape
+    # Same set of column labels
+    assert list(result.columns) == list(df.columns)
+    # Same multiset of rows
+    assert multiset_of_rows(result) == multiset_of_rows(df)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_property_2_sorted_single_column(data):
+    df = data.draw(st.builds(dataframe_strategy, st.just(data)))
+    by = data.draw(st.sampled_from(list(df.columns)))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+    result = df.sort_values(by=by, ascending=ascending, na_position=na_position)
+    col_vals = list(result[by])
+    assert values_sorted(col_vals, ascending, na_position)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_property_3_lexicographic_multi_column(data):
+    df = data.draw(st.builds(dataframe_strategy, st.just(data)))
+    assume(len(df.columns) >= 2)
+    # pick 2 or more distinct columns
+    n_by = data.draw(st.integers(min_value=2, max_value=len(df.columns)))
+    by = data.draw(
+        st.lists(st.sampled_from(list(df.columns)),
+                 min_size=n_by, max_size=n_by, unique=True)
+    )
+    ascending = data.draw(
+        st.lists(st.booleans(), min_size=len(by), max_size=len(by))
+    )
+    na_position = "last"
+    result = df.sort_values(by=by, ascending=ascending, na_position=na_position)
+
+    def is_na(v):
+        return v is None or (isinstance(v, float) and math.isnan(v))
+
+    # Build a comparison key for each row using the 'by' columns.
+    # We verify lexicographic ordering between adjacent rows.
+    rows = result[by].itertuples(index=False, name=None)
+    rows = list(rows)
+    for i in range(len(rows) - 1):
+        r1, r2 = rows[i], rows[i + 1]
+        # Determine ordering at first differing column.
+        ok = True
+        for v1, v2, asc in zip(r1, r2, ascending):
+            na1, na2 = is_na(v1), is_na(v2)
+            if na1 and na2:
+                continue  # equal, look at next column
+            if na1 != na2:
+                # na_position='last' means na should come after non-na
+                if na1 and not na2:
+                    ok = False  # NaN before non-NaN -> violates last
+                break
+            if v1 == v2:
+                continue
+            # First differing non-na column decides
+            if asc:
+                if v1 > v2:
+                    ok = False
+            else:
+                if v1 < v2:
+                    ok = False
+            break
+        assert ok, f"Lexicographic order violated between {r1} and {r2}"
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_property_4_inplace_vs_return(data):
+    df = data.draw(st.builds(dataframe_strategy, st.just(data)))
+    by = data.draw(st.sampled_from(list(df.columns)))
+    ascending = data.draw(st.booleans())
+
+    # inplace=False: returns new sorted df, original unchanged.
+    df_copy = df.copy(deep=True)
+    result = df.sort_values(by=by, ascending=ascending, inplace=False)
+    assert result is not None
+    # Original unchanged
+    pd.testing.assert_frame_equal(df, df_copy)
+
+    # inplace=True: returns None, original modified to sorted.
+    df_inplace = df.copy(deep=True)
+    ret = df_inplace.sort_values(by=by, ascending=ascending, inplace=True)
+    assert ret is None
+    # The inplace-modified df should equal the returned df from inplace=False
+    pd.testing.assert_frame_equal(df_inplace, result)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_sort_values_property_5_ignore_index(data):
+    df = data.draw(st.builds(dataframe_strategy, st.just(data)))
+    by = data.draw(st.sampled_from(list(df.columns)))
+    ascending = data.draw(st.booleans())
+
+    # ignore_index=True -> RangeIndex 0..n-1
+    res_ignore = df.sort_values(by=by, ascending=ascending, ignore_index=True)
+    assert list(res_ignore.index) == list(range(len(df)))
+
+    # ignore_index=False -> original labels preserved (reordered).
+    res_keep = df.sort_values(by=by, ascending=ascending, ignore_index=False)
+    assert sorted(res_keep.index.tolist()) == sorted(df.index.tolist())
+    # And the index labels still map to the correct rows: resetting the
+    # ignore-index result must match resetting the keep-index result.
+    pd.testing.assert_frame_equal(
+        res_keep.reset_index(drop=True),
+        res_ignore.reset_index(drop=True),
+    )
+# End program

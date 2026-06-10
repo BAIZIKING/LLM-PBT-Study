@@ -1,0 +1,9 @@
+1. For any iterable with at least two real-valued numbers, the returned variance is always non-negative.
+
+2. The returned variance is zero if all data values are equal; otherwise, it is positive.
+
+3. Adding the same constant to every data value does not change the returned variance.
+
+4. Multiplying every data value by a constant `k` multiplies the returned variance by `k²`.
+
+5. Passing the true mean of the data as `xbar` produces the same result as omitting `xbar`.

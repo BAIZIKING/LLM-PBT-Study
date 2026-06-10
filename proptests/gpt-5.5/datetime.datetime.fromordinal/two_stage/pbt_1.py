@@ -1,0 +1,55 @@
+from hypothesis import given, strategies as st
+import datetime
+
+_MAX_ORDINAL = datetime.datetime.max.toordinal()
+_VALID_ORDINALS = st.integers(min_value=1, max_value=_MAX_ORDINAL)
+
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_returns_naive_datetime(data):
+    ordinal = data.draw(_VALID_ORDINALS)
+    result = datetime.datetime.fromordinal(ordinal)
+
+    assert isinstance(result, datetime.datetime)
+    assert result.tzinfo is None
+
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_time_fields_are_zero(data):
+    ordinal = data.draw(_VALID_ORDINALS)
+    result = datetime.datetime.fromordinal(ordinal)
+
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_round_trips_toordinal(data):
+    ordinal = data.draw(_VALID_ORDINALS)
+    result = datetime.datetime.fromordinal(ordinal)
+
+    assert result.toordinal() == ordinal
+
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_matches_date_fromordinal(data):
+    ordinal = data.draw(_VALID_ORDINALS)
+    result = datetime.datetime.fromordinal(ordinal)
+
+    assert result.date() == datetime.date.fromordinal(ordinal)
+
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_difference_matches_ordinal_difference(data):
+    ordinal_a = data.draw(_VALID_ORDINALS)
+    ordinal_b = data.draw(_VALID_ORDINALS)
+
+    result_a = datetime.datetime.fromordinal(ordinal_a)
+    result_b = datetime.datetime.fromordinal(ordinal_b)
+
+    assert result_b - result_a == datetime.timedelta(days=ordinal_b - ordinal_a)
+
+
+# End program

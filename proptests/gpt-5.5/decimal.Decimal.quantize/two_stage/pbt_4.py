@@ -1,0 +1,159 @@
+from hypothesis import given, strategies as st
+import decimal
+
+ROUNDING_MODES = (
+    decimal.ROUND_CEILING,
+    decimal.ROUND_DOWN,
+    decimal.ROUND_FLOOR,
+    decimal.ROUND_HALF_DOWN,
+    decimal.ROUND_HALF_EVEN,
+    decimal.ROUND_HALF_UP,
+    decimal.ROUND_UP,
+    decimal.ROUND_05UP,
+)
+
+def _context(prec=40, Emin=-50, Emax=50, rounding=decimal.ROUND_HALF_EVEN):
+    ctx = decimal.Context(prec=prec, Emin=Emin, Emax=Emax, rounding=rounding)
+    for signal in list(ctx.traps):
+        ctx.traps[signal] = False
+    ctx.clear_flags()
+    return ctx
+
+def _decimal_from_parts(sign, coefficient, exponent):
+    digits = tuple(int(ch) for ch in str(coefficient)) if coefficient else (0,)
+    return decimal.Decimal((sign, digits, exponent))
+
+def _quantizer(exponent):
+    return decimal.Decimal((0, (1,), exponent))
+
+def _rounded_abs_coefficient(sign, coefficient, shift, rounding):
+    divisor = 10 ** shift
+    quotient, remainder = divmod(coefficient, divisor)
+
+    if remainder == 0:
+        return quotient
+
+    twice_remainder = 2 * remainder
+
+    if rounding == decimal.ROUND_DOWN:
+        increment = False
+    elif rounding == decimal.ROUND_UP:
+        increment = True
+    elif rounding == decimal.ROUND_CEILING:
+        increment = sign == 0
+    elif rounding == decimal.ROUND_FLOOR:
+        increment = sign == 1
+    elif rounding == decimal.ROUND_HALF_UP:
+        increment = twice_remainder >= divisor
+    elif rounding == decimal.ROUND_HALF_DOWN:
+        increment = twice_remainder > divisor
+    elif rounding == decimal.ROUND_HALF_EVEN:
+        increment = twice_remainder > divisor or (
+            twice_remainder == divisor and quotient % 2 == 1
+        )
+    elif rounding == decimal.ROUND_05UP:
+        increment = quotient % 10 in (0, 5)
+    else:
+        raise AssertionError("unsupported rounding mode")
+
+    return quotient + 1 if increment else quotient
+
+@given(st.data())
+def test_decimal_Decimal_quantize_successful_result_has_quantizer_exponent_property(data):
+    sign = data.draw(st.integers(min_value=0, max_value=1))
+    coefficient = data.draw(st.integers(min_value=0, max_value=99_999_999))
+    operand_exponent = data.draw(st.integers(min_value=-10, max_value=10))
+    quantizer_exponent = data.draw(st.integers(min_value=-10, max_value=10))
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+
+    operand = _decimal_from_parts(sign, coefficient, operand_exponent)
+    quantizer = _quantizer(quantizer_exponent)
+    ctx = _context(prec=40, Emin=-50, Emax=50, rounding=rounding)
+
+    result = operand.quantize(quantizer, context=ctx)
+
+    assert not ctx.flags[decimal.InvalidOperation]
+    assert result.as_tuple().exponent == quantizer_exponent
+
+@given(st.data())
+def test_decimal_Decimal_quantize_rounds_to_selected_rounding_mode_property(data):
+    sign = data.draw(st.integers(min_value=0, max_value=1))
+    operand_exponent = data.draw(st.integers(min_value=-8, max_value=0))
+    shift = data.draw(st.integers(min_value=1, max_value=6))
+    divisor = 10 ** shift
+    quotient = data.draw(st.integers(min_value=0, max_value=9_999))
+    remainder = data.draw(st.integers(min_value=1, max_value=divisor - 1))
+    coefficient = quotient * divisor + remainder
+    quantizer_exponent = operand_exponent + shift
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+
+    operand = _decimal_from_parts(sign, coefficient, operand_exponent)
+    quantizer = _quantizer(quantizer_exponent)
+    ctx = _context(prec=30, Emin=-50, Emax=50, rounding=decimal.ROUND_DOWN)
+
+    result = operand.quantize(quantizer, rounding=rounding, context=ctx)
+    expected_coefficient = _rounded_abs_coefficient(
+        sign, coefficient, shift, rounding
+    )
+    expected = _decimal_from_parts(sign, expected_coefficient, quantizer_exponent)
+
+    assert not ctx.flags[decimal.InvalidOperation]
+    assert result == expected
+    assert result.as_tuple().exponent == quantizer_exponent
+
+@given(st.data())
+def test_decimal_Decimal_quantize_no_rounding_preserves_numeric_value_property(data):
+    sign = data.draw(st.integers(min_value=0, max_value=1))
+    coefficient = data.draw(st.integers(min_value=0, max_value=999_999))
+    operand_exponent = data.draw(st.integers(min_value=-5, max_value=10))
+    extra_places = data.draw(st.integers(min_value=0, max_value=8))
+    quantizer_exponent = operand_exponent - extra_places
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+
+    operand = _decimal_from_parts(sign, coefficient, operand_exponent)
+    quantizer = _quantizer(quantizer_exponent)
+    ctx = _context(prec=50, Emin=-50, Emax=50, rounding=rounding)
+
+    result = operand.quantize(quantizer, context=ctx)
+
+    assert not ctx.flags[decimal.InvalidOperation]
+    assert result == operand
+    assert result.as_tuple().exponent == quantizer_exponent
+
+@given(st.data())
+def test_decimal_Decimal_quantize_signals_invalid_operation_when_coefficient_exceeds_precision_property(data):
+    digit_count = data.draw(st.integers(min_value=2, max_value=20))
+    precision = data.draw(st.integers(min_value=1, max_value=digit_count - 1))
+    coefficient = data.draw(
+        st.integers(min_value=10 ** (digit_count - 1), max_value=10 ** digit_count - 1)
+    )
+    sign = data.draw(st.integers(min_value=0, max_value=1))
+
+    operand = _decimal_from_parts(sign, coefficient, 0)
+    quantizer = _quantizer(0)
+    ctx = _context(prec=precision, Emin=-100, Emax=100)
+
+    result = operand.quantize(quantizer, context=ctx)
+
+    assert ctx.flags[decimal.InvalidOperation]
+    assert result.is_qnan()
+
+@given(st.data())
+def test_decimal_Decimal_quantize_never_signals_underflow_for_subnormal_inexact_result_property(data):
+    coefficient = data.draw(
+        st.integers(min_value=101, max_value=999).filter(lambda n: n % 100 != 0)
+    )
+
+    operand = _decimal_from_parts(0, coefficient, -9)
+    quantizer = _quantizer(-7)
+    ctx = _context(prec=3, Emin=-5, Emax=5, rounding=decimal.ROUND_HALF_EVEN)
+
+    result = operand.quantize(quantizer, context=ctx)
+
+    assert not ctx.flags[decimal.InvalidOperation]
+    assert result.as_tuple().exponent == -7
+    assert result.is_subnormal(context=ctx)
+    assert ctx.flags[decimal.Inexact]
+    assert not ctx.flags[decimal.Underflow]
+
+# End program

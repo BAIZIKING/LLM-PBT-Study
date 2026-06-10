@@ -1,0 +1,120 @@
+from hypothesis import given, strategies as st
+import numpy as np
+
+# Summary:
+# A composite strategy picks one of several "regimes" matching the doc branches:
+# scalar*, 1D.1D, 2D.2D, ND.1D, ND.MD. A shared contraction dimension K guarantees
+# valid shapes (last axis of a == second-to-last axis of b). Small dims and bounded
+# integer/float/complex values keep arrays tractable and allow exact/near-exact checks.
+# We then verify dot equals the documented equivalent (multiply / inner-sum /
+# matmul / tensordot over last axis of a and second-to-last of b), check return
+# shape semantics, the no-conjugation property, and that mismatched dims raise.
+@given(st.data())
+def test_numpy_dot(data):
+    # --- choose element dtype/values strategy ---
+    dtype_choice = data.draw(st.sampled_from(["int", "float", "complex"]))
+    if dtype_choice == "int":
+        elems = st.integers(min_value=-50, max_value=50)
+        np_dtype = np.int64
+    elif dtype_choice == "float":
+        elems = st.floats(min_value=-1e3, max_value=1e3,
+                          allow_nan=False, allow_infinity=False, width=64)
+        np_dtype = np.float64
+    else:
+        comp = st.floats(min_value=-1e2, max_value=1e2,
+                         allow_nan=False, allow_infinity=False, width=64)
+        elems = st.builds(lambda r, i: complex(r, i), comp, comp)
+        np_dtype = np.complex128
+
+    dim = st.integers(min_value=1, max_value=4)  # small axis sizes
+
+    def make_array(shape):
+        # build a nested list of given shape filled with drawn elements
+        total = int(np.prod(shape)) if shape else 1
+        flat = [data.draw(elems) for _ in range(total)]
+        arr = np.array(flat, dtype=np_dtype)
+        if shape:
+            arr = arr.reshape(shape)
+        else:
+            arr = arr.reshape(())  # 0-D scalar
+        return arr
+
+    regime = data.draw(st.sampled_from(
+        ["scalar", "1d1d", "2d2d", "nd1d", "ndmd"]))
+
+    K = data.draw(dim)  # shared contraction dimension
+
+    if regime == "scalar":
+        # one (or both) operand is 0-D scalar
+        which = data.draw(st.sampled_from(["a", "b", "both"]))
+        a = make_array(()) if which in ("a", "both") else make_array((data.draw(dim),))
+        b = make_array(()) if which in ("b", "both") else make_array((data.draw(dim),))
+        result = np.dot(a, b)
+        expected = np.multiply(a, b)
+        assert np.allclose(result, expected, equal_nan=False), \
+            f"scalar branch: {result} != {expected}"
+        # If both scalars -> 0-D (scalar) result
+        if a.ndim == 0 and b.ndim == 0:
+            assert np.ndim(result) == 0
+
+    elif regime == "1d1d":
+        a = make_array((K,))
+        b = make_array((K,))
+        result = np.dot(a, b)
+        expected = np.sum(a * b)  # inner product, NO conjugation
+        assert np.allclose(result, expected), f"1d1d: {result} != {expected}"
+        # both 1-D => scalar result
+        assert np.ndim(result) == 0
+        # explicit no-conjugation check for complex
+        if dtype_choice == "complex":
+            conjugated = np.sum(np.conj(a) * b)
+            # result must match the non-conjugated sum (may differ from conjugated)
+            assert np.allclose(result, expected)
+            # vdot is the conjugating version
+            assert np.allclose(np.vdot(a, b), conjugated)
+
+    elif regime == "2d2d":
+        m = data.draw(dim)
+        n = data.draw(dim)
+        a = make_array((m, K))
+        b = make_array((K, n))
+        result = np.dot(a, b)
+        expected = a @ b  # matmul preferred for 2-D
+        assert result.shape == (m, n)
+        assert np.allclose(result, expected), f"2d2d: {result}\n!=\n{expected}"
+
+    elif regime == "nd1d":
+        # a is N-D (here 3-D), b is 1-D -> sum product over last axis of a
+        d0 = data.draw(dim)
+        d1 = data.draw(dim)
+        a = make_array((d0, d1, K))
+        b = make_array((K,))
+        result = np.dot(a, b)
+        expected = np.tensordot(a, b, axes=([-1], [0]))
+        assert result.shape == (d0, d1)
+        assert np.allclose(result, expected), f"nd1d: {result}\n!=\n{expected}"
+
+    else:  # "ndmd": a is N-D, b is M-D (M>=2)
+        # use a: (p, q, K), b: (r, K, s)
+        p = data.draw(dim)
+        q = data.draw(dim)
+        r = data.draw(dim)
+        s = data.draw(dim)
+        a = make_array((p, q, K))
+        b = make_array((r, K, s))
+        result = np.dot(a, b)
+        # documented: dot(a,b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])
+        expected = np.tensordot(a, b, axes=([-1], [-2]))
+        assert result.shape == (p, q, r, s)
+        assert np.allclose(result, expected), "ndmd contraction mismatch"
+
+    # --- Always: a deliberate dimension mismatch must raise ValueError ---
+    bad_a = np.ones((2, 3), dtype=np_dtype)
+    bad_b = np.ones((4, 5), dtype=np_dtype)  # 3 != 4 -> mismatch
+    try:
+        np.dot(bad_a, bad_b)
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised, "Expected ValueError for mismatched contraction dimensions"
+# End program

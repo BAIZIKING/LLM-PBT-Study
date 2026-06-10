@@ -1,0 +1,9 @@
+1. The variance is always non-negative (greater than or equal to zero) for any valid input data.
+
+2. The variance equals zero if and only if all data points are identical (constant data).
+
+3. The variance is invariant under translation: adding a constant to every data point does not change the variance.
+
+4. The variance scales by the square of a multiplicative factor: multiplying every data point by a constant `c` multiplies the variance by `c²`.
+
+5. Passing the correctly computed mean as the optional `xbar` argument yields the same result as omitting it (when the function computes the mean automatically).

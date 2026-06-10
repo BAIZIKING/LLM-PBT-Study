@@ -1,0 +1,68 @@
+## Generation Strategy
+
+To exercise `Decimal.as_integer_ratio()` broadly, I want a wide variety of `Decimal` inputs:
+
+1. **Normal finite decimals**: Use `st.decimals()` with `allow_nan=False` and `allow_infinity=False`. This covers positive, negative, zero, very small, and very large values with varying numbers of decimal places.
+2. **Edge cases via integers and floats**: Construct `Decimal` from integers (including 0, negatives) and from strings to capture exact representations.
+3. **Special values**: Separately generate NaN (`'nan'`, `'snan'`) and infinities (`'inf'`, `'-inf'`) to test the documented exception behavior.
+
+I'll combine these using `st.one_of` so the test sees both "good" finite inputs and "bad" special-value inputs.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Exceptions for special values**: NaN inputs must raise `ValueError`; infinity inputs must raise `OverflowError`.
+2. **Return type**: For finite decimals, returns a pair `(n, d)` of `int`s.
+3. **Positive denominator**: `d > 0`.
+4. **Lowest terms**: `gcd(n, d) == 1`.
+5. **Exact conversion**: `Fraction(n, d) == Fraction(original_decimal)`, i.e. `n/d` exactly equals the original Decimal value.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, InvalidOperation
+from fractions import Fraction
+from math import gcd
+
+# Summary: Generate a wide variety of Decimals — finite values via st.decimals(),
+# values built from integers, plus special NaN/Infinity values — then check that
+# special values raise the documented exceptions and finite values yield an exact,
+# lowest-terms (n, d) pair with a positive denominator.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio(data):
+    finite = st.decimals(allow_nan=False, allow_infinity=False)
+    from_int = st.integers().map(Decimal)
+    specials = st.sampled_from(['nan', 'snan', 'inf', '-inf', 'Infinity', '-Infinity'])
+    special_decimals = specials.map(Decimal)
+
+    value = data.draw(st.one_of(finite, from_int, special_decimals))
+
+    if value.is_nan():
+        # NaN inputs must raise ValueError.
+        try:
+            value.as_integer_ratio()
+            assert False, "Expected ValueError for NaN"
+        except ValueError:
+            pass
+    elif value.is_infinite():
+        # Infinities must raise OverflowError.
+        try:
+            value.as_integer_ratio()
+            assert False, "Expected OverflowError for infinity"
+        except OverflowError:
+            pass
+    else:
+        n, d = value.as_integer_ratio()
+        # Returns a pair of ints.
+        assert isinstance(n, int)
+        assert isinstance(d, int)
+        # Denominator must be positive.
+        assert d > 0
+        # Must be in lowest terms.
+        assert gcd(n, d) == 1
+        # Conversion must be exact.
+        assert Fraction(n, d) == Fraction(value)
+# End program
+```

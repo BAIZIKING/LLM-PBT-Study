@@ -1,0 +1,61 @@
+from hypothesis import given, strategies as st
+from decimal import Decimal
+
+# Summary: Generate both Decimal operands from a broad mix of values: quiet NaNs,
+# infinities, signed zeros, small integers, extreme exponent values, arbitrary
+# finite Decimals, and tuple-built Decimals with varied signs, digits, and
+# exponents. Check the documented compare() behavior: if either operand is NaN,
+# the result is NaN; otherwise the result is Decimal('-1'), Decimal('0'), or
+# Decimal('1') according to the numeric ordering.
+@given(st.data())
+def test_decimal_Decimal_compare(data):
+    special_decimals = st.sampled_from(
+        [
+            Decimal("NaN"),
+            Decimal("-NaN"),
+            Decimal("Infinity"),
+            Decimal("-Infinity"),
+            Decimal("0"),
+            Decimal("-0"),
+            Decimal("1"),
+            Decimal("-1"),
+            Decimal("1E-1000000"),
+            Decimal("-1E-1000000"),
+            Decimal("1E+1000000"),
+            Decimal("-1E+1000000"),
+        ]
+    )
+
+    tuple_built_decimals = st.builds(
+        lambda sign, digits, exponent: Decimal((sign, tuple(digits), exponent)),
+        st.integers(min_value=0, max_value=1),
+        st.lists(st.integers(min_value=0, max_value=9), min_size=1, max_size=40),
+        st.one_of(
+            st.integers(min_value=-1000, max_value=1000),
+            st.sampled_from([-1000000, -10000, 10000, 1000000]),
+        ),
+    )
+
+    decimal_values = st.one_of(
+        special_decimals,
+        tuple_built_decimals,
+        st.decimals(allow_nan=False, allow_infinity=False, places=None),
+    )
+
+    a = data.draw(decimal_values)
+    b = data.draw(decimal_values)
+
+    result = a.compare(b, context=None)
+
+    assert isinstance(result, Decimal)
+
+    if a.is_nan() or b.is_nan():
+        assert result.is_nan()
+    elif a < b:
+        assert result == Decimal("-1")
+    elif a == b:
+        assert result == Decimal("0")
+    else:
+        assert a > b
+        assert result == Decimal("1")
+# End program

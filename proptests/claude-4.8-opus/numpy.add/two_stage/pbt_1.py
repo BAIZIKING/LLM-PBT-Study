@@ -1,0 +1,56 @@
+from hypothesis import given, strategies as st, settings
+import hypothesis.extra.numpy as hnp
+import numpy
+
+# Safe finite floats in a moderate range to avoid overflow/inf/nan.
+safe_floats = st.floats(
+    min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False, width=64
+)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_add_property(data):
+    # --- Property 1: Commutativity ---
+    shapes = data.draw(hnp.mutually_broadcastable_shapes(num_shapes=2))
+    s1, s2 = shapes.input_shapes
+    x1 = data.draw(hnp.arrays(dtype=numpy.float64, shape=s1, elements=safe_floats))
+    x2 = data.draw(hnp.arrays(dtype=numpy.float64, shape=s2, elements=safe_floats))
+
+    r12 = numpy.add(x1, x2)
+    r21 = numpy.add(x2, x1)
+    assert numpy.array_equal(r12, r21)
+
+    # --- Property 2: Identity element (adding zero) ---
+    zero = numpy.zeros_like(x1)
+    assert numpy.array_equal(numpy.add(x1, zero), x1)
+
+    # --- Property 3: Equivalence to the + operator ---
+    assert numpy.array_equal(numpy.add(x1, x2), x1 + x2)
+
+    # --- Property 4: Output shape matches broadcasting ---
+    expected_shape = numpy.broadcast_shapes(s1, s2)
+    assert r12.shape == expected_shape
+
+    # Scalar inputs produce a scalar result.
+    a = data.draw(safe_floats)
+    b = data.draw(safe_floats)
+    scalar_result = numpy.add(a, b)
+    assert numpy.isscalar(scalar_result) or scalar_result.ndim == 0
+
+    # --- Property 5: where masking with out ---
+    out_shape = expected_shape
+    out_init = data.draw(
+        hnp.arrays(dtype=numpy.float64, shape=out_shape, elements=safe_floats)
+    )
+    mask = data.draw(
+        hnp.arrays(dtype=numpy.bool_, shape=out_shape, elements=st.booleans())
+    )
+    original = out_init.copy()
+    result = numpy.add(x1, x2, out=out_init, where=mask)
+
+    full_sum = numpy.broadcast_to(x1 + x2, out_shape)
+    # Where mask is True -> sum; where False -> retain original.
+    assert numpy.array_equal(result[mask], full_sum[mask])
+    assert numpy.array_equal(result[~mask], original[~mask])
+# End program

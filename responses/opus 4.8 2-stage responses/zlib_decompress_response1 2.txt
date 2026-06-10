@@ -1,0 +1,9 @@
+1. The output of `zlib.decompress` is always a bytes object.
+
+2. For any valid input produced by `zlib.compress(x)`, decompressing it returns exactly the original data `x` (round-trip property).
+
+3. The output is independent of the `bufsize` argument: decompressing the same data with different valid `bufsize` values yields identical results (bufsize only affects performance, not correctness).
+
+4. Decompressing data with an appropriately matching `wbits` value (e.g., `wbits=0` or `wbits=47` for auto-detection) produces the same output as decompressing with the specific correct `wbits` for that format.
+
+5. Decompressing malformed, truncated, or corrupted input (or data using an incompatible `wbits` format/window size) raises a `zlib.error` exception rather than returning an incorrect bytes object.

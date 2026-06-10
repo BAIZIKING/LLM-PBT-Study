@@ -1,0 +1,105 @@
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+import pytest
+
+# Strategy for reasonable finite floats avoiding overflow issues
+reasonable_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+# Property 1: Intercept is zero in proportional mode
+@given(st.data())
+def test_statistics_linear_regression_proportional_intercept_zero(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+    x = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    y = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    # x cannot be constant
+    assume(len(set(x)) > 1)
+    slope, intercept = statistics.linear_regression(x, y, proportional=True)
+    assert intercept == 0.0
+
+
+# Property 2: Perfect fit recovery
+@given(st.data())
+def test_statistics_linear_regression_perfect_fit_recovery(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+    a = data.draw(reasonable_floats)
+    b = data.draw(reasonable_floats)
+    x = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n, unique=True))
+    assume(len(set(x)) > 1)
+    y = [a * xi + b for xi in x]
+    # Guard against non-finite generated y
+    assume(all(math.isfinite(yi) for yi in y))
+    slope, intercept = statistics.linear_regression(x, y)
+    assert math.isclose(slope, a, rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(intercept, b, rel_tol=1e-6, abs_tol=1e-6)
+
+
+# Property 3: Residual orthogonality / OLS normal equations
+@given(st.data())
+def test_statistics_linear_regression_residual_normal_equations(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+    x = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    y = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    assume(len(set(x)) > 1)
+    slope, intercept = statistics.linear_regression(x, y)
+    residuals = [yi - (slope * xi + intercept) for xi, yi in zip(x, y)]
+    sum_res = sum(residuals)
+    sum_res_x = sum(r * xi for r, xi in zip(residuals, x))
+    # Scale tolerance by magnitude of the data
+    scale = 1.0 + sum(abs(yi) for yi in y) + sum(abs(xi) for xi in x)
+    assert math.isclose(sum_res, 0.0, abs_tol=1e-4 * scale)
+    assert math.isclose(sum_res_x, 0.0, abs_tol=1e-4 * scale * scale)
+
+
+# Property 4: Invariance to shifting the dependent variable (non-proportional)
+@given(st.data())
+def test_statistics_linear_regression_shift_invariance(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+    x = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    y = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+    c = data.draw(reasonable_floats)
+    assume(len(set(x)) > 1)
+    slope1, intercept1 = statistics.linear_regression(x, y)
+    y_shifted = [yi + c for yi in y]
+    assume(all(math.isfinite(yi) for yi in y_shifted))
+    slope2, intercept2 = statistics.linear_regression(x, y_shifted)
+    scale = 1.0 + abs(slope1) + sum(abs(yi) for yi in y) + abs(c)
+    assert math.isclose(slope1, slope2, rel_tol=1e-6, abs_tol=1e-6 * scale)
+    assert math.isclose(intercept2, intercept1 + c, rel_tol=1e-6, abs_tol=1e-6 * scale)
+
+
+# Property 5: Error on invalid inputs
+@given(st.data())
+def test_statistics_linear_regression_error_on_invalid_inputs(data):
+    kind = data.draw(st.sampled_from(["too_short", "length_mismatch", "constant_x"]))
+    if kind == "too_short":
+        # Fewer than two elements
+        m = data.draw(st.integers(min_value=0, max_value=1))
+        x = data.draw(st.lists(reasonable_floats, min_size=m, max_size=m))
+        y = data.draw(st.lists(reasonable_floats, min_size=m, max_size=m))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(x, y)
+    elif kind == "length_mismatch":
+        nx = data.draw(st.integers(min_value=2, max_value=20))
+        ny = data.draw(st.integers(min_value=2, max_value=20))
+        assume(nx != ny)
+        x = data.draw(st.lists(reasonable_floats, min_size=nx, max_size=nx))
+        y = data.draw(st.lists(reasonable_floats, min_size=ny, max_size=ny))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(x, y)
+    else:  # constant_x
+        n = data.draw(st.integers(min_value=2, max_value=20))
+        const_val = data.draw(reasonable_floats)
+        x = [const_val] * n
+        y = data.draw(st.lists(reasonable_floats, min_size=n, max_size=n))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(x, y)
+# End program
+```

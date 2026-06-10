@@ -1,0 +1,9 @@
+1. **Identity with explicit zero initial**: Summing all elements and then comparing should be consistent with adding the `initial` value — i.e., `np.sum(a, initial=k)` equals `np.sum(a) + k`, since the initial value is just added to the total.
+
+2. **Empty array yields neutral element**: The sum of an empty array is 0 (or the `initial` value if specified), reflecting that 0 is the additive neutral element.
+
+3. **Shape reduction along axis**: When summing along a given axis (without `keepdims`), the output shape equals the input shape with that axis removed; with `keepdims=True`, the reduced axis is retained with size one, so the output has the same number of dimensions as the input.
+
+4. **Consistency with manual/decomposed summation**: Summing over all elements (`axis=None`) equals successively summing over each individual axis, and summing over a tuple of axes equals summing over those axes one at a time (within floating-point tolerance).
+
+5. **`where` masking equivalence**: `np.sum(a, where=mask)` equals the sum of only the elements of `a` where `mask` is True (equivalently, the sum of `a` with masked-out elements replaced by 0).

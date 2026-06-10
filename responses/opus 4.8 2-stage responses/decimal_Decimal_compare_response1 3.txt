@@ -1,0 +1,11 @@
+Here are five properties for property-based testing of `decimal_Decimal_compare`:
+
+1. The result is always a `Decimal` instance whose value is one of exactly four possible values: `Decimal('NaN')`, `Decimal('-1')`, `Decimal('0')`, or `Decimal('1')`.
+
+2. If either operand is a NaN, the result must be `Decimal('NaN')`; otherwise (both operands are non-NaN), the result must be one of `Decimal('-1')`, `Decimal('0')`, or `Decimal('1')` and never NaN.
+
+3. The result is consistent with Python's comparison operators on the same operands: it equals `Decimal('-1')` if and only if `a < b`, `Decimal('0')` if and only if `a == b`, and `Decimal('1')` if and only if `a > b` (when neither is NaN).
+
+4. The function is antisymmetric for non-NaN operands: comparing `a` to `b` yields the negation of comparing `b` to `a` (i.e., `a.compare(b) == -b.compare(a)`).
+
+5. The result reflects reflexivity for non-NaN operands: comparing any non-NaN value to itself always yields `Decimal('0')` (and comparing a NaN to itself always yields `Decimal('NaN')`).

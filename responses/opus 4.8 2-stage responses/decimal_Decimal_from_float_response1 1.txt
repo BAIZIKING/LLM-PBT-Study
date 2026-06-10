@@ -1,0 +1,11 @@
+Here are five properties of the output of `Decimal.from_float(f)` suitable for property-based testing:
+
+1. **Return type invariant:** For any valid input `f` (a `float` or `int`), the output is always an instance of `Decimal`.
+
+2. **Exact value preservation for floats:** For any finite `float` input `f`, the resulting `Decimal` is exactly equal to the precise rational value stored in the binary floating-point representation of `f` (i.e., converting the output back to a float yields the original `f`, and the Decimal equals `Fraction(f)`).
+
+3. **Integer correspondence:** For any `int` input `n`, the output equals `Decimal(n)`, representing the integer exactly with no fractional component.
+
+4. **Special value mapping:** For non-finite float inputs, the output is the corresponding special Decimal: `float('nan')` maps to a Decimal NaN, `float('inf')` maps to Decimal Infinity, and `float('-inf')` maps to Decimal negative Infinity.
+
+5. **Sign and zero consistency:** The sign of the output matches the sign of the input (negative inputs produce non-positive Decimals, positive inputs produce non-negative Decimals), and signed zeros are preserved (`-0.0` yields a negative-signed Decimal zero, `0.0` yields a positive-signed Decimal zero).

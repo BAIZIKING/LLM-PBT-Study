@@ -1,0 +1,11 @@
+Here is a list of five properties on the output of `Decimal.from_float(f)`:
+
+1. The output is always an instance of `Decimal`.
+
+2. For any finite float input, the output `Decimal` is exactly equal to the float's true value (i.e., converting the output back to a float yields the original float, and the output equals the exact binary-representable value of the input).
+
+3. For a non-negative finite float input, the output is non-negative; for a negative finite float input, the output is negative; and the sign of the output matches the sign of the input (including for signed zeros and infinities).
+
+4. Special float values map to their decimal equivalents: `float('nan')` produces a `Decimal` that is NaN, `float('inf')` produces `Decimal('Infinity')`, and `float('-inf')` produces `Decimal('-Infinity')`.
+
+5. For an integer input, the output `Decimal` is numerically equal to that integer (and represents an exact whole-number value with no fractional part).

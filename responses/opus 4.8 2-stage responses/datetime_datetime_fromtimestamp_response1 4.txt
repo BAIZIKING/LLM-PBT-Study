@@ -1,0 +1,11 @@
+Based on the API documentation, here are five properties suitable for property-based testing:
+
+1. The return value is always an instance of `datetime.datetime`.
+
+2. When `tz` is `None` (or not specified), the returned datetime object is naive (i.e., its `tzinfo` attribute is `None`).
+
+3. When `tz` is not `None`, the returned datetime object is aware and its `tzinfo` attribute corresponds to the provided `tz` (i.e., the result's `tzinfo` equals `tz`).
+
+4. Converting a timestamp back via the inverse operation should be consistent: for an aware datetime created with `tz`, calling `.timestamp()` on the result should yield (approximately, ignoring sub-second rounding) the original input timestamp.
+
+5. Monotonicity: for two valid timestamps `t1 < t2` (with the same `tz` argument), the resulting datetime objects satisfy `fromtimestamp(t1) <= fromtimestamp(t2)` (allowing equality due to leap-second handling on some platforms).

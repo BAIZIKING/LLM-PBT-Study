@@ -1,0 +1,102 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Fernet.decrypt`, I will focus on the `token` parameter (and optionally `ttl`). The strategy combines several approaches:
+
+1. **Valid tokens (round-trip)**: Generate random byte payloads, encrypt them with a freshly generated key, and feed the resulting valid token back into `decrypt`. This tests the round-trip property. I vary the payload using `st.binary()` covering empty bytes, short bytes, and large bytes.
+
+2. **Invalid/malformed tokens**: Generate random byte strings and random text strings that are very unlikely to be valid Fernet tokens (random base64-ish data, arbitrary bytes, empty values). This tests that `decrypt` raises `InvalidToken` for garbage.
+
+3. **Wrong type tokens**: Generate values that are neither `bytes` nor `str` (e.g., integers, lists, None) to test that `TypeError` is raised.
+
+4. **TTL edge cases**: Use `encrypt_at_time`/`decrypt_at_time` semantics indirectly by using `ttl` with values around message age. Generate tokens encrypted "in the past" via `encrypt_at_time` and choose `ttl` values to trigger expiration (`InvalidToken`).
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Round-trip property**: For a token produced by `f.encrypt(data)`, `f.decrypt(token)` must return exactly the original `data` (bytes).
+2. **Both bytes and str accepted**: A valid token passed as `bytes` or `str` should decrypt successfully.
+3. **InvalidToken on malformed input**: Random non-token byte/str data must raise `cryptography.fernet.InvalidToken`.
+4. **TypeError on wrong type**: Non `bytes`/`str` tokens must raise `TypeError`.
+5. **TTL expiration**: A token older than `ttl` seconds must raise `InvalidToken`.
+
+```python
+from hypothesis import given, strategies as st, assume
+import time
+from cryptography.fernet import Fernet, InvalidToken
+
+# Summary: Generate (a) valid round-trip tokens (as bytes/str) from random payloads,
+# (b) malformed byte/str tokens expected to raise InvalidToken,
+# (c) wrong-typed tokens expected to raise TypeError, and (d) expired tokens via
+# explicit timestamps to trigger ttl-based InvalidToken. A branch is chosen per example.
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    branch = data.draw(st.sampled_from(["valid", "valid_str", "malformed", "wrong_type", "expired"]))
+
+    if branch == "valid":
+        # Property 1: round-trip returns original bytes exactly.
+        payload = data.draw(st.binary(min_size=0, max_size=2048))
+        token = f.encrypt(payload)
+        assert f.decrypt(token) == payload
+
+    elif branch == "valid_str":
+        # Property 2: a valid token decodes correctly when passed as str.
+        payload = data.draw(st.binary(min_size=0, max_size=2048))
+        token = f.encrypt(payload)
+        token_str = token.decode("ascii")
+        assert f.decrypt(token_str) == payload
+
+    elif branch == "malformed":
+        # Property 3: malformed/garbage tokens raise InvalidToken.
+        garbage = data.draw(
+            st.one_of(
+                st.binary(min_size=0, max_size=256),
+                st.text(max_size=256),
+            )
+        )
+        # Make sure we don't accidentally craft a valid token (astronomically unlikely,
+        # but guard against the trivial cases that could collide).
+        try:
+            f.decrypt(garbage)
+            # If it somehow decrypted, it must have been a legitimate token; reject example.
+            assume(False)
+        except InvalidToken:
+            pass  # expected
+        except TypeError:
+            # garbage was an acceptable type (bytes/str), so TypeError is unexpected here.
+            raise AssertionError("Expected InvalidToken, got TypeError for str/bytes input")
+
+    elif branch == "wrong_type":
+        # Property 4: non bytes/str tokens raise TypeError.
+        bad = data.draw(
+            st.one_of(
+                st.integers(),
+                st.floats(allow_nan=False, allow_infinity=False),
+                st.lists(st.integers(), max_size=5),
+                st.none(),
+                st.booleans(),
+            )
+        )
+        try:
+            f.decrypt(bad)
+            raise AssertionError("Expected TypeError for non bytes/str token")
+        except TypeError:
+            pass  # expected
+
+    else:  # branch == "expired"
+        # Property 5: a token older than ttl raises InvalidToken.
+        payload = data.draw(st.binary(min_size=0, max_size=256))
+        age = data.draw(st.integers(min_value=2, max_value=10_000))
+        ttl = data.draw(st.integers(min_value=0, max_value=age - 1))
+        created_at = int(time.time()) - age
+        token = f.encrypt_at_time(payload, created_at)
+        try:
+            f.decrypt(token, ttl=ttl)
+            raise AssertionError("Expected InvalidToken for expired token")
+        except InvalidToken:
+            pass  # expected
+# End program
+```

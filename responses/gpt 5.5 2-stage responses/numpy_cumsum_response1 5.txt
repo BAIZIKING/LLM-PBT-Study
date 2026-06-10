@@ -1,0 +1,9 @@
+1. The output has the same number of elements as the input; if `axis` is specified, it has the same shape as `a`, while if `axis=None` it is the cumulative sum of the flattened input.
+
+2. Along the accumulation axis, the first output element equals the corresponding first input element after dtype conversion.
+
+3. Along the accumulation axis, each subsequent output element equals the previous output element plus the corresponding input element, using the accumulator/output dtype semantics.
+
+4. If `dtype` is specified, the output array has that dtype; if `out` is specified, the returned object is `out` and the computed values are stored there subject to casting.
+
+5. For integer dtypes, overflow is modular and does not raise an error; therefore cumulative values should match arithmetic performed modulo the integer dtype’s range.

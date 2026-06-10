@@ -1,0 +1,77 @@
+```python
+from hypothesis import given, strategies as st
+import base64
+from cryptography.fernet import Fernet, InvalidToken
+
+
+# Property 1: Round-trip correctness
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert f.decrypt(token) == data
+# End program
+
+
+# Property 2: Output type is always bytes
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_output_type(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert isinstance(token, bytes)
+# End program
+
+
+# Property 3: Output is valid URL-safe base64
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_urlsafe_base64(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    # Should decode without error using URL-safe base64
+    decoded = base64.urlsafe_b64decode(token)
+    # Re-encoding should reproduce the token (canonical form)
+    assert base64.urlsafe_b64encode(decoded) == token
+    # Only URL-safe base64 alphabet characters allowed
+    allowed = set(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        b"abcdefghijklmnopqrstuvwxyz"
+        b"0123456789-_="
+    )
+    assert set(token).issubset(allowed)
+# End program
+
+
+# Property 4: Non-determinism / uniqueness, but both decrypt to same data
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_nondeterministic(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token1 = f.encrypt(data)
+    token2 = f.encrypt(data)
+    assert token1 != token2
+    assert f.decrypt(token1) == data
+    assert f.decrypt(token2) == data
+# End program
+
+
+# Property 5: Cross-key isolation
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_cross_key_isolation(data):
+    key1 = Fernet.generate_key()
+    key2 = Fernet.generate_key()
+    # Ensure the two keys differ (extremely unlikely to collide, but guard anyway)
+    if key1 == key2:
+        return
+    f1 = Fernet(key1)
+    f2 = Fernet(key2)
+    token = f1.encrypt(data)
+    try:
+        f2.decrypt(token)
+        assert False, "Decryption with a different key should fail"
+    except InvalidToken:
+        pass
+# End program
+```

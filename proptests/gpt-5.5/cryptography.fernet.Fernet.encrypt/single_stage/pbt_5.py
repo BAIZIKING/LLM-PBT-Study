@@ -1,0 +1,45 @@
+from hypothesis import given, strategies as st
+from cryptography.fernet import Fernet, InvalidToken
+import base64
+import pytest
+
+# Summary: Generate either arbitrary bytes, including empty and large byte strings, or many non-bytes edge cases such as None, strings, numbers, lists, dicts, bytearray, and memoryview. For bytes, check that encrypt returns a URL-safe base64 bytes Fernet token that decrypts back to the original data and rejects tampering. For non-bytes, check that TypeError is raised.
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    bytes_strategy = st.binary(min_size=0, max_size=4096)
+    non_bytes_strategy = st.one_of(
+        st.none(),
+        st.text(),
+        st.integers(),
+        st.floats(allow_nan=False),
+        st.lists(st.integers()),
+        st.dictionaries(st.text(), st.integers()),
+        st.binary().map(bytearray),
+        st.binary().map(memoryview),
+    )
+
+    value = data.draw(st.one_of(bytes_strategy, non_bytes_strategy))
+
+    if isinstance(value, bytes):
+        token = f.encrypt(value)
+
+        assert isinstance(token, bytes)
+        assert f.decrypt(token) == value
+
+        decoded = base64.urlsafe_b64decode(token)
+        assert isinstance(decoded, bytes)
+        assert len(decoded) > 0
+
+        tampered = bytearray(token)
+        tampered[len(tampered) // 2] ^= 1
+
+        with pytest.raises(InvalidToken):
+            f.decrypt(bytes(tampered))
+    else:
+        with pytest.raises(TypeError):
+            f.encrypt(value)
+
+# End program

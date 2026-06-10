@@ -1,0 +1,11 @@
+Here are five properties of `numpy.dot` suitable for property-based testing:
+
+1. **Scalar multiplication equivalence**: When either `a` or `b` is a 0-D scalar, the output equals the element-wise multiplication `a * b` (i.e., `np.dot(a, b) == np.multiply(a, b)`).
+
+2. **1-D inner product correctness**: When both `a` and `b` are 1-D arrays of equal length, the output is a scalar equal to the sum of their element-wise products (`sum(a[i] * b[i])`), without any complex conjugation.
+
+3. **Output shape correctness**: For N-D and M-D inputs, the output shape equals the concatenation of `a`'s shape with its last axis removed and `b`'s shape with its second-to-last axis removed (for M≥2) or last axis removed (for 1-D `b`); and the result is a scalar when both inputs are scalars or both are 1-D.
+
+4. **Sum-product definition consistency**: For general N-D arrays, each output element equals the sum over the contracted axis, i.e., `dot(a, b)[...i..., ...k...] = sum(a[...i..., :] * b[...k..., :, ...])`, matching the documented summation formula.
+
+5. **Equivalence with `out` parameter**: When a valid `out` array is provided (correct dtype, shape, and C-contiguous), the returned result is identical to the result computed without `out`, and `out` itself is filled with that result and returned.

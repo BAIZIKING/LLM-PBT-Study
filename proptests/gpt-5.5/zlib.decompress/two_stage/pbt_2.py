@@ -1,0 +1,90 @@
+from hypothesis import given, strategies as st
+import zlib
+
+def _compress(data, wbits, level):
+    compressor = zlib.compressobj(level, zlib.DEFLATED, wbits)
+    return compressor.compress(data) + compressor.flush()
+
+@given(st.data())
+def test_zlib_decompress_zlib_format_round_trips(data):
+    original = data.draw(st.binary(max_size=32768))
+    level = data.draw(st.integers(min_value=0, max_value=9))
+    compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+    decompress_wbits = data.draw(st.integers(min_value=compress_wbits, max_value=15))
+
+    compressed = _compress(original, compress_wbits, level)
+
+    assert zlib.decompress(compressed, wbits=decompress_wbits) == original
+
+@given(st.data())
+def test_zlib_decompress_raw_deflate_round_trips(data):
+    original = data.draw(st.binary(max_size=32768))
+    level = data.draw(st.integers(min_value=0, max_value=9))
+    compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+    decompress_wbits = data.draw(st.integers(min_value=compress_wbits, max_value=15))
+
+    compressed = _compress(original, -compress_wbits, level)
+
+    assert zlib.decompress(compressed, wbits=-decompress_wbits) == original
+
+@given(st.data())
+def test_zlib_decompress_gzip_format_round_trips(data):
+    original = data.draw(st.binary(max_size=32768))
+    level = data.draw(st.integers(min_value=0, max_value=9))
+    compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+    decompress_wbits = data.draw(st.integers(min_value=compress_wbits, max_value=15))
+
+    compressed = _compress(original, 16 + compress_wbits, level)
+
+    assert zlib.decompress(compressed, wbits=16 + decompress_wbits) == original
+
+@given(st.data())
+def test_zlib_decompress_bufsize_does_not_change_output(data):
+    original = data.draw(st.binary(max_size=32768))
+    level = data.draw(st.integers(min_value=0, max_value=9))
+    format_name = data.draw(st.sampled_from(("zlib", "raw", "gzip")))
+    bits = data.draw(st.integers(min_value=9, max_value=15))
+    bufsize_1 = data.draw(st.integers(min_value=1, max_value=65536))
+    bufsize_2 = data.draw(st.integers(min_value=1, max_value=65536))
+
+    if format_name == "zlib":
+        wbits = bits
+    elif format_name == "raw":
+        wbits = -bits
+    else:
+        wbits = 16 + bits
+
+    compressed = _compress(original, wbits, level)
+
+    assert zlib.decompress(compressed, wbits=wbits, bufsize=bufsize_1) == original
+    assert zlib.decompress(compressed, wbits=wbits, bufsize=bufsize_2) == original
+    assert (
+        zlib.decompress(compressed, wbits=wbits, bufsize=bufsize_1)
+        == zlib.decompress(compressed, wbits=wbits, bufsize=bufsize_2)
+    )
+
+@given(st.data())
+def test_zlib_decompress_auto_detect_matches_specific_zlib_or_gzip(data):
+    original = data.draw(st.binary(max_size=32768))
+    level = data.draw(st.integers(min_value=0, max_value=9))
+    format_name = data.draw(st.sampled_from(("zlib", "gzip")))
+    compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+    decompress_wbits = data.draw(st.integers(min_value=compress_wbits, max_value=15))
+
+    if format_name == "zlib":
+        compressed = _compress(original, compress_wbits, level)
+        specific_wbits = decompress_wbits
+    else:
+        compressed = _compress(original, 16 + compress_wbits, level)
+        specific_wbits = 16 + decompress_wbits
+
+    auto_detect_wbits = 32 + decompress_wbits
+
+    assert zlib.decompress(compressed, wbits=specific_wbits) == original
+    assert zlib.decompress(compressed, wbits=auto_detect_wbits) == original
+    assert (
+        zlib.decompress(compressed, wbits=specific_wbits)
+        == zlib.decompress(compressed, wbits=auto_detect_wbits)
+    )
+
+# End program

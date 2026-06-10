@@ -1,0 +1,9 @@
+1. The returned result is ordered lexicographically by the `by` keys, after applying `key` if provided, respecting each `ascending` value.
+
+2. Missing values in the sort keys appear at the beginning when `na_position="first"` and at the end when `na_position="last"`.
+
+3. Sorting does not create, remove, or modify data values: the result contains the same rows/columns as the input, only permuted along the sorted axis.
+
+4. The shape of the DataFrame is unchanged; if `ignore_index=True`, the sorted axis is relabeled `0, 1, ..., n-1`, otherwise the original labels move with their rows/columns.
+
+5. When sorting by a single key with a stable algorithm such as `"mergesort"` or `"stable"`, entries with equal sort keys preserve their original relative order.

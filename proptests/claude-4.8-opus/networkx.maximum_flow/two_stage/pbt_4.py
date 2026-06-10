@@ -1,0 +1,164 @@
+from hypothesis import given, settings, strategies as st
+import networkx as nx
+from networkx.algorithms.flow import (
+    edmonds_karp,
+    shortest_augmenting_path,
+    preflow_push,
+    dinitz,
+    boykov_kolmogorov,
+)
+import math
+
+
+# ---------------------------------------------------------------------------
+# Strategy: build a random capacitated DiGraph together with a source/sink.
+# We keep capacities to modest finite floats/ints to avoid overflow issues and
+# ensure the flow is bounded (no infinite-capacity paths).
+# ---------------------------------------------------------------------------
+@st.composite
+def flow_graph_with_terminals(draw):
+    n_nodes = draw(st.integers(min_value=2, max_value=7))
+    nodes = list(range(n_nodes))
+
+    # capacities kept small and strictly finite -> bounded flow, no overflow
+    cap_strategy = st.one_of(
+        st.integers(min_value=1, max_value=1000),
+        st.floats(min_value=0.1, max_value=1000.0,
+                  allow_nan=False, allow_infinity=False),
+    )
+
+    # collect possible directed edges (no self loops)
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+
+    # choose a subset of edges
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges),
+            unique=True,
+            min_size=1,
+            max_size=len(possible_edges),
+        )
+    )
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    for (u, v) in edges:
+        cap = draw(cap_strategy)
+        G.add_edge(u, v, capacity=float(cap))
+
+    s = draw(st.sampled_from(nodes))
+    t = draw(st.sampled_from([x for x in nodes if x != s]))
+
+    return G, s, t
+
+
+REL_TOL = 1e-6
+ABS_TOL = 1e-6
+
+
+def approx_equal(a, b):
+    return math.isclose(a, b, rel_tol=REL_TOL, abs_tol=ABS_TOL)
+
+
+# ---------------------------------------------------------------------------
+# Property 1: flow value == net outflow from source == net inflow into sink.
+# ---------------------------------------------------------------------------
+@settings(max_examples=300)
+@given(flow_graph_with_terminals())
+def test_networkx_maximum_flow_property_value_matches_source_sink_balance(data):
+    G, s, t = data
+    flow_value, flow_dict = nx.maximum_flow(G, s, t)
+
+    # net outflow from source
+    out_s = sum(flow_dict.get(s, {}).values())
+    in_s = sum(
+        flow_dict.get(u, {}).get(s, 0.0) for u in G.nodes()
+    )
+    net_out_source = out_s - in_s
+
+    # net inflow into sink
+    in_t = sum(
+        flow_dict.get(u, {}).get(t, 0.0) for u in G.nodes()
+    )
+    out_t = sum(flow_dict.get(t, {}).values())
+    net_in_sink = in_t - out_t
+
+    assert approx_equal(net_out_source, flow_value)
+    assert approx_equal(net_in_sink, flow_value)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 2: flow conservation at every node other than source and sink.
+# ---------------------------------------------------------------------------
+@settings(max_examples=300)
+@given(flow_graph_with_terminals())
+def test_networkx_maximum_flow_property_flow_conservation(data):
+    G, s, t = data
+    _flow_value, flow_dict = nx.maximum_flow(G, s, t)
+
+    for node in G.nodes():
+        if node == s or node == t:
+            continue
+        out_flow = sum(flow_dict.get(node, {}).values())
+        in_flow = sum(
+            flow_dict.get(u, {}).get(node, 0.0) for u in G.nodes()
+        )
+        assert approx_equal(in_flow, out_flow)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 3: each edge flow is non-negative and bounded by its capacity.
+# ---------------------------------------------------------------------------
+@settings(max_examples=300)
+@given(flow_graph_with_terminals())
+def test_networkx_maximum_flow_property_capacity_and_nonneg_constraints(data):
+    G, s, t = data
+    _flow_value, flow_dict = nx.maximum_flow(G, s, t)
+
+    for u, v, attrs in G.edges(data=True):
+        f = flow_dict.get(u, {}).get(v, 0.0)
+        cap = attrs.get("capacity", float("inf"))
+        # non-negative on directed edges
+        assert f >= -ABS_TOL
+        # bounded by capacity
+        assert f <= cap + max(ABS_TOL, abs(cap) * REL_TOL)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 4: flow value is independent of the chosen flow_func algorithm.
+# ---------------------------------------------------------------------------
+@settings(max_examples=300)
+@given(flow_graph_with_terminals())
+def test_networkx_maximum_flow_property_algorithm_independence(data):
+    G, s, t = data
+
+    default_value, _ = nx.maximum_flow(G, s, t)
+
+    for flow_func in (
+        edmonds_karp,
+        shortest_augmenting_path,
+        preflow_push,
+        dinitz,
+        boykov_kolmogorov,
+    ):
+        value, _ = nx.maximum_flow(G, s, t, flow_func=flow_func)
+        assert approx_equal(value, default_value)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 5: max flow value == min cut value between the same terminals.
+# ---------------------------------------------------------------------------
+@settings(max_examples=300)
+@given(flow_graph_with_terminals())
+def test_networkx_maximum_flow_property_equals_min_cut_value(data):
+    G, s, t = data
+
+    flow_value, _ = nx.maximum_flow(G, s, t)
+    cut_value = nx.minimum_cut_value(G, s, t)
+
+    assert approx_equal(flow_value, cut_value)
+# End program

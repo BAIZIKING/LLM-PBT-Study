@@ -1,0 +1,9 @@
+1. The result has exactly three named components: `year`, `week`, and `weekday`.
+
+2. `weekday` is always an integer from 1 to 7 inclusive, where Monday is 1 and Sunday is 7.
+
+3. `week` is always an integer from 1 to 53 inclusive.
+
+4. The ISO week represented by the result always starts on a Monday and ends on a Sunday, and the input date falls within that week.
+
+5. The `year` in the result is the ISO year of the Thursday in the same Monday-to-Sunday week as the input date.

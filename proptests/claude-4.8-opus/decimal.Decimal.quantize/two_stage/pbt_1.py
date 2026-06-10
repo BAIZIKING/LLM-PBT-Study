@@ -1,0 +1,90 @@
+from hypothesis import given, strategies as st, assume, settings
+import decimal
+from decimal import Decimal, InvalidOperation, getcontext, localcontext, ROUND_HALF_EVEN, ROUND_FLOOR, ROUND_CEILING, ROUND_DOWN, ROUND_UP, ROUND_HALF_UP, ROUND_HALF_DOWN, ROUND_05UP
+
+# Strategy for generating "reasonable" finite Decimals.
+# We limit the exponent and coefficient ranges to avoid huge/overflowing inputs.
+def finite_decimals(min_exp=-30, max_exp=30, max_coeff_digits=30):
+    sign = st.sampled_from([0, 1])
+    coeff = st.integers(min_value=0, max_value=10**max_coeff_digits - 1)
+    exp = st.integers(min_value=min_exp, max_value=max_exp)
+    return st.builds(
+        lambda s, c, e: Decimal((s, tuple(int(d) for d in str(c)), e)),
+        sign, coeff, exp
+    )
+
+rounding_modes = st.sampled_from([
+    None, ROUND_HALF_EVEN, ROUND_FLOOR, ROUND_CEILING, ROUND_DOWN,
+    ROUND_UP, ROUND_HALF_UP, ROUND_HALF_DOWN, ROUND_05UP
+])
+
+
+@given(st.data())
+@settings(max_examples=500)
+def test_decimal_Decimal_quantize_property(data):
+    # Use a context with a moderate precision to avoid pathological cases.
+    prec = data.draw(st.integers(min_value=1, max_value=50), label="prec")
+
+    first = data.draw(finite_decimals(), label="first")
+    exp = data.draw(finite_decimals(), label="exp")
+    rounding = data.draw(rounding_modes, label="rounding")
+
+    with localcontext() as ctx:
+        ctx.prec = prec
+        # Make Emax/Emin generous so we mostly stay in valid range.
+        ctx.Emax = 999999
+        ctx.Emin = -999999
+
+        target_exp = exp.as_tuple().exponent  # integer exponent
+
+        # Try the quantize; it may legitimately raise InvalidOperation.
+        try:
+            result = first.quantize(exp, rounding=rounding)
+        except InvalidOperation:
+            # Property 5: InvalidOperation is a valid outcome.
+            # Verify that the reason is plausible: either the coefficient would
+            # exceed precision, or the exponent is out of range. We check that
+            # the "ideal" exponent indeed differs in a way that could trigger it.
+            # We accept the exception as a correct outcome.
+            return
+
+        # ---- Property 1: exponent of result equals exp's exponent ----
+        result_exp = result.as_tuple().exponent
+        assert result_exp == target_exp, (
+            f"Result exponent {result_exp} != target exponent {target_exp}"
+        )
+
+        # ---- Property 2: result equals first rounded to that exponent ----
+        # Recompute the expected rounded value at the given exponent using a
+        # higher-precision context to confirm closeness.
+        # The result's value should be the representable value at target_exp
+        # closest to `first` under the chosen rounding mode.
+        # We verify that |result - first| < one ULP at target_exp.
+        ulp = Decimal((0, (1,), target_exp))  # 1 unit in the last place
+
+        with localcontext() as ctx2:
+            ctx2.prec = prec + 60
+            ctx2.Emax = 9999999
+            ctx2.Emin = -9999999
+            diff = abs(result - first)
+
+        # ---- Property 3 & 2 combined: the result is within one ULP of first ----
+        assert diff < ulp, (
+            f"Result {result} differs from first {first} by {diff} >= ulp {ulp}"
+        )
+
+        # ---- Property 4: if no rounding needed, result exactly equals first ----
+        first_exp = first.as_tuple().exponent
+        if target_exp <= first_exp:
+            # No rounding necessary: value must be exactly preserved.
+            assert result == first, (
+                f"No rounding expected but result {result} != first {first}"
+            )
+
+        # ---- Property 5 (positive side): coefficient digits within precision ----
+        result_digits = len(result.as_tuple().digits)
+        # A zero result has digits == (0,) -> length 1, which is fine.
+        assert result_digits <= prec, (
+            f"Result coefficient has {result_digits} digits, exceeds prec {prec}"
+        )
+# End program

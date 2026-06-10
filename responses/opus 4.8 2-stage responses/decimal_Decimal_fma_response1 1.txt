@@ -1,0 +1,9 @@
+1. The result of `self.fma(other, third)` should equal `self * other + third` when computed with sufficient precision (i.e., the fused operation matches the mathematically expected value).
+
+2. When `third` is zero, `self.fma(other, 0)` should equal `self * other`.
+
+3. When `other` is zero, `self.fma(0, third)` should equal `third`.
+
+4. When `other` is one, `self.fma(1, third)` should equal `self + third`.
+
+5. The fused multiply-add can differ from the separately-rounded computation `(self * other) + third` because the intermediate product is not rounded, so for cases where rounding the product would lose precision, `self.fma(other, third)` should be at least as accurate as the separate computation.

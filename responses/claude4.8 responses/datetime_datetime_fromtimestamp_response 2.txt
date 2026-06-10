@@ -1,0 +1,66 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromtimestamp(timestamp, tz)`:
+
+1. **Timestamp generation**: Use `st.floats()` constrained to a safe portable range. The documentation notes that platform support is "commonly restricted to years 1970 through 2038." To stay portable and avoid `OverflowError`/`OSError` (which are platform-dependent and not the focus of the property), we restrict timestamps to roughly `0` to `2**31 - 1` seconds (covering 1970–2038). We exclude NaN, infinity, and subnormals to keep values meaningful. We also include negative-adjacent and boundary edge cases naturally via the float range.
+
+2. **Timezone generation**: We use `st.one_of()` to pick between `None` (producing naive datetimes) and a fixed-offset `timezone` instance (a concrete `tzinfo` subclass). Offsets are drawn across the full valid range (`-24h` to `+24h`, exclusive of endpoints) to exercise aware-datetime conversions.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Return type**: The result is always a `datetime` instance.
+2. **Naive vs aware**: If `tz is None`, the returned datetime must be naive (`tzinfo is None`). If `tz is not None`, the returned datetime must be aware with `tzinfo == tz`.
+3. **Round-trip consistency**: Calling `.timestamp()` on the result should recover the original timestamp (within floating-point tolerance). For naive datetimes this uses local time; for aware datetimes it's well-defined.
+4. **Fold attribute**: Per the 3.6 change note, `fold` must be either `0` or `1`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta
+
+# Summary: Generate timestamps as finite floats in the portable range [0, 2**31)
+# (years ~1970-2038) to avoid platform OverflowError/OSError, and pick tz as either
+# None (naive) or a fixed-offset timezone (aware) with offsets in (-24h, +24h).
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp = data.draw(
+        st.floats(
+            min_value=0,
+            max_value=2**31 - 1,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        )
+    )
+    tz = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-(24 * 60 - 1), max_value=24 * 60 - 1).map(
+                lambda m: timezone(timedelta(minutes=m))
+            ),
+        )
+    )
+
+    result = datetime.fromtimestamp(timestamp, tz)
+
+    # Property 1: result is always a datetime instance
+    assert isinstance(result, datetime)
+
+    # Property 2: naive vs aware depending on tz
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is not None
+        assert result.tzinfo == tz
+
+    # Property 4: fold must be 0 or 1
+    assert result.fold in (0, 1)
+
+    # Property 3: round-trip consistency within float tolerance
+    recovered = result.timestamp()
+    assert abs(recovered - timestamp) <= 1.0
+# End program
+```

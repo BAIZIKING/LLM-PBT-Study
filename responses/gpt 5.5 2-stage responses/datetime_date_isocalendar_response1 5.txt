@@ -1,0 +1,9 @@
+1. The result has three components named `year`, `week`, and `weekday`.
+
+2. The `weekday` value is always in the range `1` through `7`, where Monday is `1` and Sunday is `7`.
+
+3. The `week` value is always in the range `1` through `53`.
+
+4. Dates from Monday through Sunday of the same ISO week all produce the same `year` and `week`, with `weekday` increasing from `1` to `7`.
+
+5. The ISO `year` may differ from the Gregorian year only for dates near the beginning or end of a Gregorian year, according to the rule that ISO week 1 is the first week containing a Thursday.

@@ -1,0 +1,9 @@
+1. Each clique in the output is a list of nodes that all exist in G, and every pair of distinct nodes within the same clique is connected by an edge in G (i.e., each output list is a genuine complete subgraph/clique).
+
+2. Each clique in the output is maximal, meaning no other node in G is adjacent to all nodes of the clique; adding any other node would break the completeness property.
+
+3. When the `nodes` argument is provided (and forms a valid clique), every clique in the output contains all of the nodes in `nodes`; conversely, when `nodes` is None, the set of cliques returned covers all maximal cliques such that every node in G appears in at least one clique (assuming no isolated handling differences).
+
+4. The size of the largest clique returned equals the clique number of the graph, and no returned clique exceeds this size; for the full enumeration (nodes=None), the collection of cliques is exactly the set of all maximal cliques (no duplicates, none missing).
+
+5. If the `nodes` argument is provided but does not itself form a clique in G, the function raises a ValueError.

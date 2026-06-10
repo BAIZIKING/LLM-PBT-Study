@@ -1,0 +1,88 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromordinal(ordinal)`, I'll use `st.integers()`. The key edge cases come from the documented constraint `1 <= ordinal <= datetime.max.toordinal()`:
+
+- **Valid range boundaries**: The minimum valid ordinal (`1`) and the maximum valid ordinal (`datetime.max.toordinal()`).
+- **Below range**: Values `<= 0` (including `0`, negative numbers) should raise `ValueError`.
+- **Above range**: Values greater than `datetime.max.toordinal()` should raise `ValueError`.
+- **Typical interior values**: Random ordinals within the valid range.
+
+I'll use `st.integers()` (unbounded) so Hypothesis can generate values across, below, and above the valid range, ensuring both the success path and the error path are exercised. I compute `datetime.max.toordinal()` to determine validity.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **ValueError outside range**: If `ordinal < 1` or `ordinal > datetime.max.toordinal()`, a `ValueError` must be raised.
+2. **Valid construction**: For valid ordinals, `fromordinal` returns a `datetime`.
+3. **Zeroed time fields**: For valid ordinals, the result's `hour`, `minute`, `second`, and `microsecond` are all `0`, and `tzinfo` is `None`.
+4. **Round-trip consistency**: For valid ordinals, `result.toordinal()` equals the original `ordinal` (January 1 of year 1 maps to ordinal 1).
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate unbounded integers so values fall below, within, and above
+# the valid range [1, datetime.max.toordinal()]. Check ValueError for out-of-range
+# inputs, and for valid inputs verify the returned datetime has zeroed time fields,
+# tzinfo None, and round-trips back to the original ordinal.
+@given(st.data())
+def test_datetime_datetime_fromordinal():
+    ordinal = st.data().draw(st.integers()) if False else None  # placeholder, see below
+    data = _data
+    ordinal = data.draw(st.integers())
+
+    max_ordinal = datetime.max.toordinal()
+
+    if ordinal < 1 or ordinal > max_ordinal:
+        try:
+            datetime.fromordinal(ordinal)
+            assert False, f"Expected ValueError for out-of-range ordinal {ordinal}"
+        except ValueError:
+            pass
+    else:
+        result = datetime.fromordinal(ordinal)
+        assert isinstance(result, datetime)
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+        assert result.tzinfo is None
+        assert result.toordinal() == ordinal
+# End program
+```
+
+Let me provide a clean, correct version following the required format properly:
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate unbounded integers via st.data().draw so values fall below,
+# within, and above the valid range [1, datetime.max.toordinal()]. Assert ValueError
+# for out-of-range inputs; for valid inputs verify the returned datetime has zeroed
+# time fields, tzinfo None, and round-trips back to the original ordinal.
+@given(st.data())
+def test_datetime_datetime_fromordinal(data):
+    ordinal = data.draw(st.integers())
+    max_ordinal = datetime.max.toordinal()
+
+    if ordinal < 1 or ordinal > max_ordinal:
+        try:
+            datetime.fromordinal(ordinal)
+            assert False, f"Expected ValueError for out-of-range ordinal {ordinal}"
+        except ValueError:
+            pass
+    else:
+        result = datetime.fromordinal(ordinal)
+        assert isinstance(result, datetime)
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+        assert result.tzinfo is None
+        assert result.toordinal() == ordinal
+# End program
+```

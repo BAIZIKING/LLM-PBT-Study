@@ -1,0 +1,132 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+
+
+ROUNDING_MODES = [
+    decimal.ROUND_CEILING,
+    decimal.ROUND_FLOOR,
+    decimal.ROUND_UP,
+    decimal.ROUND_DOWN,
+    decimal.ROUND_HALF_UP,
+    decimal.ROUND_HALF_DOWN,
+    decimal.ROUND_HALF_EVEN,
+]
+
+
+def finite_decimal_strategy():
+    return st.decimals(
+        min_value=decimal.Decimal("-999999"),
+        max_value=decimal.Decimal("999999"),
+        places=st.integers(min_value=0, max_value=6),
+        allow_nan=False,
+        allow_infinity=False,
+    )
+
+
+@given(st.data())
+def test_decimal_Decimal_quantize_result_exponent_matches_exp(data):
+    x = data.draw(finite_decimal_strategy())
+    exp_exponent = data.draw(st.integers(min_value=-6, max_value=6))
+    exp = decimal.Decimal(1).scaleb(exp_exponent)
+
+    ctx = decimal.Context(prec=30, Emin=-50, Emax=50)
+    ctx.traps[decimal.InvalidOperation] = False
+
+    result = x.quantize(exp, context=ctx)
+
+    if not ctx.flags[decimal.InvalidOperation]:
+        assert result.as_tuple().exponent == exp.as_tuple().exponent
+
+
+@given(st.data())
+def test_decimal_Decimal_quantize_numerically_equals_independent_rounding(data):
+    x = data.draw(finite_decimal_strategy())
+    exp_exponent = data.draw(st.integers(min_value=-6, max_value=6))
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+
+    exp = decimal.Decimal(1).scaleb(exp_exponent)
+
+    ctx = decimal.Context(prec=40, Emin=-50, Emax=50)
+    ctx.traps[decimal.InvalidOperation] = False
+
+    result = x.quantize(exp, rounding=rounding, context=ctx)
+
+    if not ctx.flags[decimal.InvalidOperation]:
+        with decimal.localcontext(decimal.Context(prec=60, Emin=-100, Emax=100)):
+            expected = x.scaleb(-exp_exponent).to_integral_value(rounding=rounding).scaleb(exp_exponent)
+
+        assert result == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_quantize_explicit_rounding_overrides_context_rounding(data):
+    integer_part = data.draw(st.integers(min_value=0, max_value=1000))
+    exp_exponent = data.draw(st.integers(min_value=-6, max_value=6))
+
+    quantum = decimal.Decimal(1).scaleb(exp_exponent)
+
+    with decimal.localcontext(decimal.Context(prec=50, Emin=-100, Emax=100)):
+        x = (decimal.Decimal(integer_part) + decimal.Decimal("0.1")).scaleb(exp_exponent)
+
+    ctx = decimal.Context(prec=30, Emin=-50, Emax=50, rounding=decimal.ROUND_DOWN)
+    ctx.traps[decimal.InvalidOperation] = False
+
+    explicit_result = x.quantize(quantum, rounding=decimal.ROUND_UP, context=ctx)
+    context_result = x.quantize(quantum, context=ctx)
+
+    assert not explicit_result.is_nan()
+    assert explicit_result == x.quantize(
+        quantum,
+        rounding=decimal.ROUND_UP,
+        context=decimal.Context(prec=30, Emin=-50, Emax=50),
+    )
+    assert context_result == x.quantize(
+        quantum,
+        rounding=decimal.ROUND_DOWN,
+        context=decimal.Context(prec=30, Emin=-50, Emax=50),
+    )
+    assert explicit_result != context_result
+
+
+@given(st.data())
+def test_decimal_Decimal_quantize_signals_invalid_operation_if_coefficient_exceeds_precision(data):
+    precision = data.draw(st.integers(min_value=1, max_value=10))
+    sign = data.draw(st.sampled_from([1, -1]))
+
+    x = decimal.Decimal(sign * (10 ** precision))
+    exp = decimal.Decimal("1")
+
+    ctx = decimal.Context(prec=precision, Emin=-50, Emax=50)
+    ctx.traps[decimal.InvalidOperation] = False
+
+    result = x.quantize(exp, context=ctx)
+
+    assert ctx.flags[decimal.InvalidOperation]
+    assert result.is_nan()
+
+
+@given(st.data())
+def test_decimal_Decimal_quantize_never_signals_underflow_for_subnormal_inexact_result(data):
+    precision = data.draw(st.integers(min_value=2, max_value=6))
+    emin = data.draw(st.integers(min_value=-20, max_value=-2))
+    emax = data.draw(st.integers(min_value=2, max_value=20))
+
+    ctx = decimal.Context(prec=precision, Emin=emin, Emax=emax)
+    ctx.traps[decimal.Underflow] = True
+    ctx.traps[decimal.InvalidOperation] = True
+
+    etiny = ctx.Etiny()
+    exp = decimal.Decimal(1).scaleb(etiny)
+
+    with decimal.localcontext(decimal.Context(prec=50, Emin=-100, Emax=100)):
+        x = decimal.Decimal("1.1").scaleb(etiny)
+
+    result = x.quantize(exp, context=ctx)
+
+    assert result.is_subnormal(context=ctx)
+    assert ctx.flags[decimal.Inexact]
+    assert ctx.flags[decimal.Rounded]
+    assert not ctx.flags[decimal.Underflow]
+# End program
+```

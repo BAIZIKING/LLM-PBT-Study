@@ -1,0 +1,228 @@
+```python
+from hypothesis import given, strategies as st, assume, settings
+import hypothesis.extra.pandas as pdst
+import pandas
+import numpy as np
+import math
+
+
+# Strategy for "safe" values that avoid overflow and NaN-comparison weirdness.
+# We use small bounded integers, bounded floats, and short strings.
+def column_values_strategies():
+    int_strat = st.integers(min_value=-1000, max_value=1000)
+    float_strat = st.floats(
+        min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+    )
+    # floats that may include NaN (for na_position tests)
+    float_nan_strat = st.floats(
+        min_value=-1e6, max_value=1e6, allow_nan=True, allow_infinity=False
+    )
+    str_strat = st.text(alphabet="abcdeABCDE", min_size=0, max_size=3)
+    return int_strat, float_strat, float_nan_strat, str_strat
+
+
+def dataframe_strategy(draw, allow_nan=False):
+    """Generate a DataFrame with named columns of mixed but consistent dtypes."""
+    int_strat, float_strat, float_nan_strat, str_strat = column_values_strategies()
+
+    n_cols = draw(st.integers(min_value=1, max_value=4))
+    n_rows = draw(st.integers(min_value=0, max_value=30))
+
+    col_names = ["col%d" % i for i in range(n_cols)]
+    data = {}
+    for name in col_names:
+        which = draw(st.sampled_from(["int", "float", "str"]))
+        if which == "int":
+            elem = int_strat
+        elif which == "float":
+            elem = float_nan_strat if allow_nan else float_strat
+        else:
+            elem = str_strat
+        col = draw(st.lists(elem, min_size=n_rows, max_size=n_rows))
+        data[name] = col
+
+    df = pandas.DataFrame(data, columns=col_names)
+    return df, col_names
+
+
+def is_sorted(values, ascending, na_position):
+    """Check that a list of values is sorted, with NaNs grouped per na_position."""
+    # Separate NaNs from non-NaNs
+    def is_nan(v):
+        return isinstance(v, float) and math.isnan(v)
+
+    non_nan = [v for v in values if not is_nan(v)]
+    nan_count = len(values) - len(non_nan)
+
+    # Check NaN placement
+    if na_position == "first":
+        if values[:nan_count] != values[:nan_count]:  # always true placeholder
+            pass
+        if not all(is_nan(v) for v in values[:nan_count]):
+            return False
+        if any(is_nan(v) for v in values[nan_count:]):
+            return False
+    else:  # last
+        if nan_count > 0:
+            if not all(is_nan(v) for v in values[len(values) - nan_count:]):
+                return False
+            if any(is_nan(v) for v in values[: len(values) - nan_count]):
+                return False
+
+    # Check non-NaN ordering
+    for a, b in zip(non_nan, non_nan[1:]):
+        if ascending:
+            if a > b:
+                return False
+        else:
+            if a < b:
+                return False
+    return True
+
+
+def row_multiset(df):
+    """Return a sorted list of row tuples (with NaN normalized) for multiset comparison."""
+    def norm(v):
+        if isinstance(v, float) and math.isnan(v):
+            return ("__NAN__",)
+        return v
+
+    rows = [tuple(norm(v) for v in row) for row in df.itertuples(index=False, name=None)]
+    return sorted(rows, key=lambda r: repr(r))
+
+
+# ---------------------------------------------------------------------------
+# Property 1: Length and content (multiset) preservation
+# ---------------------------------------------------------------------------
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values_content_preservation(data):
+    df, col_names = dataframe_strategy(data.draw, allow_nan=True)
+    by = data.draw(st.lists(st.sampled_from(col_names), min_size=1,
+                            max_size=len(col_names), unique=True))
+
+    result = df.sort_values(by=by)
+
+    assert result.shape == df.shape
+    assert list(result.columns) == list(df.columns)
+    assert row_multiset(result) == row_multiset(df)
+
+
+# ---------------------------------------------------------------------------
+# Property 2: Sortedness of the `by` column(s)
+# ---------------------------------------------------------------------------
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values_sortedness(data):
+    df, col_names = dataframe_strategy(data.draw, allow_nan=False)
+    by = data.draw(st.lists(st.sampled_from(col_names), min_size=1,
+                            max_size=len(col_names), unique=True))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    result = df.sort_values(by=by, ascending=ascending, na_position=na_position)
+
+    # Primary check: the first by-column must be ordered overall.
+    first_col = result[by[0]].tolist()
+    assert is_sorted(first_col, ascending, na_position)
+
+    # For tie groups in the first column, subsequent columns must be ordered.
+    # Verify lexicographic ordering across all by-columns.
+    keys = [tuple(result[c].iloc[i] for c in by) for i in range(len(result))]
+    for k1, k2 in zip(keys, keys[1:]):
+        # Compare element-wise lexicographically respecting ascending.
+        for a, b in zip(k1, k2):
+            a_nan = isinstance(a, float) and math.isnan(a)
+            b_nan = isinstance(b, float) and math.isnan(b)
+            if a_nan or b_nan:
+                # NaN handling delegated to first-col check; skip strict compare
+                break
+            if a == b:
+                continue
+            if ascending:
+                assert a <= b
+            else:
+                assert a >= b
+            break
+
+
+# ---------------------------------------------------------------------------
+# Property 3: NaN placement
+# ---------------------------------------------------------------------------
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values_nan_placement(data):
+    df, col_names = dataframe_strategy(data.draw, allow_nan=True)
+    by_col = data.draw(st.sampled_from(col_names))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    result = df.sort_values(by=by_col, ascending=ascending,
+                            na_position=na_position)
+
+    col = result[by_col].tolist()
+    nan_mask = [isinstance(v, float) and math.isnan(v) for v in col]
+    nan_count = sum(nan_mask)
+
+    if nan_count > 0:
+        if na_position == "first":
+            assert all(nan_mask[:nan_count]), "NaNs should be at the beginning"
+            assert not any(nan_mask[nan_count:])
+        else:
+            n = len(col)
+            assert all(nan_mask[n - nan_count:]), "NaNs should be at the end"
+            assert not any(nan_mask[: n - nan_count])
+
+
+# ---------------------------------------------------------------------------
+# Property 4: Index labeling with ignore_index
+# ---------------------------------------------------------------------------
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values_ignore_index(data):
+    df, col_names = dataframe_strategy(data.draw, allow_nan=False)
+    by = data.draw(st.lists(st.sampled_from(col_names), min_size=1,
+                            max_size=len(col_names), unique=True))
+    ignore_index = data.draw(st.booleans())
+
+    result = df.sort_values(by=by, ignore_index=ignore_index)
+
+    if ignore_index:
+        assert list(result.index) == list(range(len(result)))
+    else:
+        # Original index labels preserved (just reordered).
+        assert sorted(result.index.tolist()) == sorted(df.index.tolist())
+
+
+# ---------------------------------------------------------------------------
+# Property 5: inplace return behavior and idempotence
+# ---------------------------------------------------------------------------
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values_inplace_and_idempotence(data):
+    df, col_names = dataframe_strategy(data.draw, allow_nan=False)
+    by = data.draw(st.lists(st.sampled_from(col_names), min_size=1,
+                            max_size=len(col_names), unique=True))
+    ascending = data.draw(st.booleans())
+
+    # --- inplace=False returns a new DataFrame and leaves input unchanged ---
+    original_copy = df.copy(deep=True)
+    result = df.sort_values(by=by, ascending=ascending, inplace=False)
+    assert result is not None
+    pandas.testing.assert_frame_equal(df, original_copy)
+
+    # --- inplace=True returns None and mutates the DataFrame ---
+    df_inplace = df.copy(deep=True)
+    ret = df_inplace.sort_values(by=by, ascending=ascending, inplace=True)
+    assert ret is None
+    pandas.testing.assert_frame_equal(
+        result.reset_index(drop=True), df_inplace.reset_index(drop=True)
+    )
+
+    # --- Idempotence: sorting an already-sorted frame yields equivalent result ---
+    result2 = result.sort_values(by=by, ascending=ascending, inplace=False)
+    pandas.testing.assert_frame_equal(
+        result.reset_index(drop=True), result2.reset_index(drop=True)
+    )
+# End program
+```

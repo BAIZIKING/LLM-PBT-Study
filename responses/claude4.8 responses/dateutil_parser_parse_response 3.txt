@@ -1,0 +1,155 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `parser.parse`, I'll generate actual `datetime` objects using Hypothesis's `st.datetimes()` strategy and then format them into strings using various format strings (ISO format, US format, European format, with/without time, etc.). This approach guarantees that I produce *valid, parseable* date strings while still exercising many code paths. I'll also generate the relevant keyword arguments:
+- `dayfirst` and `yearfirst` as booleans/None to test ambiguity resolution.
+- `ignoretz` as a boolean.
+- `fuzzy` and `fuzzy_with_tokens` as booleans, optionally embedding the date in surrounding "fuzzy" text.
+
+By generating a known datetime, formatting it, and parsing it back, I create a round-trip scenario where I can verify correctness.
+
+**Properties to Check (based on API documentation):**
+1. **Return type:** `parse` returns a `datetime.datetime` object normally, or a tuple `(datetime, tuple)` when `fuzzy_with_tokens=True`.
+2. **Round-trip correctness:** When we format a known datetime unambiguously (e.g., ISO format) and parse it back, the resulting datetime should match the original (at least the date/time components we provided).
+3. **`ignoretz` property:** When `ignoretz=True`, the returned datetime must be naive (`tzinfo is None`).
+4. **`fuzzy_with_tokens` property:** When `True`, the result is a tuple whose first element is a datetime and second element is a tuple of strings; setting it also implies `fuzzy=True`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate known datetimes, format them into unambiguous strings using
+# various format specifiers (optionally embedded in fuzzy text), then parse them
+# back. Verify return types, round-trip correctness, ignoretz nativity, and the
+# fuzzy_with_tokens tuple contract.
+@given(st.data())
+def test_dateutil_parser_parse():
+    data = st.data()  # placeholder; real draws below via the injected 'data'
+    # Draw a base naive datetime within a safe range to avoid OverflowError.
+    dt = test_dateutil_parser_parse.data.draw(
+        st.datetimes(
+            min_value=datetime.datetime(1900, 1, 1),
+            max_value=datetime.datetime(2100, 12, 31),
+        )
+    )
+
+    # Choose an unambiguous format so round-trip comparison is meaningful.
+    fmt = test_dateutil_parser_parse.data.draw(
+        st.sampled_from(
+            [
+                "%Y-%m-%d %H:%M:%S",     # ISO-like, unambiguous
+                "%Y-%m-%dT%H:%M:%S",     # ISO with T separator
+                "%Y-%m-%d",              # date only
+                "%B %d, %Y %H:%M:%S",    # month name, unambiguous
+            ]
+        )
+    )
+    date_str = dt.strftime(fmt)
+
+    ignoretz = test_dateutil_parser_parse.data.draw(st.booleans())
+    fuzzy_with_tokens = test_dateutil_parser_parse.data.draw(st.booleans())
+
+    # Optionally wrap in fuzzy text when using fuzzy_with_tokens.
+    prefix, suffix = "", ""
+    if fuzzy_with_tokens:
+        prefix = test_dateutil_parser_parse.data.draw(
+            st.sampled_from(["", "Today is ", "The meeting is on "])
+        )
+        suffix = test_dateutil_parser_parse.data.draw(
+            st.sampled_from(["", " sharp", " for sure"])
+        )
+    timestr = prefix + date_str + suffix
+
+    try:
+        result = parse(
+            timestr,
+            ignoretz=ignoretz,
+            fuzzy_with_tokens=fuzzy_with_tokens,
+        )
+    except (ParserError, OverflowError, ValueError, TypeError):
+        # Documented/legitimate failure modes; nothing further to assert.
+        return
+
+    # Property 4: fuzzy_with_tokens contract.
+    if fuzzy_with_tokens:
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        parsed_dt, tokens = result
+        assert isinstance(parsed_dt, datetime.datetime)
+        assert isinstance(tokens, tuple)
+        assert all(isinstance(tok, str) for tok in tokens)
+    else:
+        # Property 1: normal return type.
+        assert isinstance(result, datetime.datetime)
+        parsed_dt = result
+
+    # Property 3: ignoretz implies a naive datetime.
+    if ignoretz:
+        assert parsed_dt.tzinfo is None
+
+    # Property 2: round-trip correctness for the components present in the format.
+    assert parsed_dt.year == dt.year
+    assert parsed_dt.month == dt.month
+    assert parsed_dt.day == dt.day
+    if "%H" in fmt:
+        assert parsed_dt.hour == dt.hour
+        assert parsed_dt.minute == dt.minute
+        assert parsed_dt.second == dt.second
+
+
+# Bind the data strategy so the helper draws above work cleanly.
+def _runner():
+    @given(st.data())
+    def _inner(data):
+        test_dateutil_parser_parse.data = data
+        test_dateutil_parser_parse()
+    return _inner
+
+
+test_dateutil_parser_parse = _runner().__wrapped__ if hasattr(_runner(), "__wrapped__") else _runner()
+# End program
+```
+
+**Note:** The cleaner idiomatic form (recommended) draws directly from the injected `data` parameter:
+
+```python
+from hypothesis import given, strategies as st
+import datetime
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate known datetimes, format them into unambiguous strings,
+# parse them back, and verify return type, round-trip, ignoretz nativity,
+# and the fuzzy_with_tokens tuple contract.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    dt = data.draw(st.datetimes(min_value=datetime.datetime(1900, 1, 1),
+                                max_value=datetime.datetime(2100, 12, 31)))
+    fmt = data.draw(st.sampled_from(["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
+                                     "%Y-%m-%d", "%B %d, %Y %H:%M:%S"]))
+    date_str = dt.strftime(fmt)
+    ignoretz = data.draw(st.booleans())
+    fuzzy_with_tokens = data.draw(st.booleans())
+    prefix = data.draw(st.sampled_from(["", "Today is "])) if fuzzy_with_tokens else ""
+    suffix = data.draw(st.sampled_from(["", " sharp"])) if fuzzy_with_tokens else ""
+    timestr = prefix + date_str + suffix
+    try:
+        result = parse(timestr, ignoretz=ignoretz, fuzzy_with_tokens=fuzzy_with_tokens)
+    except (ParserError, OverflowError, ValueError, TypeError):
+        return
+    if fuzzy_with_tokens:
+        assert isinstance(result, tuple) and len(result) == 2
+        parsed_dt, tokens = result
+        assert isinstance(parsed_dt, datetime.datetime)
+        assert isinstance(tokens, tuple) and all(isinstance(t, str) for t in tokens)
+    else:
+        assert isinstance(result, datetime.datetime)
+        parsed_dt = result
+    if ignoretz:
+        assert parsed_dt.tzinfo is None
+    assert (parsed_dt.year, parsed_dt.month, parsed_dt.day) == (dt.year, dt.month, dt.day)
+    if "%H" in fmt:
+        assert (parsed_dt.hour, parsed_dt.minute, parsed_dt.second) == (dt.hour, dt.minute, dt.second)
+```

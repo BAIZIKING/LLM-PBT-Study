@@ -1,0 +1,9 @@
+1. The returned `flow_value` equals the net flow leaving the source `_s` and also equals the net flow entering the sink `_t` as represented in `flow_dict`.
+
+2. For every edge `(u, v)` in the input graph, the corresponding flow value in `flow_dict[u][v]` is nonnegative and does not exceed that edge’s capacity, treating missing capacity attributes as infinite.
+
+3. For every node other than `_s` and `_t`, flow is conserved: total incoming flow equals total outgoing flow according to `flow_dict`.
+
+4. The returned flow is maximal: its `flow_value` is equal to the value returned by `maximum_flow_value(flowG, _s, _t, capacity=capacity, ...)` for the same graph and parameters.
+
+5. If all finite edge capacities are integers, then all flow values in `flow_dict` and the returned `flow_value` are integers.

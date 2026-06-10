@@ -1,0 +1,9 @@
+1. The output is always a string (type `str`).
+
+2. For any input string that contains no character references (no `&` followed by a valid named/numeric reference), the output equals the input unchanged (idempotent on reference-free strings).
+
+3. Applying `unescape` to its own output produces the same result as applying it once, provided the output contains no remaining valid references (idempotence in the typical case).
+
+4. The output length is always less than or equal to the input length, since each character reference (which is multiple characters) is replaced by one or more—but typically fewer—Unicode characters, and references are never expanded into more characters than they occupied.
+
+5. Known specific references map to their defined Unicode characters: e.g. `&gt;`, `&#62;`, and `&#x3e;` all unescape to `>`, and equivalent numeric/named/hex forms of the same code point produce identical output.

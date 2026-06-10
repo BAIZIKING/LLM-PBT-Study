@@ -1,0 +1,11 @@
+Here are five properties of `numpy.linalg.norm`'s output suitable for property-based testing:
+
+1. **Non-negativity:** For any real-valued input and any valid `ord` corresponding to a true norm (e.g., `None`, `'fro'`, `'nuc'`, positive even `ord`, `inf`), the output is always non-negative (≥ 0).
+
+2. **Zero vector/matrix gives zero norm:** When the input `x` consists entirely of zeros, the resulting norm is exactly 0 (for any norm order), and conversely a nonzero input with a genuine norm gives a strictly positive result.
+
+3. **Absolute homogeneity (scaling):** For a scalar `c`, the norm of `c * x` equals `abs(c)` times the norm of `x`, i.e., `norm(c * x, ord) == abs(c) * norm(x, ord)` (within floating-point tolerance), for norm-type `ord` values.
+
+4. **Triangle inequality (subadditivity):** For two inputs `x` and `y` of the same shape and a valid norm order, `norm(x + y, ord) <= norm(x, ord) + norm(y, ord)` (within floating-point tolerance).
+
+5. **Consistency with axis/keepdims and equivalence to ravel default:** With `axis=None` and `ord=None`, the output equals the 2-norm of `x.ravel()`; and when `keepdims=True`, the output's shape matches the input shape with the normed axes reduced to size 1 (so it broadcasts against `x`), while its values match the `keepdims=False` result.

@@ -1,0 +1,9 @@
+1. The output DataFrame has the same shape (same number of rows and columns) as the input DataFrame, and contains exactly the same set of rows (the operation is a permutation of rows, preserving all data values and column labels).
+
+2. The values in the column(s) specified by `by` are sorted according to the `ascending` parameter (non-decreasing when True, non-increasing when False), with NaN values positioned according to `na_position` (at the beginning if 'first', at the end if 'last').
+
+3. When sorting by multiple columns, the rows are ordered lexicographically: ties in earlier columns of `by` are broken by the ordering of subsequent columns in `by`, each respecting its corresponding `ascending` value.
+
+4. When `inplace=True`, the function returns None and the original DataFrame is modified to be sorted; when `inplace=False`, the function returns a new sorted DataFrame and leaves the original DataFrame unchanged.
+
+5. When `ignore_index=True`, the resulting DataFrame's index is exactly the default RangeIndex 0, 1, ..., n-1; when `ignore_index=False`, the original index labels are preserved and reordered along with their corresponding rows.

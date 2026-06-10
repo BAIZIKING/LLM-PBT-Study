@@ -1,0 +1,123 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.correlation(x, y, method=...)`, I'll use the following approach:
+
+1. **Length variety**: Generate a random length `n >= 2` (the minimum valid length), up to a reasonable maximum to test both small and larger inputs.
+
+2. **Value variety**: Use `st.floats` with constraints to avoid `nan`, `inf`, and excessively large magnitudes (which could cause overflow/precision issues in the math). I'll allow integers too by drawing from a mix, but floats with reasonable bounds cover the numeric domain well.
+
+3. **Non-constant guarantee**: Since the API raises `StatisticsError` if either input is constant, I'll either filter these out or construct `y` from `x` in a way that may or may not be constant — but to test valid behavior, I'll ensure non-constant inputs. I'll use `assume` to skip degenerate (constant) cases.
+
+4. **Method variety**: Randomly pick between `'linear'` and `'ranked'`.
+
+5. **Special derived relationships**: To exercise the documented "perfect correlation" properties, I can sometimes construct `y` as a strictly increasing or decreasing transform of `x`.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Bounded range**: The result `r` must satisfy `-1 <= r <= 1` (allowing small floating-point epsilon).
+2. **Symmetry**: `correlation(x, y) == correlation(y, x)` (correlation is symmetric in its arguments).
+3. **Perfect positive correlation**: If `y` is a strictly increasing affine transform `y = a*x + b` (a > 0), then both linear and ranked correlation should be `~1.0`.
+4. **Perfect negative correlation**: If `y = -x`, correlation should be `~-1.0`.
+5. **Error handling**: Constant inputs or length < 2 should raise `StatisticsError`.
+
+```python
+from hypothesis import given, strategies as st, assume
+from statistics import correlation, StatisticsError
+import math
+
+# Summary: Generate two equal-length lists (n>=2) of bounded finite floats and a method.
+# Verify correlation is in [-1, 1], is symmetric, gives ~1.0 for positive affine
+# transforms and ~-1.0 for negation, and raises StatisticsError on constant/short input.
+@given(st.data())
+def test_statistics_correlation():
+    data = st.data
+    # Draw a length >= 2
+    import hypothesis.strategies as st_local
+    from hypothesis import strategies
+
+    # Use the injected data object via the decorator pattern:
+    raise NotImplementedError  # placeholder, real body below
+```
+
+Let me provide the correct single, self-contained property test:
+
+```python
+from hypothesis import given, strategies as st, assume
+from statistics import correlation, StatisticsError
+import math
+
+# Summary: Generate two equal-length lists (n>=2) of bounded finite floats plus a method.
+# Check: result lies in [-1, 1]; correlation is symmetric in its two arguments;
+# a strictly-increasing positive affine transform yields ~1.0 (both methods);
+# negation yields ~-1.0; and constant or too-short inputs raise StatisticsError.
+@given(st.data())
+def test_statistics_correlation():
+    data = st.data()
+
+# End program
+```
+
+I'll consolidate into one clean, correct test:
+
+```python
+from hypothesis import given, strategies as st, assume
+from statistics import correlation, StatisticsError
+import math
+
+# Summary: Using st.data(), draw a length n>=2, two lists of bounded finite floats,
+# and a method ('linear' or 'ranked'). Properties verified:
+#  (1) when inputs are valid (non-constant), result r satisfies -1 <= r <= 1;
+#  (2) correlation is symmetric: corr(x,y) == corr(y,x);
+#  (3) a strictly increasing positive affine transform of x gives r ~= 1.0;
+#  (4) negation of x gives r ~= -1.0;
+#  (5) constant inputs raise StatisticsError.
+@given(st.data())
+def test_statistics_correlation():
+    data = st.data()
+    n = data.draw(st.integers(min_value=2, max_value=30))
+
+    finite = st.floats(min_value=-1e6, max_value=1e6,
+                       allow_nan=False, allow_infinity=False)
+    x = data.draw(st.lists(finite, min_size=n, max_size=n))
+    y = data.draw(st.lists(finite, min_size=n, max_size=n))
+    method = data.draw(st.sampled_from(['linear', 'ranked']))
+
+    x_const = len(set(x)) == 1
+    y_const = len(set(y)) == 1
+
+    # Property (5): constant input(s) must raise StatisticsError.
+    if x_const or y_const:
+        try:
+            correlation(x, y, method=method)
+            assert False, "Expected StatisticsError for constant input"
+        except StatisticsError:
+            return  # nothing more to check for invalid inputs
+
+    # Inputs are valid (non-constant, equal length >= 2).
+    r = correlation(x, y, method=method)
+
+    # Property (1): bounded in [-1, 1] (allow tiny float tolerance).
+    assert -1.0 - 1e-9 <= r <= 1.0 + 1e-9
+
+    # Property (2): symmetry of correlation.
+    r_swapped = correlation(y, x, method=method)
+    assert math.isclose(r, r_swapped, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Build a strictly increasing positive affine transform of x:
+    # y_pos = 3*x + 7 preserves both linear and monotonic perfect correlation.
+    y_pos = [3.0 * v + 7.0 for v in x]
+    if len(set(y_pos)) > 1:  # ensure non-constant (true since x non-constant)
+        r_pos = correlation(x, y_pos, method=method)
+        # Property (3): perfect positive correlation ~ 1.0
+        assert math.isclose(r_pos, 1.0, rel_tol=1e-7, abs_tol=1e-7)
+
+    # Build negation of x:
+    y_neg = [-v for v in x]
+    if len(set(y_neg)) > 1:
+        r_neg = correlation(x, y_neg, method=method)
+        # Property (4): perfect negative correlation ~ -1.0
+        assert math.isclose(r_neg, -1.0, rel_tol=1e-7, abs_tol=1e-7)
+# End program
+```

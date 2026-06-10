@@ -1,0 +1,11 @@
+Here are five properties of the output of `statistics.correlation` suitable for property-based testing:
+
+1. **Bounded range:** The returned correlation coefficient is always a float between -1 and +1 (inclusive), for any valid input.
+
+2. **Symmetry:** Swapping the two input arguments (`correlation(x, y)` vs `correlation(y, x)`) yields the same coefficient, for both methods.
+
+3. **Perfect positive linear correlation:** When `y` is an increasing (positive-slope) affine transformation of `x` (i.e., `y = a*x + b` with `a > 0`), the result is `1.0` (for `method='linear'`), and likewise for any strictly increasing monotonic transformation when `method='ranked'`.
+
+4. **Perfect negative correlation / sign behavior:** When `y` is a decreasing affine transformation of `x` (i.e., `y = a*x + b` with `a < 0`), the result is `-1.0` for `method='linear'`; negating one input flips the sign of the linear coefficient.
+
+5. **Error on invalid inputs:** A `StatisticsError` is raised when the inputs have different lengths, when their length is less than two, or when either input is constant.

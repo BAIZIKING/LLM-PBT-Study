@@ -1,0 +1,92 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+For `datetime.fromtimestamp(timestamp, tz=None)`, I need to generate two parameters:
+
+1. **timestamp**: A POSIX timestamp (float or int). To get wide variety and edge cases:
+   - Use `st.floats()` and `st.integers()` for the timestamp value.
+   - Constrain to a safe range to avoid `OverflowError`/`OSError` on most platforms. The docs note common support is years 1970–2038, but modern platforms often support more. I'll use a conservative range (e.g., year ~1900 to ~2100) to keep tests reliable while still exercising edge cases like `0` (epoch), negative values, and fractional seconds.
+   - Include fractional parts to test sub-second precision.
+
+2. **tz**: Either `None` (naive datetime) or a `tzinfo` instance. I'll use `st.timezones()` (from `zoneinfo`) plus `timezone.utc` and fixed offsets, including `None`.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Type & naivety**: If `tz is None`, the result is a naive `datetime` (`tzinfo is None`). If `tz` is provided, the result is aware (`tzinfo is not None`).
+
+2. **Round-trip via `.timestamp()`**: `datetime.fromtimestamp(ts, tz).timestamp()` should recover the original timestamp (within floating-point tolerance). This is a strong invariant. Note: for naive datetimes near DST folds this can be ambiguous, so we allow tolerance and skip ambiguous folds.
+
+3. **`fold` validity**: `fold` is always `0` or `1` (per the 3.6 note).
+
+4. **Consistency with `tz`**: When `tz` is given, the converted datetime, when given the same tz, round-trips; and `result.utcoffset()` is not None for aware results.
+
+```python
+from hypothesis import given, strategies as st, assume
+from datetime import datetime, timezone, timedelta
+
+# Summary: Generate timestamps as ints/floats within a safe, broad range
+# (including epoch 0, negatives, and fractional seconds) and a tz that is
+# either None, UTC, fixed offsets, or a zoneinfo timezone. We then verify
+# type/naivety, fold validity, aware-ness, and round-trip via .timestamp().
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    # Conservative range to avoid platform OverflowError/OSError
+    # (~ year 1900 to year 2100 in seconds since epoch)
+    safe_min = -2208988800.0
+    safe_max = 4102444800.0
+
+    timestamp = data.draw(
+        st.one_of(
+            st.integers(min_value=int(safe_min), max_value=int(safe_max)),
+            st.floats(
+                min_value=safe_min,
+                max_value=safe_max,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+
+    tz_strategy = st.one_of(
+        st.none(),
+        st.just(timezone.utc),
+        st.integers(min_value=-23, max_value=23).map(
+            lambda h: timezone(timedelta(hours=h))
+        ),
+        st.timezones(),  # zoneinfo-based timezones
+    )
+    tz = data.draw(tz_strategy)
+
+    try:
+        result = datetime.fromtimestamp(timestamp, tz)
+    except (OverflowError, OSError, ValueError):
+        # Documented: platform may raise OverflowError/OSError out of range.
+        assume(False)
+        return
+
+    # Property 1: result is a datetime
+    assert isinstance(result, datetime)
+
+    # Property 2: naivety / awareness based on tz
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is not None
+        # Aware results must have a defined utcoffset
+        assert result.utcoffset() is not None
+
+    # Property 3: fold is always 0 or 1
+    assert result.fold in (0, 1)
+
+    # Property 4: round-trip via .timestamp() recovers the input.
+    # For naive datetimes near DST transitions this can be ambiguous;
+    # skip folded results to avoid known platform ambiguity.
+    assume(result.fold == 0)
+    recovered = result.timestamp()
+    # Sub-second precision tolerance; .timestamp() uses microsecond resolution.
+    assert abs(recovered - float(timestamp)) <= 1e-3
+# End program
+```

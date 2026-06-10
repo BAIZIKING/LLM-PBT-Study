@@ -1,0 +1,9 @@
+1. For any non-empty numeric input, the result is the arithmetic mean: the sum of all data points divided by the number of data points.
+
+2. For any non-empty real-valued input, the result lies between the minimum and maximum values of the input, inclusive.
+
+3. The result is invariant under reordering: permuting the input data does not change the mean.
+
+4. Adding a constant to every data point shifts the result by the same constant.
+
+5. Multiplying every data point by a constant multiplies the result by that same constant.

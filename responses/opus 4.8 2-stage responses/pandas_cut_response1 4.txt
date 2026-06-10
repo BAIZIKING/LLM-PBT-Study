@@ -1,0 +1,9 @@
+1. The output length always equals the input length `x` (each input value maps to exactly one bin assignment or NaN).
+
+2. When `bins` is an integer `n`, the number of resulting categories/intervals equals `n` (assuming no duplicate edges are dropped), and when `retbins=True` the returned bins array has length `n+1`.
+
+3. Any NA value in the input `x`, as well as any value falling outside the range covered by the bins, maps to NaN in the output.
+
+4. When `labels=False`, the output is an ndarray of integer bin indicators in the range `[0, number_of_bins - 1]` (with NaN for out-of-bounds/NA values), and these indices correctly correspond to the interval each value falls into according to the `right` and `include_lowest` rules.
+
+5. Each non-NaN value in `x` is assigned to a bin/interval that actually contains it, respecting the `right` boundary inclusion rule (e.g., with `right=True`, value `v` falls in interval `(a, b]` such that `a < v <= b`; with `right=False`, it falls in `[a, b)`).

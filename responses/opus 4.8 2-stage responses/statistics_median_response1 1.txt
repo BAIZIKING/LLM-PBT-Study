@@ -1,0 +1,9 @@
+1. The median is always within the range of the data, i.e., it is greater than or equal to the minimum value and less than or equal to the maximum value of the input data.
+
+2. The median is invariant under permutation of the input data; reordering or shuffling the elements does not change the returned median.
+
+3. For input data with an odd number of elements, the median is equal to one of the actual elements in the data (specifically the middle element when sorted).
+
+4. For input data with an even number of elements, the median equals the arithmetic mean of the two middle values of the sorted data.
+
+5. The median is order-equivariant under monotonic linear transformations: if every element is scaled by a positive constant and shifted by a constant (i.e., transformed as a*x + b), the median of the transformed data equals a times the original median plus b.

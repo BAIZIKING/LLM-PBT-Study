@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `statistics.linear_regression`:
+
+1. **Intercept is zero in proportional mode**: When `proportional=True`, the returned `intercept` is always exactly `0.0`, regardless of the input data.
+
+2. **Perfect fit recovery**: If the input data is generated exactly from a linear relationship `y = a * x + b` (with `b = 0` when `proportional=True`), the returned `slope` should be approximately `a` and the returned `intercept` approximately `b` (within floating-point tolerance).
+
+3. **Residual orthogonality / OLS normal equations**: For the non-proportional case, the sum of residuals `(y_i - (slope * x_i + intercept))` is approximately zero, and the sum of residuals weighted by `x_i` is approximately zero (these are the conditions that OLS minimization enforces).
+
+4. **Invariance to shifting the dependent variable (non-proportional)**: When `proportional=False`, adding a constant `c` to every `y` value leaves the `slope` unchanged and increases the `intercept` by exactly `c`.
+
+5. **Error on invalid inputs**: A `StatisticsError` is raised when the inputs have fewer than two elements, when `x` and `y` have different lengths, or when `x` is constant (all equal values).

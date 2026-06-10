@@ -1,0 +1,9 @@
+1. If the function returns normally, the returned value is a non-empty list of edges representing a closed cycle: following the edges in traversal order, the head of each edge matches the tail of the next edge, and the final edge connects back to the first.
+
+2. Every edge reported in the returned cycle exists in the input graph `G`; for multigraphs, the reported edge key must correspond to an actual edge key in `G`.
+
+3. The shape of each returned edge tuple matches the graph type and `orientation` argument: simple graphs return `(u, v)`, multigraphs return `(u, v, key)`, and when `orientation` is not `None`, an additional final element is included indicating traversal direction.
+
+4. When an orientation label is included, it is always either `"forward"` or `"reverse"`, and it correctly describes whether the edge was traversed with or against the stored direction of the edge.
+
+5. The returned cycle respects the requested traversal semantics: directed edges are followed in their original direction when `orientation` is `None` or `"original"`, in reverse when `orientation="reverse"`, and in either direction when `orientation="ignore"`.

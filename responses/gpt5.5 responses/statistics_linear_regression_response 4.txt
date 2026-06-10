@@ -1,0 +1,105 @@
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate a proportional flag plus a mix of same-length valid data, too-short data,
+# mismatched lengths, constant/zero-x edge cases, and exact-line data. Numeric values include
+# negatives, positives, zero, and large finite boundary values. Check that documented invalid
+# inputs raise StatisticsError; otherwise check the ordinary-least-squares slope/intercept
+# formulas, including intercept == 0.0 for proportional=True.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    number = st.one_of(
+        st.integers(-4_000, 4_000).map(lambda n: n / 4.0),
+        st.sampled_from([-1_000_000.0, -1.0, -0.0, 0.0, 1.0, 1_000_000.0]),
+    )
+
+    proportional = data.draw(st.booleans())
+    case = data.draw(
+        st.sampled_from(
+            ["valid_random", "valid_exact_line", "too_short", "mismatched", "constant_x"]
+        )
+    )
+
+    if case == "too_short":
+        n = data.draw(st.integers(0, 1))
+        x = data.draw(st.lists(number, min_size=n, max_size=n))
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+
+    elif case == "mismatched":
+        len_x = data.draw(st.integers(0, 8))
+        len_y = data.draw(st.integers(0, 8).filter(lambda m: m != len_x))
+        x = data.draw(st.lists(number, min_size=len_x, max_size=len_x))
+        y = data.draw(st.lists(number, min_size=len_y, max_size=len_y))
+
+    elif case == "constant_x":
+        n = data.draw(st.integers(2, 12))
+        c = 0.0 if proportional else data.draw(number)
+        x = [c] * n
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+
+    elif case == "valid_exact_line":
+        n = data.draw(st.integers(2, 12))
+        x = data.draw(st.lists(number, min_size=n, max_size=n))
+
+        if proportional:
+            if all(v == 0.0 for v in x):
+                x[0] = 1.0
+            slope0 = data.draw(number)
+            intercept0 = 0.0
+        else:
+            if len(set(x)) == 1:
+                x[0] = x[0] + 1.0
+            slope0 = data.draw(number)
+            intercept0 = data.draw(number)
+
+        y = [slope0 * v + intercept0 for v in x]
+
+    else:
+        n = data.draw(st.integers(2, 12))
+        x = data.draw(st.lists(number, min_size=n, max_size=n))
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+
+    same_length = len(x) == len(y)
+    long_enough = len(x) >= 2
+
+    if proportional:
+        # For a line constrained through the origin, the OLS denominator is sum(x*x).
+        identifiable = same_length and long_enough and any(v != 0.0 for v in x)
+    else:
+        # For ordinary simple regression, x must not be constant.
+        identifiable = same_length and long_enough and len(set(x)) > 1
+
+    if not identifiable:
+        try:
+            statistics.linear_regression(x, y, proportional=proportional)
+        except statistics.StatisticsError:
+            return
+        assert False, "invalid inputs should raise statistics.StatisticsError"
+
+    result = statistics.linear_regression(x, y, proportional=proportional)
+    slope, intercept = result
+
+    if proportional:
+        expected_slope = sum(a * b for a, b in zip(x, y)) / sum(a * a for a in x)
+        expected_intercept = 0.0
+    else:
+        xbar = sum(x) / len(x)
+        ybar = sum(y) / len(y)
+        expected_slope = (
+            sum((a - xbar) * (b - ybar) for a, b in zip(x, y))
+            / sum((a - xbar) ** 2 for a in x)
+        )
+        expected_intercept = ybar - expected_slope * xbar
+
+    assert slope == result.slope
+    assert intercept == result.intercept
+    assert math.isclose(result.slope, expected_slope, rel_tol=1e-7, abs_tol=1e-7)
+    assert math.isclose(result.intercept, expected_intercept, rel_tol=1e-7, abs_tol=1e-7)
+
+    if proportional:
+        assert result.intercept == 0.0
+
+# End program
+```

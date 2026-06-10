@@ -1,0 +1,68 @@
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+
+# Strategy for real-valued floats that avoid overflow/nan/inf issues
+finite_floats = st.floats(
+    allow_nan=False,
+    allow_infinity=False,
+    min_value=-1e6,
+    max_value=1e6,
+)
+
+# A list of at least two finite floats
+data_lists = st.lists(finite_floats, min_size=2, max_size=50)
+
+
+@given(data=data_lists)
+def test_statistics_variance_non_negative(data):
+    # Property 1: variance is always non-negative
+    result = statistics.variance(data)
+    assert result >= 0
+# End program
+
+
+@given(data=data_lists)
+def test_statistics_variance_zero_iff_constant(data):
+    # Property 2: variance is zero iff all values are identical
+    result = statistics.variance(data)
+    all_equal = all(x == data[0] for x in data)
+    if all_equal:
+        assert math.isclose(result, 0.0, abs_tol=1e-9)
+    else:
+        assert result > 0
+# End program
+
+
+@given(data=data_lists, shift=finite_floats)
+def test_statistics_variance_translation_invariant(data, shift):
+    # Property 3: variance is invariant under adding a constant
+    original = statistics.variance(data)
+    shifted = statistics.variance([x + shift for x in data])
+    # Use a relative tolerance scaled by magnitude to account for float error
+    scale = max(1.0, abs(original), abs(shift) ** 2)
+    assert math.isclose(original, shifted, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+
+
+@given(data=data_lists, factor=st.floats(
+    allow_nan=False, allow_infinity=False, min_value=-1e3, max_value=1e3))
+def test_statistics_variance_scaling(data, factor):
+    # Property 4: scaling data by c scales variance by c^2
+    original = statistics.variance(data)
+    scaled = statistics.variance([x * factor for x in data])
+    expected = original * (factor ** 2)
+    scale = max(1.0, abs(expected))
+    assert math.isclose(scaled, expected, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+
+
+@given(data=data_lists)
+def test_statistics_variance_xbar_matches(data):
+    # Property 5: passing the correct mean as xbar gives the same result
+    m = statistics.mean(data)
+    without_xbar = statistics.variance(data)
+    with_xbar = statistics.variance(data, m)
+    scale = max(1.0, abs(without_xbar))
+    assert math.isclose(without_xbar, with_xbar, rel_tol=1e-9, abs_tol=1e-9 * scale)
+# End program

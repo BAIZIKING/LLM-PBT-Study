@@ -1,0 +1,231 @@
+from hypothesis import given, strategies as st
+import datetime as dt
+
+import numpy as np
+import pandas as pd
+
+# Summary: Generates scalars, Python lists, nested lists, NumPy arrays, Indexes,
+# Series, DataFrames, and DatetimeIndexes containing ordinary values plus missing
+# sentinels such as None, np.nan, pd.NA, pd.NaT, np.datetime64("NaT"), and
+# np.timedelta64("NaT"). Checks that pd.isna returns the documented shape/type,
+# boolean masks, preserved pandas metadata, correct elementwise missingness, and
+# that pd.notna is the boolean inverse.
+
+_SAFE_DATETIME = st.datetimes(
+    min_value=dt.datetime(1700, 1, 1),
+    max_value=dt.datetime(2260, 1, 1),
+    timezones=st.none(),
+)
+
+_SAFE_DATE = st.dates(
+    min_value=dt.date(1700, 1, 1),
+    max_value=dt.date(2260, 1, 1),
+)
+
+_SAFE_TIMEDELTA = st.timedeltas(
+    min_value=dt.timedelta(days=-10_000),
+    max_value=dt.timedelta(days=10_000),
+)
+
+SCALARS = st.one_of(
+    st.none(),
+    st.just(np.nan),
+    st.just(np.float64("nan")),
+    st.just(pd.NA),
+    st.just(pd.NaT),
+    st.just(np.datetime64("NaT")),
+    st.just(np.timedelta64("NaT")),
+    st.booleans(),
+    st.integers(min_value=-10**12, max_value=10**12),
+    st.floats(allow_nan=False, allow_infinity=True, width=64),
+    st.complex_numbers(allow_nan=False, allow_infinity=True),
+    st.text(max_size=30),
+    _SAFE_DATETIME,
+    _SAFE_DATE,
+    _SAFE_TIMEDELTA,
+)
+
+FLOATS = st.floats(allow_nan=True, allow_infinity=True, width=64)
+
+
+def _is_missing_scalar(x):
+    if x is None or x is pd.NA or x is pd.NaT:
+        return True
+    if isinstance(x, type(pd.NaT)):
+        return True
+    if isinstance(x, (float, np.floating)):
+        return bool(np.isnan(x))
+    if isinstance(x, (complex, np.complexfloating)):
+        return bool(np.isnan(x.real) or np.isnan(x.imag))
+    if isinstance(x, np.datetime64):
+        return bool(np.isnat(x))
+    if isinstance(x, np.timedelta64):
+        return bool(np.isnat(x))
+    return False
+
+
+def _expected_mask(values):
+    arr = np.asarray(values, dtype=object)
+    expected = np.empty(arr.shape, dtype=bool)
+    for index in np.ndindex(arr.shape):
+        expected[index] = _is_missing_scalar(arr[index])
+    return expected
+
+
+def _draw_scalar_matrix(data, max_rows=5, max_cols=5):
+    rows = data.draw(st.integers(min_value=0, max_value=max_rows), label="rows")
+    cols = data.draw(st.integers(min_value=0, max_value=max_cols), label="cols")
+    return [
+        [data.draw(SCALARS, label=f"cell_{i}_{j}") for j in range(cols)]
+        for i in range(rows)
+    ], rows, cols
+
+
+def _draw_float_matrix(data, max_rows=5, max_cols=5):
+    rows = data.draw(st.integers(min_value=0, max_value=max_rows), label="float_rows")
+    cols = data.draw(st.integers(min_value=0, max_value=max_cols), label="float_cols")
+    matrix = [
+        [data.draw(FLOATS, label=f"float_cell_{i}_{j}") for j in range(cols)]
+        for i in range(rows)
+    ]
+    return matrix, rows, cols
+
+
+def _draw_case(data):
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "scalar",
+                "list",
+                "nested_list",
+                "ndarray_object_1d",
+                "ndarray_object_2d",
+                "ndarray_float_1d",
+                "ndarray_float_2d",
+                "index",
+                "datetime_index",
+                "series",
+                "dataframe",
+            ]
+        ),
+        label="kind",
+    )
+
+    if kind == "scalar":
+        return kind, data.draw(SCALARS, label="scalar")
+
+    if kind == "list":
+        return kind, data.draw(st.lists(SCALARS, max_size=8), label="list")
+
+    if kind == "nested_list":
+        matrix, _, _ = _draw_scalar_matrix(data)
+        return kind, matrix
+
+    if kind == "ndarray_object_1d":
+        values = data.draw(st.lists(SCALARS, max_size=8), label="object_array_values")
+        return kind, np.array(values, dtype=object)
+
+    if kind == "ndarray_object_2d":
+        matrix, rows, cols = _draw_scalar_matrix(data)
+        if rows == 0:
+            return kind, np.empty((0, cols), dtype=object)
+        return kind, np.array(matrix, dtype=object)
+
+    if kind == "ndarray_float_1d":
+        values = data.draw(st.lists(FLOATS, max_size=8), label="float_array_values")
+        return kind, np.array(values, dtype=float)
+
+    if kind == "ndarray_float_2d":
+        matrix, rows, cols = _draw_float_matrix(data)
+        if rows == 0:
+            return kind, np.empty((0, cols), dtype=float)
+        return kind, np.array(matrix, dtype=float)
+
+    if kind == "index":
+        values = data.draw(st.lists(SCALARS, max_size=8), label="index_values")
+        return kind, pd.Index(values, dtype=object)
+
+    if kind == "datetime_index":
+        values = data.draw(
+            st.lists(st.one_of(_SAFE_DATETIME, st.none(), st.just(pd.NaT)), max_size=8),
+            label="datetime_index_values",
+        )
+        return kind, pd.DatetimeIndex(values)
+
+    if kind == "series":
+        values = data.draw(st.lists(SCALARS, max_size=8), label="series_values")
+        name = data.draw(
+            st.one_of(st.none(), st.text(max_size=10), st.integers(-100, 100)),
+            label="series_name",
+        )
+        return kind, pd.Series(values, name=name)
+
+    matrix, _, cols = _draw_scalar_matrix(data)
+    return kind, pd.DataFrame(matrix, columns=[f"c{i}" for i in range(cols)])
+
+
+@given(st.data())
+def test_pandas_isna(data):
+    kind, obj = _draw_case(data)
+    result = pd.isna(obj)
+    inverse = pd.notna(obj)
+
+    if kind == "scalar":
+        assert isinstance(result, (bool, np.bool_))
+        assert bool(result) == _is_missing_scalar(obj)
+        assert bool(inverse) is (not bool(result))
+        return
+
+    if kind in {
+        "list",
+        "nested_list",
+        "ndarray_object_1d",
+        "ndarray_object_2d",
+        "ndarray_float_1d",
+        "ndarray_float_2d",
+        "index",
+        "datetime_index",
+    }:
+        expected = _expected_mask(obj)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == np.dtype(bool)
+        assert result.shape == expected.shape
+        np.testing.assert_array_equal(result, expected)
+
+        assert isinstance(inverse, np.ndarray)
+        assert inverse.shape == result.shape
+        np.testing.assert_array_equal(inverse, np.logical_not(result))
+        return
+
+    if kind == "series":
+        expected = _expected_mask(obj.to_numpy(dtype=object))
+
+        assert isinstance(result, pd.Series)
+        assert result.index.equals(obj.index)
+        assert result.name == obj.name
+        assert result.dtype == np.dtype(bool)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+        assert isinstance(inverse, pd.Series)
+        assert inverse.index.equals(obj.index)
+        assert inverse.name == obj.name
+        np.testing.assert_array_equal(inverse.to_numpy(), np.logical_not(result.to_numpy()))
+        return
+
+    if kind == "dataframe":
+        expected = _expected_mask(obj.to_numpy(dtype=object))
+
+        assert isinstance(result, pd.DataFrame)
+        assert result.index.equals(obj.index)
+        assert result.columns.equals(obj.columns)
+        assert all(dtype == np.dtype(bool) for dtype in result.dtypes)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+        assert isinstance(inverse, pd.DataFrame)
+        assert inverse.index.equals(obj.index)
+        assert inverse.columns.equals(obj.columns)
+        np.testing.assert_array_equal(
+            inverse.to_numpy(), np.logical_not(result.to_numpy())
+        )
+# End program

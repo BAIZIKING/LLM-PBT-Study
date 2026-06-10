@@ -1,0 +1,206 @@
+from hypothesis import given, strategies as st
+import networkx
+
+
+def _draw_graph(data, directed=None, multigraph=None):
+    if directed is None:
+        directed = data.draw(st.booleans(), label="directed")
+    if multigraph is None:
+        multigraph = data.draw(st.booleans(), label="multigraph")
+
+    graph_cls = (
+        networkx.MultiDiGraph if directed and multigraph else
+        networkx.DiGraph if directed else
+        networkx.MultiGraph if multigraph else
+        networkx.Graph
+    )
+
+    node_count = data.draw(st.integers(min_value=0, max_value=8), label="node_count")
+    nodes = list(range(node_count))
+
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+
+    if not nodes:
+        return G
+
+    edge_strategy = st.lists(
+        st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)),
+        min_size=0,
+        max_size=20,
+    )
+    edges = data.draw(edge_strategy, label="edges")
+    G.add_edges_from(edges)
+
+    if data.draw(st.booleans(), label="add_self_loop"):
+        node = data.draw(st.sampled_from(nodes), label="self_loop_node")
+        G.add_edge(node, node)
+
+    if node_count >= 3 and data.draw(st.booleans(), label="add_triangle_cycle"):
+        cycle_nodes = data.draw(
+            st.lists(
+                st.sampled_from(nodes),
+                min_size=3,
+                max_size=3,
+                unique=True,
+            ),
+            label="triangle_nodes",
+        )
+        G.add_edge(cycle_nodes[0], cycle_nodes[1])
+        G.add_edge(cycle_nodes[1], cycle_nodes[2])
+        G.add_edge(cycle_nodes[2], cycle_nodes[0])
+
+    return G
+
+
+def _draw_orientation(data, G):
+    if G.is_directed():
+        return data.draw(
+            st.sampled_from([None, "original", "reverse", "ignore"]),
+            label="orientation",
+        )
+    return None
+
+
+def _find_cycle_or_none(G, orientation):
+    try:
+        return networkx.find_cycle(G, orientation=orientation)
+    except networkx.exception.NetworkXNoCycle:
+        return None
+
+
+def _unpack_edge(G, edge, orientation):
+    if G.is_multigraph():
+        if orientation is None:
+            u, v, key = edge
+            direction = None
+        else:
+            u, v, key, direction = edge
+    else:
+        key = None
+        if orientation is None:
+            u, v = edge
+            direction = None
+        else:
+            u, v, direction = edge
+
+    return u, v, key, direction
+
+
+def _has_edge(G, u, v, key):
+    if G.is_multigraph():
+        return G.has_edge(u, v, key)
+    return G.has_edge(u, v)
+
+
+def _traversal_endpoints(G, edge, orientation):
+    u, v, key, direction = _unpack_edge(G, edge, orientation)
+    if direction == "reverse":
+        return v, u
+    return u, v
+
+
+@given(st.data())
+def test_networkx_find_cycle_returns_nonempty_existing_edges(data):
+    G = _draw_graph(data)
+    orientation = _draw_orientation(data, G)
+
+    cycle = _find_cycle_or_none(G, orientation)
+    if cycle is None:
+        return
+
+    assert isinstance(cycle, list)
+    assert len(cycle) > 0
+
+    for edge in cycle:
+        u, v, key, direction = _unpack_edge(G, edge, orientation)
+        assert _has_edge(G, u, v, key)
+
+
+@given(st.data())
+def test_networkx_find_cycle_edges_form_closed_cyclic_path(data):
+    G = _draw_graph(data)
+    orientation = _draw_orientation(data, G)
+
+    cycle = _find_cycle_or_none(G, orientation)
+    if cycle is None:
+        return
+
+    traversal_edges = [
+        _traversal_endpoints(G, edge, orientation)
+        for edge in cycle
+    ]
+
+    for index, (_, head) in enumerate(traversal_edges):
+        next_tail, _ = traversal_edges[(index + 1) % len(traversal_edges)]
+        assert head == next_tail
+
+
+@given(st.data())
+def test_networkx_find_cycle_edge_tuple_shape_matches_graph_type_and_orientation(data):
+    G = _draw_graph(data)
+    orientation = _draw_orientation(data, G)
+
+    cycle = _find_cycle_or_none(G, orientation)
+    if cycle is None:
+        return
+
+    if G.is_multigraph():
+        expected_length = 3 if orientation is None else 4
+    else:
+        expected_length = 2 if orientation is None else 3
+
+    for edge in cycle:
+        assert isinstance(edge, tuple)
+        assert len(edge) == expected_length
+
+
+@given(st.data())
+def test_networkx_find_cycle_reports_valid_direction_when_orientation_is_given(data):
+    G = _draw_graph(data, directed=True)
+    orientation = data.draw(
+        st.sampled_from(["original", "reverse", "ignore"]),
+        label="orientation",
+    )
+
+    cycle = _find_cycle_or_none(G, orientation)
+    if cycle is None:
+        return
+
+    for edge in cycle:
+        direction = edge[-1]
+        assert direction in {"forward", "reverse"}
+
+
+@given(st.data())
+def test_networkx_find_cycle_respects_directed_orientation_mode(data):
+    G = _draw_graph(data, directed=True)
+    orientation = data.draw(
+        st.sampled_from([None, "original", "reverse", "ignore"]),
+        label="orientation",
+    )
+
+    cycle = _find_cycle_or_none(G, orientation)
+    if cycle is None:
+        return
+
+    for edge in cycle:
+        u, v, key, direction = _unpack_edge(G, edge, orientation)
+        traversal_tail, traversal_head = _traversal_endpoints(G, edge, orientation)
+
+        if orientation is None:
+            assert direction is None
+            assert _has_edge(G, traversal_tail, traversal_head, key)
+        elif orientation == "original":
+            assert direction == "forward"
+            assert _has_edge(G, traversal_tail, traversal_head, key)
+        elif orientation == "reverse":
+            assert direction == "reverse"
+            assert _has_edge(G, traversal_head, traversal_tail, key)
+        else:
+            assert orientation == "ignore"
+            assert direction in {"forward", "reverse"}
+            assert _has_edge(G, u, v, key)
+
+
+# End program

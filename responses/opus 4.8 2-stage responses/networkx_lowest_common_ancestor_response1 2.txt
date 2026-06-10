@@ -1,0 +1,11 @@
+Here are five properties of the output of `lowest_common_ancestor` suitable for property-based testing:
+
+1. **Ancestor of both nodes (or self):** The returned LCA (when not the default) must be an ancestor of `node1` (or equal to `node1`) and an ancestor of `node2` (or equal to `node2`) in the directed graph.
+
+2. **Default returned when no common ancestor exists:** If `node1` and `node2` share no common ancestor (considering each node as an ancestor of itself), the function must return exactly the `default` value.
+
+3. **Symmetry of arguments:** Swapping the two node arguments yields the same result, i.e., `lowest_common_ancestor(G, node1, node2)` equals `lowest_common_ancestor(G, node2, node1)`.
+
+4. **Lowest among common ancestors:** The returned node (when not the default) must be a common ancestor such that no other common ancestor is a proper descendant of it; equivalently, there is no common ancestor strictly "lower" (closer to the two nodes) than the returned one.
+
+5. **Self-LCA for identical nodes:** When `node1` and `node2` are the same node, the function returns that node itself (since a node is its own ancestor and thus its own lowest common ancestor).

@@ -1,0 +1,70 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+
+safe_timestamps = st.floats(
+    min_value=0,
+    max_value=2_000_000_000,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+fixed_timezones = st.integers(
+    min_value=-23 * 60,
+    max_value=23 * 60,
+).map(lambda minutes: datetime.timezone(datetime.timedelta(minutes=minutes)))
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_returns_datetime_instance(data):
+    timestamp = data.draw(safe_timestamps)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert isinstance(result, datetime.datetime)
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_without_tz_returns_naive_datetime(data):
+    timestamp = data.draw(safe_timestamps)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert result.tzinfo is None
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_with_tz_returns_aware_datetime(data):
+    timestamp = data.draw(safe_timestamps)
+    tz = data.draw(fixed_timezones)
+
+    result = datetime.datetime.fromtimestamp(timestamp, tz=tz)
+
+    assert result.tzinfo is tz
+    assert result.utcoffset() is not None
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_roundtrips_to_original_timestamp(data):
+    timestamp = data.draw(safe_timestamps)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert abs(result.timestamp() - timestamp) <= 1e-5
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_different_timezones_same_instant(data):
+    timestamp = data.draw(safe_timestamps)
+    tz1 = data.draw(fixed_timezones)
+    tz2 = data.draw(fixed_timezones)
+
+    result1 = datetime.datetime.fromtimestamp(timestamp, tz=tz1)
+    result2 = datetime.datetime.fromtimestamp(timestamp, tz=tz2)
+
+    assert result1 == result2
+    assert abs(result1.timestamp() - result2.timestamp()) <= 1e-5
+
+# End program
+```

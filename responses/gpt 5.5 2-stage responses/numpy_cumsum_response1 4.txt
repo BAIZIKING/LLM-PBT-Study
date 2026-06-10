@@ -1,0 +1,9 @@
+1. The output has the same number of elements as the input; if `axis` is specified, it has the same shape as the input, and if `axis=None`, it is flattened unless the input is already 1-D.
+
+2. Each output element equals the cumulative sum of input elements up to that position along the chosen axis, or along the flattened input when `axis=None`.
+
+3. For any slice along the cumulative axis, the first output value equals the corresponding first input value.
+
+4. For numeric inputs, the difference between consecutive output values along the cumulative axis equals the corresponding input value at that position, subject to dtype overflow and floating-point rounding behavior.
+
+5. If `out` is provided, the returned object is the same array object as `out`, with the cumulative-sum result written into it and cast to `out`’s dtype if necessary.

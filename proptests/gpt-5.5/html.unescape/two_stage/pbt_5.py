@@ -1,0 +1,63 @@
+from hypothesis import given, strategies as st
+import html
+
+@given(st.data())
+def test_html_unescape_returns_string(data):
+    s = data.draw(st.text(max_size=1000))
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+@given(st.data())
+def test_html_unescape_leaves_strings_without_ampersands_unchanged(data):
+    s = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters="&"),
+            max_size=1000,
+        )
+    )
+    assert html.unescape(s) == s
+
+@given(st.data())
+def test_html_unescape_replaces_standard_named_references(data):
+    reference, expected = data.draw(
+        st.sampled_from(
+            [
+                ("&lt;", "<"),
+                ("&gt;", ">"),
+                ("&amp;", "&"),
+                ("&quot;", '"'),
+            ]
+        )
+    )
+    prefix = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters="&"),
+            max_size=200,
+        )
+    )
+    suffix = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters="&"),
+            max_size=200,
+        )
+    )
+
+    assert html.unescape(prefix + reference + suffix) == prefix + expected + suffix
+
+@given(st.data())
+def test_html_unescape_decimal_and_hex_numeric_references_agree(data):
+    code_point = data.draw(st.integers(min_value=0, max_value=0x10FFFF))
+
+    decimal_reference = f"&#{code_point};"
+    hex_reference = f"&#x{code_point:x};"
+
+    assert html.unescape(decimal_reference) == html.unescape(hex_reference)
+
+@given(st.data())
+def test_html_unescape_output_length_is_not_greater_than_input_length(data):
+    s = data.draw(st.text(max_size=1000))
+    result = html.unescape(s)
+
+    assert len(result) <= len(s)
+
+# End program

@@ -1,0 +1,9 @@
+1. The output is always a Python `str`.
+
+2. Any input substring that is not part of a character reference is preserved unchanged and in the same order in the output.
+
+3. Valid decimal and hexadecimal numeric references representing the same Unicode code point produce the same output character, e.g. `&#62;` and `&#x3e;` both become `>`.
+
+4. Valid HTML5 named character references are replaced by their corresponding Unicode characters, e.g. `&gt;` becomes `>` and `&amp;` becomes `&`.
+
+5. Invalid or disallowed numeric character references, such as out-of-range code points or surrogate code points, are replaced according to HTML5 rules, typically with the Unicode replacement character `�`.

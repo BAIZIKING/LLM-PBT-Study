@@ -1,0 +1,34 @@
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate arbitrary Unicode strings, including empty strings, control characters,
+# repeated characters, existing HTML-looking entities, and the special characters &, <, >, ", and '.
+# Also generate both values of quote. Check that &, <, and > are always escaped, and that
+# " and ' are escaped only when quote=True, exactly as documented.
+@given(st.data())
+def test_html_escape(data):
+    special_chars = st.sampled_from(["&", "<", ">", '"', "'", "amp;", "&amp;", "<tag>", ""])
+    arbitrary_text = st.text()
+    s = data.draw(
+        st.lists(st.one_of(arbitrary_text, special_chars), min_size=0, max_size=50).map("".join),
+        label="s",
+    )
+    quote = data.draw(st.booleans(), label="quote")
+
+    escaped = html.escape(s, quote=quote)
+
+    mapping = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+    }
+    if quote:
+        mapping.update({
+            '"': "&quot;",
+            "'": "&#x27;",
+        })
+
+    expected = "".join(mapping.get(ch, ch) for ch in s)
+
+    assert escaped == expected
+# End program

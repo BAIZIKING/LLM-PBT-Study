@@ -1,0 +1,96 @@
+from hypothesis import given, strategies as st
+import math
+import statistics
+from statistics import StatisticsError
+
+# Summary: Generate both valid and invalid inputs: too-short sequences, mismatched
+# lengths, constant x values, nonconstant x/y integer data, and both values of
+# proportional. Use bounded integers to cover signs, zero, repeated values, and
+# ordinary numeric cases while keeping the closed-form OLS checks stable.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    proportional = data.draw(st.booleans())
+    mode = data.draw(
+        st.sampled_from(["valid", "too_short", "mismatched", "constant_x"])
+    )
+
+    nums = st.integers(min_value=-1000, max_value=1000)
+
+    if mode == "valid":
+        n = data.draw(st.integers(min_value=2, max_value=25))
+
+        first = data.draw(nums)
+        delta = data.draw(
+            st.integers(min_value=-1000, max_value=1000).filter(lambda d: d != 0)
+        )
+        second = first + delta
+
+        rest = data.draw(st.lists(nums, min_size=n - 2, max_size=n - 2))
+        x = [first, second] + rest
+        y = data.draw(st.lists(nums, min_size=n, max_size=n))
+
+    elif mode == "too_short":
+        n = data.draw(st.integers(min_value=0, max_value=1))
+        x = data.draw(st.lists(nums, min_size=n, max_size=n))
+        y = data.draw(st.lists(nums, min_size=n, max_size=n))
+
+    elif mode == "mismatched":
+        len_x = data.draw(st.integers(min_value=0, max_value=10))
+        len_y = data.draw(
+            st.integers(min_value=0, max_value=10).filter(lambda m: m != len_x)
+        )
+        x = data.draw(st.lists(nums, min_size=len_x, max_size=len_x))
+        y = data.draw(st.lists(nums, min_size=len_y, max_size=len_y))
+
+    else:
+        n = data.draw(st.integers(min_value=2, max_value=25))
+        c = 0 if proportional else data.draw(nums)
+        x = [c] * n
+        y = data.draw(st.lists(nums, min_size=n, max_size=n))
+
+    api_invalid = (
+        len(x) != len(y)
+        or len(x) < 2
+        or all(xi == x[0] for xi in x)
+    )
+
+    try:
+        result = statistics.linear_regression(x, y, proportional=proportional)
+    except StatisticsError:
+        assert api_invalid
+        return
+
+    assert not api_invalid
+
+    slope, intercept = result
+    assert slope == result.slope
+    assert intercept == result.intercept
+
+    n = len(x)
+    sx = sum(x)
+    sy = sum(y)
+    sxx = sum(xi * xi for xi in x)
+    sxy = sum(xi * yi for xi, yi in zip(x, y))
+
+    if proportional:
+        expected_slope = sxy / sxx
+        expected_intercept = 0.0
+    else:
+        denominator = n * sxx - sx * sx
+        expected_slope = (n * sxy - sx * sy) / denominator
+        expected_intercept = (sy - expected_slope * sx) / n
+
+    assert math.isclose(
+        result.slope,
+        expected_slope,
+        rel_tol=1e-9,
+        abs_tol=1e-9,
+    )
+    assert math.isclose(
+        result.intercept,
+        expected_intercept,
+        rel_tol=1e-9,
+        abs_tol=1e-6,
+    )
+
+# End program

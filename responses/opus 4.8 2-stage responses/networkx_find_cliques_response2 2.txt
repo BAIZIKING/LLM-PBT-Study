@@ -1,0 +1,215 @@
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+import networkx
+
+
+# Strategy to generate a small undirected graph.
+@st.composite
+def graphs(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    nodes = list(range(n))
+    possible_edges = list(combinations(nodes, 2))
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges) if possible_edges else st.nothing(),
+            max_size=len(possible_edges),
+            unique=True,
+        )
+    ) if possible_edges else []
+    G = networkx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+def is_complete_subgraph(G, clique):
+    for u, v in combinations(clique, 2):
+        if not G.has_edge(u, v):
+            return False
+    return True
+
+
+@given(g=graphs())
+def test_networkx_find_cliques_completeness(g):
+    # Property 1: Each returned clique is a complete subgraph.
+    for clique in networkx.find_cliques(g):
+        assert is_complete_subgraph(g, clique), (
+            f"Clique {clique} is not a complete subgraph"
+        )
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+import networkx
+
+
+@st.composite
+def graphs(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    nodes = list(range(n))
+    possible_edges = list(combinations(nodes, 2))
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges) if possible_edges else st.nothing(),
+            max_size=len(possible_edges),
+            unique=True,
+        )
+    ) if possible_edges else []
+    G = networkx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+@given(g=graphs())
+def test_networkx_find_cliques_maximality(g):
+    # Property 2: Each returned clique is maximal (no external node can extend it).
+    for clique in networkx.find_cliques(g):
+        clique_set = set(clique)
+        candidates = set(g.nodes()) - clique_set
+        for c in candidates:
+            # If c is adjacent to all nodes in clique, the clique is not maximal.
+            extendable = all(g.has_edge(c, u) for u in clique)
+            assert not extendable, (
+                f"Clique {clique} can be extended by node {c}, not maximal"
+            )
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+import networkx
+
+
+@st.composite
+def graphs(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    nodes = list(range(n))
+    possible_edges = list(combinations(nodes, 2))
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges) if possible_edges else st.nothing(),
+            max_size=len(possible_edges),
+            unique=True,
+        )
+    ) if possible_edges else []
+    G = networkx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+@given(g=graphs())
+def test_networkx_find_cliques_node_coverage(g):
+    # Property 3: All clique nodes are valid graph nodes, and every node
+    # of G appears in at least one returned clique.
+    valid_nodes = set(g.nodes())
+    covered = set()
+    for clique in networkx.find_cliques(g):
+        for node in clique:
+            assert node in valid_nodes, f"Node {node} not in graph"
+            covered.add(node)
+    assert covered == valid_nodes, (
+        f"Not all nodes covered. Missing: {valid_nodes - covered}"
+    )
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+import networkx
+
+
+@st.composite
+def graphs_with_nodes(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    nodes = list(range(n))
+    possible_edges = list(combinations(nodes, 2))
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges) if possible_edges else st.nothing(),
+            max_size=len(possible_edges),
+            unique=True,
+        )
+    ) if possible_edges else []
+    G = networkx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    # Choose a subset of nodes to require.
+    required = draw(
+        st.lists(st.sampled_from(nodes), unique=True, max_size=n)
+        if nodes else st.just([])
+    )
+    return G, required
+
+
+def is_complete_subgraph(G, clique):
+    for u, v in combinations(clique, 2):
+        if not G.has_edge(u, v):
+            return False
+    return True
+
+
+@given(data=graphs_with_nodes())
+def test_networkx_find_cliques_nodes_argument(data):
+    # Property 4: If `nodes` is a clique, every returned clique contains all
+    # of them; otherwise a ValueError is raised.
+    g, required = data
+    required_is_clique = is_complete_subgraph(g, required)
+    if required_is_clique:
+        cliques = list(networkx.find_cliques(g, nodes=required))
+        for clique in cliques:
+            assert set(required).issubset(set(clique)), (
+                f"Clique {clique} does not contain all required nodes {required}"
+            )
+    else:
+        try:
+            list(networkx.find_cliques(g, nodes=required))
+            assert False, "Expected ValueError for non-clique nodes argument"
+        except ValueError:
+            pass
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+import networkx
+
+
+@st.composite
+def graphs(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    nodes = list(range(n))
+    possible_edges = list(combinations(nodes, 2))
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges) if possible_edges else st.nothing(),
+            max_size=len(possible_edges),
+            unique=True,
+        )
+    ) if possible_edges else []
+    G = networkx.Graph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+    return G
+
+
+@given(g=graphs())
+def test_networkx_find_cliques_no_duplicates(g):
+    # Property 5: No duplicate maximal cliques are returned
+    # (each, as a set of nodes, appears exactly once).
+    seen = []
+    for clique in networkx.find_cliques(g):
+        clique_frozen = frozenset(clique)
+        assert clique_frozen not in seen, (
+            f"Duplicate clique found: {sorted(clique)}"
+        )
+        seen.append(clique_frozen)
+# End program
+```

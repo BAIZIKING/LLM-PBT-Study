@@ -1,0 +1,79 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `html.unescape`, I'll combine several strategies:
+
+1. **Random text**: Use `st.text()` to generate arbitrary Unicode strings, which may or may not contain entity-like sequences.
+2. **Valid named references**: Sample from the actual HTML5 named character references (`html.entities.html5` dictionary keys like `gt;`, `amp;`, etc.) to ensure real entities appear.
+3. **Numeric references**: Generate decimal (`&#62;`) and hexadecimal (`&#x3e;`) references for valid codepoints.
+4. **Malformed references**: Generate broken entities (missing semicolons, invalid names, out-of-range numerics) to test invalid-reference handling.
+5. **Composition**: Concatenate a random mix of these pieces (plain text + entities) to create realistic and stress-test inputs.
+
+## Properties to Check
+
+Based on the documentation, the key properties are:
+
+1. **No crash / total function**: `html.unescape` should always return a string for any string input.
+2. **Idempotence-related invariant**: The output must contain no valid named/numeric character references that map to a single resolvable character — i.e., after unescaping, applying `html.escape` then `html.unescape` round-trips appropriately. More robustly: unescaping a string built by *escaping* known characters must recover those characters (round-trip via `html.escape`).
+3. **Known entity correctness**: For a directly constructed valid entity (e.g., `&amp;`, `&#62;`, `&#x3e;`), the result equals the documented Unicode character.
+4. **Length non-increase for resolved entities**: An entity reference (length ≥ 4) resolves to fewer characters, so output length ≤ input length when entities are present (a soft check via escape round-trip).
+
+I'll focus on the **escape → unescape round-trip** property, since it's a robust, documented relationship that exercises the unescaping rules on real entities.
+
+```python
+from hypothesis import given, strategies as st
+import html
+import html.entities
+
+# Summary: Generate inputs by mixing arbitrary unicode text, real HTML5 named
+# references, decimal/hex numeric references, and malformed entity-like fragments,
+# then concatenating them. We verify: (1) unescape always returns a str without
+# crashing; (2) escaping arbitrary text and unescaping it round-trips to the
+# original (documented inverse behavior for valid references); (3) explicitly
+# constructed valid named/numeric references resolve to the documented character.
+@given(st.data())
+def test_html_unescape(data):
+    # --- Strategy components ---
+    named_keys = list(html.entities.html5.keys())  # e.g. 'gt;', 'amp;', 'lt;'
+    named_ref = data.draw(st.sampled_from(named_keys).map(lambda k: "&" + k))
+
+    codepoint = data.draw(st.integers(min_value=1, max_value=0x10FFFF))
+    decimal_ref = "&#" + str(codepoint) + ";"
+    hex_ref = "&#x" + format(codepoint, "x") + ";"
+
+    malformed = data.draw(st.sampled_from([
+        "&notarealentity;", "&#;", "&#xZZ;", "&amp", "&", "&#999999999999;",
+        "&;", "&#x;", "&lt", "&&amp;;",
+    ]))
+
+    plain = data.draw(st.text())
+
+    # Compose a mixed input from the pieces above.
+    pieces = data.draw(st.lists(
+        st.sampled_from([named_ref, decimal_ref, hex_ref, malformed, plain]),
+        min_size=0, max_size=6,
+    ))
+    composed = "".join(pieces)
+
+    # --- Property 1: total function, always returns a str, never crashes ---
+    result = html.unescape(composed)
+    assert isinstance(result, str)
+
+    # --- Property 2: escape -> unescape round-trips arbitrary text ---
+    # html.escape converts &, <, > (and optionally quotes) to valid references;
+    # html.unescape must invert this exactly.
+    arbitrary = data.draw(st.text())
+    assert html.unescape(html.escape(arbitrary, quote=True)) == arbitrary
+    assert html.unescape(html.escape(arbitrary, quote=False)) == arbitrary
+
+    # --- Property 3: known valid references resolve correctly ---
+    assert html.unescape("&amp;") == "&"
+    assert html.unescape("&lt;") == "<"
+    assert html.unescape("&gt;") == ">"
+    assert html.unescape("&#62;") == ">"
+    assert html.unescape("&#x3e;") == ">"
+    assert html.unescape("&#x3E;") == ">"
+
+    # A directly-built valid named reference must map to its documented value.
+    assert html.unescape(named_ref) == html.entities.html5[named_ref[1:]]
+# End program
+```

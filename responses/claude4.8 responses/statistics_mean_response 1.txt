@@ -1,0 +1,79 @@
+# Strategy Explanation
+
+## Input Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.mean(data)`, I will:
+
+1. **Use multiple numeric types**: The documentation shows examples with integers, floats, `Fraction`, and `Decimal`. I'll generate lists of these types to cover the supported numeric domains.
+
+2. **Cover edge cases**:
+   - **Single-element lists** (mean equals the element itself).
+   - **Lists with identical values** (mean equals that value).
+   - **Negative numbers, zero, and positive numbers**.
+   - **Non-empty lists** (since empty raises `StatisticsError`, we use `min_size=1` for valid-mean property checks).
+
+3. **Avoid problematic floats**: For floats, I'll exclude `NaN` and `Infinity` (using `allow_nan=False, allow_infinity=False`), since they break mathematical comparisons and the bounds properties.
+
+4. **Use `st.data()`** to dynamically pick a numeric strategy, allowing each test run to choose among ints, floats, fractions, and decimals.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Bounds property**: The mean must lie between `min(data)` and `max(data)` (inclusive). This follows from it being a measure of central location.
+
+2. **Sum relationship**: `mean(data) * len(data) ≈ sum(data)`, the definition of arithmetic mean.
+
+3. **Idempotence on constants**: If all values are equal to `c`, then `mean(data) == c`.
+
+4. **Empty input error**: An empty input must raise `statistics.StatisticsError`.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+from fractions import Fraction
+from decimal import Decimal
+import statistics
+import pytest
+
+# Summary: Generate non-empty lists of one numeric type chosen among ints,
+# finite floats, Fractions, and Decimals (covering single elements, identical
+# values, negatives, zeros). Verify the mean lies within [min, max], satisfies
+# mean*n == sum, equals the constant when all values are equal, and that an
+# empty input raises StatisticsError.
+@given(st.data())
+def test_statistics_mean(data):
+    numeric_strategy = data.draw(st.sampled_from([
+        st.integers(min_value=-10**6, max_value=10**6),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e9, max_value=1e9),
+        st.fractions(),
+        st.decimals(allow_nan=False, allow_infinity=False,
+                    min_value=Decimal("-1e6"), max_value=Decimal("1e6")),
+    ]))
+    values = data.draw(st.lists(numeric_strategy, min_size=1, max_size=20))
+
+    result = statistics.mean(values)
+
+    # Property 1: mean lies within [min, max]
+    assert min(values) <= result <= max(values)
+
+    # Property 2: mean * n == sum (definition of arithmetic mean)
+    # Compare using cross-multiplication to avoid float division issues.
+    n = len(values)
+    total = sum(values)
+    if isinstance(result, float) or any(isinstance(v, float) for v in values):
+        assert result * n == pytest.approx(float(total), rel=1e-9, abs=1e-6)
+    else:
+        assert result * n == total
+
+    # Property 3: if all values are equal, mean equals that value
+    if all(v == values[0] for v in values):
+        assert result == values[0]
+
+    # Property 4: empty input raises StatisticsError
+    with pytest.raises(statistics.StatisticsError):
+        statistics.mean([])
+# End program
+```

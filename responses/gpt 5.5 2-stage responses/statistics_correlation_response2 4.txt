@@ -1,0 +1,99 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+MAX_LENGTH = 50
+BOUNDED_INT = st.integers(min_value=-10_000, max_value=10_000)
+POSITIVE_SCALE = st.integers(min_value=1, max_value=100)
+SHIFT = st.integers(min_value=-1_000, max_value=1_000)
+NONZERO_SLOPE = st.integers(min_value=-100, max_value=100).filter(lambda x: x != 0)
+
+
+def _draw_nonconstant_list(data, length):
+    return data.draw(
+        st.lists(BOUNDED_INT, min_size=length, max_size=length).filter(
+            lambda xs: len(set(xs)) > 1
+        )
+    )
+
+
+def _draw_valid_pair(data):
+    length = data.draw(st.integers(min_value=2, max_value=MAX_LENGTH))
+    x = _draw_nonconstant_list(data, length)
+    y = _draw_nonconstant_list(data, length)
+    return x, y
+
+
+def _close(a, b, tolerance=1e-10):
+    return abs(a - b) <= tolerance
+
+
+@given(st.data())
+def test_statistics_correlation_result_is_between_minus_one_and_one(data):
+    x, y = _draw_valid_pair(data)
+
+    linear_result = statistics.correlation(x, y)
+    ranked_result = statistics.correlation(x, y, method="ranked")
+
+    assert -1.0000000001 <= linear_result <= 1.0000000001
+    assert -1.0000000001 <= ranked_result <= 1.0000000001
+
+
+@given(st.data())
+def test_statistics_correlation_is_symmetric(data):
+    x, y = _draw_valid_pair(data)
+
+    assert _close(statistics.correlation(x, y), statistics.correlation(y, x))
+    assert _close(
+        statistics.correlation(x, y, method="ranked"),
+        statistics.correlation(y, x, method="ranked"),
+    )
+
+
+@given(st.data())
+def test_statistics_correlation_linear_is_invariant_under_positive_scaling_and_translation(data):
+    x, y = _draw_valid_pair(data)
+    x_scale = data.draw(POSITIVE_SCALE)
+    y_scale = data.draw(POSITIVE_SCALE)
+    x_shift = data.draw(SHIFT)
+    y_shift = data.draw(SHIFT)
+
+    transformed_x = [x_scale * value + x_shift for value in x]
+    transformed_y = [y_scale * value + y_shift for value in y]
+
+    assert _close(
+        statistics.correlation(x, y),
+        statistics.correlation(transformed_x, transformed_y),
+    )
+
+
+@given(st.data())
+def test_statistics_correlation_linear_is_perfect_for_affine_relationships(data):
+    length = data.draw(st.integers(min_value=2, max_value=MAX_LENGTH))
+    x = _draw_nonconstant_list(data, length)
+    slope = data.draw(NONZERO_SLOPE)
+    intercept = data.draw(SHIFT)
+
+    y = [slope * value + intercept for value in x]
+    expected = 1.0 if slope > 0 else -1.0
+
+    assert _close(statistics.correlation(x, y), expected)
+
+
+@given(st.data())
+def test_statistics_correlation_ranked_is_invariant_under_strictly_increasing_transformations(data):
+    x, y = _draw_valid_pair(data)
+    x_scale = data.draw(POSITIVE_SCALE)
+    y_scale = data.draw(POSITIVE_SCALE)
+    x_shift = data.draw(SHIFT)
+    y_shift = data.draw(SHIFT)
+
+    transformed_x = [x_scale * value + x_shift for value in x]
+    transformed_y = [y_scale * value + y_shift for value in y]
+
+    assert _close(
+        statistics.correlation(x, y, method="ranked"),
+        statistics.correlation(transformed_x, transformed_y, method="ranked"),
+    )
+# End program
+```

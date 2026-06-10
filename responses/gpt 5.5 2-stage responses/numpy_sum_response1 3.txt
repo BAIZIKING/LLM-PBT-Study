@@ -1,0 +1,9 @@
+1. When `axis=None`, the output is a scalar equal to the sum of all included elements of `a`, plus `initial` if provided.
+
+2. When `axis` is an int or tuple of ints, the output shape equals the input shape with those axes removed, or with those axes retained as size `1` if `keepdims=True`.
+
+3. When `where` is provided, only elements where `where` is `True` contribute to the sum; elements where `where` is `False` do not affect the result.
+
+4. For an empty reduction, the result is the additive identity `0`, or `initial` if `initial` is provided.
+
+5. If `out` is provided, the function returns the same object as `out`, with the computed result written into it and cast to `out`’s dtype if necessary.

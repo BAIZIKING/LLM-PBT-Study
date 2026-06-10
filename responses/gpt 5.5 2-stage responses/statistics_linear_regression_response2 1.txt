@@ -1,0 +1,183 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+def _draw_nonconstant_xy(data):
+    x = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=2,
+            max_size=20,
+            unique=True,
+        ).map(lambda values: [float(v) for v in values])
+    )
+    y = data.draw(
+        st.lists(
+            st.floats(
+                min_value=-1_000_000,
+                max_value=1_000_000,
+                allow_nan=False,
+                allow_infinity=False,
+                allow_subnormal=False,
+            ),
+            min_size=len(x),
+            max_size=len(x),
+        )
+    )
+    return x, y
+
+@given(st.data())
+def test_statistics_linear_regression_residuals_sum_to_zero(data):
+    x, y = _draw_nonconstant_xy(data)
+
+    model = statistics.linear_regression(x, y)
+    residuals = [
+        yi - (model.slope * xi + model.intercept)
+        for xi, yi in zip(x, y)
+    ]
+
+    residual_sum = math.fsum(residuals)
+    scale = (
+        math.fsum(abs(yi) for yi in y)
+        + math.fsum(abs(model.slope * xi + model.intercept) for xi in x)
+        + 1.0
+    )
+
+    assert abs(residual_sum) <= 1e-7 * scale
+
+@given(st.data())
+def test_statistics_linear_regression_residuals_orthogonal_to_x(data):
+    x, y = _draw_nonconstant_xy(data)
+
+    model = statistics.linear_regression(x, y)
+    residuals = [
+        yi - (model.slope * xi + model.intercept)
+        for xi, yi in zip(x, y)
+    ]
+
+    dot_product = math.fsum(xi * ri for xi, ri in zip(x, residuals))
+    scale = (
+        math.fsum(abs(xi * yi) for xi, yi in zip(x, y))
+        + math.fsum(abs(xi * (model.slope * xi + model.intercept)) for xi in x)
+        + 1.0
+    )
+
+    assert abs(dot_product) <= 1e-7 * scale
+
+@given(st.data())
+def test_statistics_linear_regression_recovers_exact_line(data):
+    x = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=2,
+            max_size=20,
+            unique=True,
+        ).map(lambda values: [float(v) for v in values])
+    )
+    expected_slope = data.draw(
+        st.floats(
+            min_value=-10_000,
+            max_value=10_000,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        )
+    )
+    expected_intercept = data.draw(
+        st.floats(
+            min_value=-10_000,
+            max_value=10_000,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        )
+    )
+    y = [expected_slope * xi + expected_intercept for xi in x]
+
+    model = statistics.linear_regression(x, y)
+
+    assert math.isclose(
+        model.slope,
+        expected_slope,
+        rel_tol=1e-9,
+        abs_tol=1e-7,
+    )
+    assert math.isclose(
+        model.intercept,
+        expected_intercept,
+        rel_tol=1e-9,
+        abs_tol=1e-7,
+    )
+
+@given(st.data())
+def test_statistics_linear_regression_y_translation_changes_only_intercept(data):
+    x, y = _draw_nonconstant_xy(data)
+    translation = data.draw(
+        st.floats(
+            min_value=-1_000_000,
+            max_value=1_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        )
+    )
+
+    original = statistics.linear_regression(x, y)
+    translated = statistics.linear_regression(
+        x,
+        [yi + translation for yi in y],
+    )
+
+    assert math.isclose(
+        translated.slope,
+        original.slope,
+        rel_tol=1e-9,
+        abs_tol=1e-7,
+    )
+    assert math.isclose(
+        translated.intercept,
+        original.intercept + translation,
+        rel_tol=1e-9,
+        abs_tol=1e-6,
+    )
+
+@given(st.data())
+def test_statistics_linear_regression_proportional_intercept_and_slope_formula(data):
+    x = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=2,
+            max_size=20,
+            unique=True,
+        ).map(lambda values: [float(v) for v in values])
+    )
+    y = data.draw(
+        st.lists(
+            st.floats(
+                min_value=-1_000_000,
+                max_value=1_000_000,
+                allow_nan=False,
+                allow_infinity=False,
+                allow_subnormal=False,
+            ),
+            min_size=len(x),
+            max_size=len(x),
+        )
+    )
+
+    model = statistics.linear_regression(x, y, proportional=True)
+    expected_slope = (
+        math.fsum(xi * yi for xi, yi in zip(x, y))
+        / math.fsum(xi * xi for xi in x)
+    )
+
+    assert model.intercept == 0.0
+    assert math.isclose(
+        model.slope,
+        expected_slope,
+        rel_tol=1e-10,
+        abs_tol=1e-8,
+    )
+# End program
+```

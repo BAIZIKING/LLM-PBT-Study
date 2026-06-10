@@ -1,0 +1,11 @@
+Based on the API documentation, here are five properties suitable for property-based testing:
+
+1. The function returns a `datetime` object instance (the output is always of type `datetime`).
+
+2. When `tz` is `None` or not specified, the returned `datetime` object is naive (i.e., its `tzinfo` attribute is `None`).
+
+3. When `tz` is provided (a non-None `tzinfo` subclass instance), the returned `datetime` object is aware and its `tzinfo` corresponds to the provided `tz`.
+
+4. Converting the returned `datetime` object back to a timestamp (via `.timestamp()`) yields a value approximately equal to the original input timestamp (round-trip consistency, within sub-second tolerance and ignoring leap-second edge cases).
+
+5. The `fold` attribute of the returned `datetime` object is always either 0 or 1.

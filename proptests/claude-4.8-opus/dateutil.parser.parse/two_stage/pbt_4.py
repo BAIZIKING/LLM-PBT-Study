@@ -1,0 +1,126 @@
+from hypothesis import given, strategies as st, assume, settings
+import datetime
+from dateutil.parser import parse, ParserError
+
+
+# Strategy for "safe" datetimes that won't cause overflow when round-tripped.
+# We restrict the year range well within C int limits and away from edge cases.
+safe_datetimes = st.datetimes(
+    min_value=datetime.datetime(1900, 1, 1, 0, 0, 0),
+    max_value=datetime.datetime(2100, 12, 31, 23, 59, 59),
+)
+
+# A set of timezone abbreviations we will map via tzinfos.
+tz_names = st.sampled_from(["BRST", "CST", "FOO", "BAR", "XYZ", "AAA"])
+# UTC offsets in seconds, kept within a valid tzoffset range (-24h, +24h).
+tz_offsets = st.integers(min_value=-86399, max_value=86399)
+
+
+# ---------------------------------------------------------------------------
+# Property 1: The output type is correct depending on fuzzy_with_tokens.
+# ---------------------------------------------------------------------------
+@given(st.data())
+def test_dateutil_parser_parse_property_1(data):
+    dt = data.draw(safe_datetimes)
+    use_tokens = data.draw(st.booleans())
+    timestr = dt.isoformat()
+
+    if use_tokens:
+        result = parse(timestr, fuzzy_with_tokens=True)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], datetime.datetime)
+        assert isinstance(result[1], tuple)
+        assert all(isinstance(tok, str) for tok in result[1])
+    else:
+        result = parse(timestr)
+        assert isinstance(result, datetime.datetime)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 2: ignoretz=True yields a naive datetime regardless of input tz.
+# ---------------------------------------------------------------------------
+@given(st.data())
+def test_dateutil_parser_parse_property_2(data):
+    dt = data.draw(safe_datetimes)
+    offset_minutes = data.draw(st.integers(min_value=-720, max_value=720))
+    # Build a string with an explicit numeric UTC offset.
+    sign = "+" if offset_minutes >= 0 else "-"
+    om = abs(offset_minutes)
+    hh, mm = divmod(om, 60)
+    timestr = "{} {}{:02d}:{:02d}".format(
+        dt.strftime("%Y-%m-%d %H:%M:%S"), sign, hh, mm
+    )
+
+    result = parse(timestr, ignoretz=True)
+    assert isinstance(result, datetime.datetime)
+    assert result.tzinfo is None
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 3: components absent from the string come from `default`,
+#             components present in the string override the default.
+# ---------------------------------------------------------------------------
+@given(st.data())
+def test_dateutil_parser_parse_property_3(data):
+    default = data.draw(safe_datetimes)
+    # Parse a string that only specifies a time, leaving the date to default.
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+    timestr = "{:02d}:{:02d}:{:02d}".format(hour, minute, second)
+
+    result = parse(timestr, default=default)
+    assert isinstance(result, datetime.datetime)
+    # Date components not in the string come from default.
+    assert result.year == default.year
+    assert result.month == default.month
+    assert result.day == default.day
+    # Time components in the string override default.
+    assert result.hour == hour
+    assert result.minute == minute
+    assert result.second == second
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 4: tzinfos mapping a tz name to an offset yields that UTC offset.
+# ---------------------------------------------------------------------------
+@given(st.data())
+def test_dateutil_parser_parse_property_4(data):
+    dt = data.draw(safe_datetimes)
+    name = data.draw(tz_names)
+    offset = data.draw(tz_offsets)
+    tzinfos = {name: offset}
+    timestr = "{} {}".format(dt.strftime("%Y-%m-%d %H:%M:%S"), name)
+
+    result = parse(timestr, tzinfos=tzinfos, ignoretz=False)
+    assert isinstance(result, datetime.datetime)
+    assert result.tzinfo is not None
+    assert result.utcoffset() == datetime.timedelta(seconds=offset)
+# End program
+
+
+# ---------------------------------------------------------------------------
+# Property 5: with fuzzy_with_tokens=True, every ignored token is a
+#             substring of the original input string.
+# ---------------------------------------------------------------------------
+@given(st.data())
+def test_dateutil_parser_parse_property_5(data):
+    dt = data.draw(safe_datetimes)
+    prefix = data.draw(st.sampled_from(["Today is ", "The date is ", "On ", ""]))
+    suffix = data.draw(st.sampled_from([" at the meeting", " sharp", " exactly", ""]))
+    core = dt.strftime("%B %d, %Y %H:%M:%S")
+    timestr = "{}{}{}".format(prefix, core, suffix)
+
+    result = parse(timestr, fuzzy_with_tokens=True)
+    assert isinstance(result, tuple)
+    parsed_dt, tokens = result
+    assert isinstance(parsed_dt, datetime.datetime)
+    assert isinstance(tokens, tuple)
+    for tok in tokens:
+        assert isinstance(tok, str)
+        assert tok in timestr
+# End program

@@ -1,0 +1,112 @@
+from hypothesis import given, strategies as st, assume
+import numpy as np
+import hypothesis.extra.numpy as npst
+
+
+# ---- Shared strategies (designed to avoid very large inputs and overflow) ----
+
+safe_floats = st.floats(
+    min_value=-1e6, max_value=1e6,
+    allow_nan=False, allow_infinity=False, width=64,
+)
+safe_ints = st.integers(min_value=-(10**6), max_value=10**6)
+small_shapes = npst.array_shapes(min_dims=1, max_dims=4, min_side=1, max_side=6)
+
+
+def _float_arrays():
+    return npst.arrays(dtype=np.float64, shape=small_shapes, elements=safe_floats)
+
+
+def _int_arrays():
+    return npst.arrays(dtype=np.int64, shape=small_shapes, elements=safe_ints)
+
+
+@given(st.data())
+def test_numpy_sum_initial_property(data):
+    # Property 1: initial adds to total; empty array gives neutral element / initial.
+    arr = data.draw(_float_arrays())
+    initial = data.draw(safe_floats)
+
+    base = np.sum(arr)
+    with_initial = np.sum(arr, initial=initial)
+    assert np.isclose(with_initial, base + initial, rtol=1e-9, atol=1e-6)
+
+    # Empty array: neutral element 0, or initial if provided.
+    empty = np.array([], dtype=np.float64)
+    assert np.sum(empty) == 0.0
+    assert np.isclose(np.sum(empty, initial=initial), initial,
+                      rtol=1e-9, atol=1e-9)
+
+
+@given(st.data())
+def test_numpy_sum_shape_property(data):
+    # Property 2: output shape == input shape with reduced axis removed,
+    # or kept as size 1 when keepdims=True; axis=None gives a scalar.
+    arr = data.draw(_float_arrays())
+    ndim = arr.ndim
+
+    # axis=None -> scalar (0-d).
+    assert np.ndim(np.sum(arr)) == 0
+
+    # Choose a valid axis.
+    axis = data.draw(st.integers(min_value=-ndim, max_value=ndim - 1))
+    norm_axis = axis % ndim
+
+    expected_removed = tuple(
+        s for i, s in enumerate(arr.shape) if i != norm_axis
+    )
+    assert np.sum(arr, axis=axis).shape == expected_removed
+
+    expected_keep = tuple(
+        (1 if i == norm_axis else s) for i, s in enumerate(arr.shape)
+    )
+    assert np.sum(arr, axis=axis, keepdims=True).shape == expected_keep
+
+
+@given(st.data())
+def test_numpy_sum_additive_consistency(data):
+    # Property 3: sum equals add.reduce, and summing axes sequentially equals
+    # summing them all at once (== axis=None total).
+    arr = data.draw(_int_arrays())
+
+    # Equivalence with add.reduce over the flattened array.
+    total = np.sum(arr)
+    assert total == np.add.reduce(arr.ravel())
+
+    # Summing along every axis one at a time equals axis=None total.
+    seq = arr
+    # Reduce from the last axis to the first to keep indices valid.
+    for ax in reversed(range(arr.ndim)):
+        seq = np.sum(seq, axis=ax)
+    assert seq == total
+
+
+@given(st.data())
+def test_numpy_sum_where_masking(data):
+    # Property 4: `where=False` positions are excluded; result equals sum of
+    # masked-in elements (with initial=0 to define behaviour for all-False).
+    arr = data.draw(_float_arrays())
+    mask = data.draw(
+        npst.arrays(dtype=np.bool_, shape=arr.shape, elements=st.booleans())
+    )
+
+    masked_result = np.sum(arr, where=mask, initial=0.0)
+    # Manually sum only included elements.
+    expected = float(arr[mask].sum()) if mask.any() else 0.0
+    assert np.isclose(masked_result, expected, rtol=1e-9, atol=1e-6)
+
+
+@given(st.data())
+def test_numpy_sum_dtype_property(data):
+    # Property 5: output dtype matches the specified `dtype` argument, and the
+    # numeric value is consistent with computing in that accumulator type.
+    arr = data.draw(_int_arrays())
+    target_dtype = data.draw(st.sampled_from([np.float64, np.int64, np.float32]))
+
+    result = np.sum(arr, dtype=target_dtype)
+    assert result.dtype == np.dtype(target_dtype)
+
+    # Value consistency: compare against a reference computed in high precision.
+    reference = np.sum(arr.astype(np.float64))
+    assert np.isclose(float(result), float(reference), rtol=1e-5, atol=1e-3)
+# End program

@@ -1,0 +1,60 @@
+from hypothesis import given, strategies as st
+import html
+
+# Property 1: The output is always a string (type str).
+@given(st.text(max_size=1000))
+def test_html_unescape_returns_str(s):
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+
+# Property 2: For an input with no character references (no '&'), the output equals the input.
+@given(st.text(alphabet=st.characters(blacklist_characters="&"), max_size=1000))
+def test_html_unescape_no_references_unchanged(s):
+    assert html.unescape(s) == s
+
+
+# Property 3: Applying unescape to its own output is idempotent when the output
+# contains no remaining valid references.
+@given(st.text(max_size=1000))
+def test_html_unescape_idempotent(s):
+    once = html.unescape(s)
+    twice = html.unescape(once)
+    # If the first result has no '&', a second pass must leave it unchanged.
+    if "&" not in once:
+        assert twice == once
+
+
+# Property 4: The output length is always less than or equal to the input length.
+@given(st.text(max_size=1000))
+def test_html_unescape_length_not_increasing(s):
+    result = html.unescape(s)
+    assert len(result) <= len(s)
+
+
+# Property 5: Equivalent named, decimal, and hexadecimal references for the same
+# code point all unescape to the same character.
+@given(st.data())
+def test_html_unescape_equivalent_references(data):
+    # A small mapping of named references to their code points.
+    known = {
+        "gt": 0x3E,
+        "lt": 0x3C,
+        "amp": 0x26,
+        "quot": 0x22,
+        "nbsp": 0xA0,
+        "copy": 0xA9,
+        "euro": 0x20AC,
+    }
+    name = data.draw(st.sampled_from(list(known.keys())))
+    codepoint = known[name]
+
+    named = html.unescape(f"&{name};")
+    decimal = html.unescape(f"&#{codepoint};")
+    hexadecimal = html.unescape(f"&#x{codepoint:x};")
+
+    expected = chr(codepoint)
+    assert named == expected
+    assert decimal == expected
+    assert hexadecimal == expected
+# End program

@@ -1,0 +1,9 @@
+1. The exponent of the result is always equal to the exponent of the second operand (`exp`), unless an error condition (InvalidOperation) is signaled.
+
+2. The numeric value of the result is the value of the first operand rounded to the precision implied by `exp`, so the result differs from the first operand by less than one unit in the last place of `exp`.
+
+3. When the exponent of `exp` is less than or equal to the exponent of the first operand (no rounding needed), the result is numerically equal to the first operand.
+
+4. The length of the coefficient of the result never exceeds the context precision; if it would, an InvalidOperation is raised instead of returning a value.
+
+5. An error (InvalidOperation) is signaled whenever the resulting exponent would be greater than Emax or less than Etiny(), and Underflow is never signaled even for subnormal inexact results.

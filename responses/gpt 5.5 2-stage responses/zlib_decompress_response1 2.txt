@@ -1,0 +1,9 @@
+1. For any valid zlib-formatted compressed data created from some original bytes, `zlib.decompress` with a compatible positive `wbits` value returns exactly the original bytes.
+
+2. For any valid raw deflate stream, `zlib.decompress` with the matching negative `wbits` value returns exactly the original uncompressed bytes.
+
+3. For any valid gzip-formatted compressed data, `zlib.decompress` with a compatible `wbits` value in the gzip range returns exactly the original bytes.
+
+4. For valid compressed input, changing `bufsize` affects only allocation behavior and does not change the returned decompressed bytes.
+
+5. For valid compressed input accepted by multiple compatible `wbits` settings, such as auto-detect zlib/gzip modes, all successful decompressions return the same bytes.

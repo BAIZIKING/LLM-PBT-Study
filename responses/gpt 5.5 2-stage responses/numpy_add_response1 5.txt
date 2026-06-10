@@ -1,0 +1,9 @@
+1. The output value at each valid broadcasted index equals the sum of the corresponding broadcasted values from `x1` and `x2`.
+
+2. If `x1` and `x2` are array-like, the output shape is the common broadcasted shape of `x1.shape` and `x2.shape`.
+
+3. If both `x1` and `x2` are scalars, the output is a scalar equal to `x1 + x2`.
+
+4. Addition is commutative for compatible inputs: `np.add(x1, x2)` produces the same values as `np.add(x2, x1)`, subject to normal dtype and floating-point behavior.
+
+5. When `where` is provided with an `out` array, output elements where `where` is `True` contain the element-wise sum, and elements where `where` is `False` retain their original values from `out`.

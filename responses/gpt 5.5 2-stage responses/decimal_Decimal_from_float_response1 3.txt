@@ -1,0 +1,9 @@
+1. The output is always a `Decimal` instance for any accepted `float` or `int` input.
+
+2. For any `int` input, the output represents exactly the same integer value as the input.
+
+3. For any finite `float` input, the output represents the exact decimal value of the binary floating-point number, not the shortest human-readable decimal approximation.
+
+4. For positive or negative infinity inputs, the output is a `Decimal` infinity with the same sign.
+
+5. For a NaN float input, the output is a `Decimal` NaN.

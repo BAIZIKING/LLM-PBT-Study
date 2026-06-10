@@ -1,0 +1,74 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+import math
+from fractions import Fraction
+
+FINITE_DECIMALS = st.decimals(
+    min_value=decimal.Decimal("-1e50"),
+    max_value=decimal.Decimal("1e50"),
+    allow_nan=False,
+    allow_infinity=False,
+    places=20,
+)
+
+SPECIAL_DECIMALS = st.sampled_from(
+    [
+        decimal.Decimal("Infinity"),
+        decimal.Decimal("-Infinity"),
+        decimal.Decimal("NaN"),
+        decimal.Decimal("-NaN"),
+        decimal.Decimal("sNaN"),
+    ]
+)
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_returns_integer_pair_property(data):
+    x = data.draw(FINITE_DECIMALS)
+    n, d = x.as_integer_ratio()
+
+    assert type(n) is int
+    assert type(d) is int
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_positive_denominator_property(data):
+    x = data.draw(FINITE_DECIMALS)
+    n, d = x.as_integer_ratio()
+
+    assert d > 0
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_exact_value_property(data):
+    x = data.draw(FINITE_DECIMALS)
+    n, d = x.as_integer_ratio()
+
+    assert Fraction(n, d) == Fraction(x)
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_lowest_terms_property(data):
+    x = data.draw(FINITE_DECIMALS)
+    n, d = x.as_integer_ratio()
+
+    assert math.gcd(n, d) == 1
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_special_values_property(data):
+    x = data.draw(SPECIAL_DECIMALS)
+
+    if x.is_infinite():
+        try:
+            x.as_integer_ratio()
+        except OverflowError:
+            pass
+        else:
+            assert False
+    elif x.is_nan():
+        try:
+            x.as_integer_ratio()
+        except ValueError:
+            pass
+        else:
+            assert False
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. If the function returns normally, the output is a non-empty list of edge tuples representing a closed cycle.
+
+2. Every edge tuple in the returned list corresponds to an edge that actually exists in the input graph, including the correct edge key for multigraphs.
+
+3. Consecutive edges in the returned list are connected by their traversal endpoints, and the final edge connects back to the first edge, forming a cyclic path.
+
+4. The shape of each returned edge tuple matches the graph type and `orientation` argument: `(u, v)` for graphs, `(u, v, key)` for multigraphs, with an additional final direction field only when `orientation` is not `None`.
+
+5. When an orientation direction is included, it is always either `"forward"` or `"reverse"`, and it is consistent with how the edge was traversed under the requested orientation mode.

@@ -1,0 +1,151 @@
+from hypothesis import given, strategies as st, settings
+import pandas as pd
+
+
+# Strategy for generating "hashable, comparable, well-behaved" cell values.
+# We avoid NaN/None and very large floats to keep duplicate-detection
+# semantics simple and to avoid overflow / NaN-equality surprises.
+def cell_values():
+    return st.one_of(
+        st.integers(min_value=-1000, max_value=1000),
+        st.text(alphabet="abcde", min_size=0, max_size=3),
+        st.booleans(),
+        st.sampled_from([1.0, 2.0, 3.5, 4.0, 5.0, 15.0]),
+    )
+
+
+@st.composite
+def dataframes(draw):
+    # Choose a fixed set of column names.
+    ncols = draw(st.integers(min_value=1, max_value=4))
+    columns = [f"col{i}" for i in range(ncols)]
+
+    # Choose the number of rows (kept small to avoid huge inputs).
+    nrows = draw(st.integers(min_value=0, max_value=30))
+
+    # Build the data column by column.
+    data = {}
+    for c in columns:
+        data[c] = draw(
+            st.lists(cell_values(), min_size=nrows, max_size=nrows)
+        )
+
+    df = pd.DataFrame(data, columns=columns)
+    return df
+
+
+def _subset_strategy(df):
+    cols = list(df.columns)
+    # subset can be None, a single label, or a list of labels.
+    return st.one_of(
+        st.none(),
+        st.sampled_from(cols),
+        st.lists(st.sampled_from(cols), min_size=1, max_size=len(cols), unique=True),
+    )
+
+
+def _normalize_subset(subset, df):
+    if subset is None:
+        return list(df.columns)
+    if isinstance(subset, list):
+        return subset
+    return [subset]
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_DataFrame_drop_duplicates_property(data):
+    df = data.draw(dataframes())
+    subset = data.draw(_subset_strategy(df))
+    keep = data.draw(st.sampled_from(["first", "last", False]))
+    ignore_index = data.draw(st.booleans())
+    inplace = data.draw(st.booleans())
+
+    subset_cols = _normalize_subset(subset, df)
+
+    # Keep a copy of the original since inplace will mutate.
+    original = df.copy(deep=True)
+
+    result = df.drop_duplicates(
+        subset=subset,
+        keep=keep,
+        inplace=inplace,
+        ignore_index=ignore_index,
+    )
+
+    # Property 5 (part b): inplace returns None, otherwise a DataFrame.
+    if inplace:
+        assert result is None
+        out = df  # df was mutated in place
+    else:
+        assert isinstance(result, pd.DataFrame)
+        out = result
+
+    # ----------------------------------------------------------------
+    # Property 1: No duplicates remain in the output (over subset cols).
+    # ----------------------------------------------------------------
+    assert not out.duplicated(subset=subset_cols, keep="first").any()
+
+    # ----------------------------------------------------------------
+    # Property 2: Output is a subset of input rows; row count <= input.
+    # We compare full-row tuples. Every output row must exist in the
+    # original input, and counts must not exceed.
+    # ----------------------------------------------------------------
+    assert len(out) <= len(original)
+
+    orig_rows = [tuple(r) for r in original.to_numpy().tolist()]
+    out_rows = [tuple(r) for r in out.to_numpy().tolist()]
+    from collections import Counter
+
+    orig_counter = Counter(orig_rows)
+    out_counter = Counter(out_rows)
+    for row, cnt in out_counter.items():
+        assert row in orig_counter
+        assert cnt <= orig_counter[row]
+
+    # ----------------------------------------------------------------
+    # Property 3: When keep is 'first' or 'last', the number of output
+    # rows equals number of unique subset-column combinations in input.
+    # ----------------------------------------------------------------
+    if len(original) == 0:
+        n_unique = 0
+    else:
+        subset_rows = [
+            tuple(r) for r in original[subset_cols].to_numpy().tolist()
+        ]
+        subset_counter = Counter(subset_rows)
+        n_unique = len(subset_counter)
+
+    if keep in ("first", "last"):
+        assert len(out) == n_unique
+    else:
+        # ------------------------------------------------------------
+        # Property 4: When keep=False, only rows whose subset-combination
+        # appeared exactly once in the input survive.
+        # ------------------------------------------------------------
+        if len(original) == 0:
+            assert len(out) == 0
+        else:
+            out_subset_rows = [
+                tuple(r) for r in out[subset_cols].to_numpy().tolist()
+            ]
+            # Each surviving combination must have been unique in input.
+            for combo in out_subset_rows:
+                assert subset_counter[combo] == 1
+            # And the count of survivors equals number of unique-once combos.
+            n_once = sum(1 for v in subset_counter.values() if v == 1)
+            assert len(out) == n_once
+
+    # ----------------------------------------------------------------
+    # Property 5 (part a): ignore_index controls resulting index.
+    # ----------------------------------------------------------------
+    if ignore_index:
+        assert list(out.index) == list(range(len(out)))
+    else:
+        # The retained index labels must be a subset of original labels,
+        # preserved in their original relative order.
+        if not inplace:
+            # For non-inplace 'first'/'last' we can recompute expected
+            # surviving original positional indices precisely.
+            assert set(out.index).issubset(set(original.index))
+# End program

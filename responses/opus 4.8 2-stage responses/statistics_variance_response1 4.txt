@@ -1,0 +1,9 @@
+1. The output is always non-negative (variance ≥ 0) for any valid input of at least two real-valued numbers.
+
+2. The variance is zero if and only if all data points are identical (equal to each other).
+
+3. The result is invariant under translation: adding a constant c to every element of data leaves the variance unchanged.
+
+4. The result scales by the square of a factor: multiplying every element of data by a constant k multiplies the variance by k².
+
+5. Passing the correct mean of data as the xbar argument yields the same result as omitting xbar (letting it be computed automatically).

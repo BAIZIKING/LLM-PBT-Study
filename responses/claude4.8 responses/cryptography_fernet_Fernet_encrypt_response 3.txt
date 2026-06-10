@@ -1,0 +1,59 @@
+## Generation Strategy
+
+To generate a wide variety of inputs for `Fernet.encrypt(data)`, I focus on the `data` parameter, which the documentation says must be `bytes`. To exercise edge cases thoroughly:
+
+- Use `st.binary()` with `min_size=0` to include the **empty bytes** edge case `b""`.
+- Allow a generous `max_size` so we test small, medium, and large payloads.
+- Since `st.binary()` generates arbitrary byte sequences (including null bytes, high bytes `0xFF`, and structured patterns), this naturally covers binary edge cases that wouldn't appear if we only used text.
+- The key is generated fresh per example using `Fernet.generate_key()` to keep the test deterministic with respect to the encryption mechanism while still validating the round-trip.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: `encrypt` returns `bytes` (the "Fernet token").
+2. **URL-safe base64**: The token is URL-safe base64-encoded, so it must contain only characters from the URL-safe base64 alphabet (`A-Z`, `a-z`, `0-9`, `-`, `_`, `=`).
+3. **Round-trip correctness**: Decrypting the token with the same key must yield the original `data` exactly (the example shows `f.decrypt(token) == data`).
+4. **Privacy/non-triviality (sanity)**: For non-empty data, the token should not trivially equal the input.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generate arbitrary byte strings (including empty and large payloads,
+# null bytes, and high-value bytes) to feed Fernet.encrypt. We then verify the
+# token's type, that it is URL-safe base64-encoded, and that decrypting it with
+# the same key recovers the original data (round-trip), per the documentation.
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt(data):
+    import base64
+    from cryptography.fernet import Fernet
+
+    payload = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    token = f.encrypt(payload)
+
+    # Property 1: encrypt returns bytes
+    assert isinstance(token, bytes)
+
+    # Property 2: token is URL-safe base64-encoded (must decode cleanly)
+    # base64.urlsafe_b64decode will raise if the token uses invalid characters.
+    decoded = base64.urlsafe_b64decode(token)
+    assert isinstance(decoded, bytes)
+
+    # Also confirm only URL-safe base64 alphabet characters are present.
+    allowed = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
+    assert set(token) <= allowed
+
+    # Property 3: round-trip — decrypting the token recovers the original data
+    assert f.decrypt(token) == payload
+
+    # Property 4: for non-empty data the token should not trivially equal input
+    if payload:
+        assert token != payload
+# End program
+```

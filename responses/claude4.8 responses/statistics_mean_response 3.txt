@@ -1,0 +1,69 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To exercise `statistics.mean` thoroughly, I want a wide variety of numeric inputs and edge cases:
+
+1. **Different numeric types**: The documentation shows examples with `int`, `float`, `Fraction`, and `Decimal`. I'll generate lists using each of these types.
+2. **Edge cases in values**: Include zero, negative numbers, very large/small values, and single-element lists.
+3. **Avoid problematic floats**: For `float`, I'll exclude `NaN` and `Infinity` since they break arithmetic identities (e.g., `NaN != NaN`).
+4. **Non-empty constraint**: Since empty data raises `StatisticsError`, I'll generate non-empty lists (`min_size=1`) so I can test the numeric properties cleanly.
+5. **Use `Fraction` for exact verification**: When checking algebraic properties, floating-point rounding makes exact equality unreliable, so I'll use `Fraction` lists for properties requiring exact equality, and use approximate comparison for floats.
+
+## Properties to Check (derived from documentation)
+
+1. **Definition property**: `mean(data) == sum(data) / len(data)`. This is the core definition stated in the docs ("the sum of the data divided by the number of data points").
+2. **Bounds property**: The mean must lie between the minimum and maximum of the data (a measure of central location): `min(data) <= mean(data) <= max(data)`.
+3. **Single element**: `mean([x]) == x`.
+4. **Translation invariance**: `mean(x + c for x in data) == mean(data) + c`.
+
+I'll use exact `Fraction` arithmetic to verify these robustly, avoiding floating-point error.
+
+```python
+from hypothesis import given, strategies as st
+from fractions import Fraction
+import statistics
+
+# Summary: Generate non-empty lists of exact Fraction values (built from
+# integer numerators/denominators covering zero, negatives, and large magnitudes).
+# Using Fractions gives exact arithmetic so algebraic identities can be checked
+# with strict equality. We verify: the sum/len definition, that the mean is
+# bounded by min and max, the single-element identity, and translation invariance.
+@given(st.data())
+def test_statistics_mean(data):
+    # Build a list of exact rational numbers
+    fractions = data.draw(
+        st.lists(
+            st.builds(
+                Fraction,
+                st.integers(min_value=-10**9, max_value=10**9),
+                st.integers(min_value=1, max_value=10**9),  # nonzero denominator
+            ),
+            min_size=1,
+            max_size=50,
+        )
+    )
+
+    result = statistics.mean(fractions)
+
+    # Property 1: Definition — mean equals sum divided by count (exact with Fractions)
+    expected = sum(fractions) / Fraction(len(fractions))
+    assert result == expected
+
+    # Property 2: Bounds — mean lies between min and max (central location)
+    assert min(fractions) <= result <= max(fractions)
+
+    # Property 3: Single-element list returns that element
+    if len(fractions) == 1:
+        assert result == fractions[0]
+
+    # Property 4: Translation invariance — shifting all data by c shifts mean by c
+    c = data.draw(st.builds(
+        Fraction,
+        st.integers(min_value=-10**6, max_value=10**6),
+        st.integers(min_value=1, max_value=10**6),
+    ))
+    shifted = [x + c for x in fractions]
+    assert statistics.mean(shifted) == result + c
+# End program
+```

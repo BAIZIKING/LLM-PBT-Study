@@ -1,0 +1,59 @@
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate empty and non-empty lists, tuples, and one-shot iterables containing
+# finite ints/floats, with frequent edge cases such as zero, -0.0, negatives, very tiny
+# positives, and very large positives. Check that empty/non-positive inputs raise
+# StatisticsError, and that strictly positive inputs return a float matching
+# exp(mean(log(float(x)))) within floating-point tolerance.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    number_strategy = st.one_of(
+        st.integers(min_value=-(10**12), max_value=10**12),
+        st.floats(allow_nan=False, allow_infinity=False, width=64),
+        st.sampled_from([
+            0,
+            -0.0,
+            1,
+            -1,
+            2,
+            1e-300,
+            5e-324,
+            1.7976931348623157e308,
+            -1.7976931348623157e308,
+        ]),
+    )
+
+    values = data.draw(st.lists(number_strategy, max_size=50))
+    container_kind = data.draw(st.sampled_from(["list", "tuple", "iterator"]))
+
+    if container_kind == "list":
+        input_data = list(values)
+    elif container_kind == "tuple":
+        input_data = tuple(values)
+    else:
+        input_data = iter(values)
+
+    should_raise = not values or any(float(x) <= 0.0 for x in values)
+
+    if should_raise:
+        try:
+            statistics.geometric_mean(input_data)
+        except statistics.StatisticsError:
+            return
+        assert False, "Expected StatisticsError for empty, zero, or negative input"
+
+    result = statistics.geometric_mean(input_data)
+
+    expected = math.exp(math.fsum(math.log(float(x)) for x in values) / len(values))
+
+    assert isinstance(result, float)
+
+    if math.isfinite(expected) and math.isfinite(result):
+        assert math.isclose(result, expected, rel_tol=1e-12, abs_tol=0.0)
+    else:
+        assert result == expected
+# End program
+```

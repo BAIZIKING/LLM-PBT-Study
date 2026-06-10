@@ -1,0 +1,9 @@
+1. Every returned clique is a list of distinct nodes that all belong to the input graph `G`.
+
+2. Every returned clique is complete: for every pair of distinct nodes in the clique, an edge exists between them in `G`.
+
+3. Every returned clique is maximal: no additional node from `G` can be added to it while preserving the clique property.
+
+4. If `nodes` is provided and is itself a clique, every returned clique contains all nodes from `nodes`.
+
+5. The output contains exactly the maximal cliques satisfying the requested criteria, with no duplicates; the order of cliques and the order of nodes within each clique are arbitrary.

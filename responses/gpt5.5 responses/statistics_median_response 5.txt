@@ -1,0 +1,64 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate empty and non-empty numeric iterables with varied sizes, odd/even lengths,
+# duplicates, negatives, zeros, large integers, and finite floats. Use list, tuple, and generator
+# inputs to exercise both sequence and iterable behavior. Check that empty input raises
+# StatisticsError, odd-length input returns the sorted middle value, even-length input returns
+# the mean of the two sorted middle values, and the result is order-invariant.
+@given(st.data())
+def test_statistics_median(data):
+    numeric_kind = data.draw(st.sampled_from(["int", "float"]))
+
+    if numeric_kind == "int":
+        element_strategy = st.one_of(
+            st.integers(min_value=-10, max_value=10),
+            st.integers(min_value=-(10**12), max_value=10**12),
+        )
+    else:
+        element_strategy = st.one_of(
+            st.just(0.0),
+            st.just(-0.0),
+            st.floats(
+                min_value=-(10**12),
+                max_value=10**12,
+                allow_nan=False,
+                allow_infinity=False,
+                width=64,
+            ),
+        )
+
+    values = data.draw(st.lists(element_strategy, min_size=0, max_size=100))
+    container_kind = data.draw(st.sampled_from(["list", "tuple", "generator"]))
+
+    def make_input(xs):
+        if container_kind == "list":
+            return list(xs)
+        if container_kind == "tuple":
+            return tuple(xs)
+        return (x for x in xs)
+
+    if not values:
+        try:
+            statistics.median(make_input(values))
+        except statistics.StatisticsError:
+            return
+        assert False, "median() should raise StatisticsError for empty input"
+
+    result = statistics.median(make_input(values))
+    sorted_values = sorted(values)
+    n = len(sorted_values)
+    middle = n // 2
+
+    if n % 2 == 1:
+        expected = sorted_values[middle]
+    else:
+        expected = (sorted_values[middle - 1] + sorted_values[middle]) / 2
+
+    assert result == expected
+    assert sorted_values[0] <= result <= sorted_values[-1]
+    assert statistics.median(reversed(values)) == expected
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. For any non-empty numeric input, the returned mean equals the sum of the data divided by the number of data points.
+
+2. For any non-empty numeric input, the returned mean lies between the minimum and maximum values of the input data, inclusive.
+
+3. Reordering the input data does not change the returned mean.
+
+4. Adding the same constant to every data point increases the returned mean by that same constant.
+
+5. Multiplying every data point by the same numeric factor multiplies the returned mean by that factor.

@@ -1,0 +1,70 @@
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+import math
+
+# Summary: Generate valid float/int inputs, including NaN, infinities, signed zero, min/max/subnormal floats, booleans-as-ints, and large ints; also generate invalid non-float/int inputs to check rejection. For valid inputs, verify exact Decimal conversion, special-value handling, and signed-zero preservation; for invalid inputs, verify TypeError.
+@given(st.data())
+def test_decimal_Decimal_from_float(data):
+    float_edges = st.sampled_from([
+        0.0,
+        -0.0,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        5e-324,          # smallest positive subnormal float
+        -5e-324,
+        2.2250738585072014e-308,   # smallest positive normal float
+        -2.2250738585072014e-308,
+        1.7976931348623157e308,    # max finite float
+        -1.7976931348623157e308,
+        0.1,
+        -0.1,
+    ])
+
+    valid_inputs = st.one_of(
+        st.floats(width=64, allow_nan=True, allow_infinity=True),
+        float_edges,
+        st.integers(min_value=-(2 ** 4096), max_value=2 ** 4096),
+        st.booleans(),
+    )
+
+    invalid_inputs = st.one_of(
+        st.none(),
+        st.text(),
+        st.binary(),
+        st.lists(st.integers(), max_size=5),
+        st.tuples(st.integers(), st.integers()),
+        st.decimals(allow_nan=True, allow_infinity=True),
+    )
+
+    value = data.draw(st.one_of(valid_inputs, invalid_inputs))
+
+    if not isinstance(value, (float, int)):
+        try:
+            Decimal.from_float(value)
+        except TypeError:
+            return
+        assert False, "Decimal.from_float should reject non-float/non-int inputs"
+
+    result = Decimal.from_float(value)
+
+    if isinstance(value, int):
+        assert result == Decimal(int(value))
+        return
+
+    if math.isnan(value):
+        assert result.is_nan()
+    elif math.isinf(value):
+        assert result.is_infinite()
+        assert result.is_signed() == (value < 0.0)
+    else:
+        assert result.is_finite()
+        assert result.as_integer_ratio() == value.as_integer_ratio()
+
+        if value == 0.0:
+            assert result.is_zero()
+            assert result.is_signed() == (math.copysign(1.0, value) < 0.0)
+
+# End program
+```

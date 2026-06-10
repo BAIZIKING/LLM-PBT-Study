@@ -1,0 +1,9 @@
+1. The output is always a Decimal instance.
+
+2. The output is always one of exactly four values: Decimal('-1'), Decimal('0'), Decimal('1'), or Decimal('NaN').
+
+3. If either operand is a NaN, the result is Decimal('NaN'); otherwise the result is one of Decimal('-1'), Decimal('0'), or Decimal('1').
+
+4. When neither operand is a NaN, the sign of the result corresponds to the ordering of the operands: the result is Decimal('-1') if the first is less than the second, Decimal('0') if they are equal, and Decimal('1') if the first is greater than the second.
+
+5. When neither operand is a NaN, the comparison is antisymmetric: compare(a, b) and compare(b, a) yield results that are negatives of each other (i.e., their sum is Decimal('0')).

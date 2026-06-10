@@ -1,0 +1,9 @@
+1. For any non-empty input, the median is between the minimum and maximum values of the input, inclusive.
+
+2. The median is invariant under reordering: any permutation of the same input values produces the same result.
+
+3. For an odd number of data points, the median is exactly the middle element of the sorted input.
+
+4. For an even number of data points, the median is the arithmetic mean of the two middle elements of the sorted input.
+
+5. For numeric data, adding the same constant to every input value increases the median by that same constant.

@@ -1,0 +1,9 @@
+1. For any non-empty dataset of finite positive numbers, the result is a finite positive float.
+
+2. For a dataset containing a single positive value `x`, the result is equal to `float(x)` within normal floating-point tolerance.
+
+3. For any non-empty dataset of finite positive numbers, the result lies between the minimum and maximum values of the dataset, inclusive.
+
+4. For any non-empty dataset of finite positive numbers, permuting the input order does not change the result, except for possible insignificant floating-point differences.
+
+5. For an empty dataset, or any dataset containing zero or a negative value, the function raises `StatisticsError`.

@@ -1,0 +1,9 @@
+1. For any non-empty numeric data, the median is invariant under permutation of the input values.
+
+2. For any non-empty numeric data with an odd number of elements, the median equals the middle element of the sorted data.
+
+3. For any non-empty numeric data with an even number of elements, the median equals the arithmetic mean of the two middle elements of the sorted data.
+
+4. For any non-empty numeric data without NaN values, the median is always between the minimum and maximum input values, inclusive.
+
+5. For empty input data, `statistics.median` raises `StatisticsError` instead of returning a value.

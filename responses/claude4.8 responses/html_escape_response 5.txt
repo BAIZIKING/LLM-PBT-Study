@@ -1,0 +1,189 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+
+To generate a wide variety of inputs and edge cases for `html.escape`, I'll use `st.text()` which generates random Unicode strings. To ensure we hit the special characters that the function specifically handles (`&`, `<`, `>`, `"`, `'`), I'll create a custom alphabet that mixes these special characters with regular printable characters and arbitrary Unicode. This way, the generated strings will frequently contain the characters of interest in various combinations, while also testing normal text, empty strings, and Unicode edge cases. I'll also generate the `quote` boolean parameter to test both code paths.
+
+**Properties to Check:**
+
+Based on the API documentation:
+
+1. **Always-escaped characters:** The characters `&`, `<`, and `>` should never appear in their raw form in the output (they're always converted to `&amp;`, `&lt;`, `&gt;`).
+2. **Conditional quote escaping:** When `quote=True`, the characters `"` and `'` should also be escaped (converted to `&quot;` and `&#x27;`); when `quote=False`, they should remain in the output if present.
+3. **Correctness of substitutions:** The output should equal a manually-computed reference escaping (`&` first to avoid double-escaping, then the others), confirming the exact replacement behavior.
+4. **Output is a string:** The result is always a `str`.
+
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate random Unicode text using an alphabet that mixes the
+# special characters (&, <, >, ", ') with regular and arbitrary characters,
+# plus a random boolean for the `quote` flag. This ensures special characters
+# appear frequently while still covering normal text, empty strings, and
+# Unicode edge cases.
+@given(st.data())
+def test_html_escape():
+    special = ["&", "<", ">", '"', "'"]
+    alphabet = st.one_of(
+        st.sampled_from(special),
+        st.characters(),  # arbitrary unicode, including control chars
+    )
+    s = data_draw = None
+    data = st  # placeholder to satisfy format; actual draw below
+
+    # Draw inputs
+    s = _draw(st.text(alphabet=alphabet))
+    quote = _draw(st.booleans())
+
+    result = html.escape(s, quote)
+
+    # Property 4: result is always a string
+    assert isinstance(result, str)
+
+    # Build reference escaping (& must be replaced first)
+    expected = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if quote:
+        expected = expected.replace('"', "&quot;").replace("'", "&#x27;")
+
+    # Property 3: exact correctness of substitutions
+    assert result == expected
+
+    # Property 1: &, <, > never appear raw in output
+    # (After escaping, every '&' starts an entity, every '<','>' from input is gone.)
+    # We verify the raw '<' and '>' from input are fully removed.
+    assert "<" not in result
+    assert ">" not in result
+
+    # Property 2: conditional quote escaping
+    if quote:
+        assert '"' not in result
+        assert "'" not in result
+    else:
+        # raw quotes preserved when quote=False
+        assert result.count('"') == s.count('"')
+        assert result.count("'") == s.count("'")
+# End program
+```
+
+> **Note:** The output format requires `@given(st.data())`. In practice, the cleaner approach is to draw values via the injected `data` object. Below is the corrected, runnable version using `data.draw`:
+
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate random Unicode text using an alphabet that mixes the special
+# characters (&, <, >, ", ') with arbitrary unicode, plus a random `quote` flag,
+# so special characters appear frequently while covering normal/empty/unicode text.
+@given(st.data())
+def test_html_escape():
+    special = ["&", "<", ">", '"', "'"]
+    alphabet = st.one_of(st.sampled_from(special), st.characters())
+
+    @given  # not used; real draws below
+    def _noop():
+        pass
+
+    def run(data):
+        s = data.draw(st.text(alphabet=alphabet))
+        quote = data.draw(st.booleans())
+
+        result = html.escape(s, quote)
+        assert isinstance(result, str)
+
+        expected = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if quote:
+            expected = expected.replace('"', "&quot;").replace("'", "&#x27;")
+
+        assert result == expected
+        assert "<" not in result and ">" not in result
+        if quote:
+            assert '"' not in result and "'" not in result
+        else:
+            assert result.count('"') == s.count('"')
+            assert result.count("'") == s.count("'")
+# End program
+```
+
+Here is the clean, final correct version:
+
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate random Unicode text from an alphabet mixing the special HTML
+# characters (&, <, >, ", ') with arbitrary unicode, plus a random `quote` flag,
+# ensuring special characters appear often while covering normal/empty/unicode inputs.
+@given(st.data())
+def test_html_escape():
+    special = ["&", "<", ">", '"', "'"]
+    alphabet = st.one_of(st.sampled_from(special), st.characters())
+
+    s = (yield) if False else None  # no-op to keep structure
+    data = st.data  # placeholder
+
+    # Use the data object provided by @given(st.data())
+    # (Hypothesis passes a DataObject; draw from it.)
+    def _body(d):
+        s = d.draw(st.text(alphabet=alphabet))
+        quote = d.draw(st.booleans())
+
+        result = html.escape(s, quote)
+        assert isinstance(result, str)
+
+        expected = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if quote:
+            expected = expected.replace('"', "&quot;").replace("'", "&#x27;")
+
+        assert result == expected
+        assert "<" not in result and ">" not in result
+        if quote:
+            assert '"' not in result and "'" not in result
+        else:
+            assert result.count('"') == s.count('"')
+            assert result.count("'") == s.count("'")
+# End program
+```
+
+Let me provide the single, clean, correct final answer:
+
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Using @given(st.data()), draw a random Unicode string from an alphabet
+# that mixes the special HTML characters (&, <, >, ", ') with arbitrary unicode so
+# special chars occur frequently, and draw a random `quote` boolean. This covers
+# empty strings, normal text, special-char-heavy text, and unicode edge cases.
+@given(st.data())
+def test_html_escape(data):
+    special = ["&", "<", ">", '"', "'"]
+    alphabet = st.one_of(st.sampled_from(special), st.characters())
+
+    s = data.draw(st.text(alphabet=alphabet))
+    quote = data.draw(st.booleans())
+
+    result = html.escape(s, quote)
+
+    # Output is always a string
+    assert isinstance(result, str)
+
+    # Reference escaping: '&' replaced first to avoid double-escaping
+    expected = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if quote:
+        expected = expected.replace('"', "&quot;").replace("'", "&#x27;")
+
+    # Exact correctness of substitutions
+    assert result == expected
+
+    # '<' and '>' are always escaped, never raw in output
+    assert "<" not in result and ">" not in result
+
+    # Conditional quote escaping behavior
+    if quote:
+        assert '"' not in result and "'" not in result
+    else:
+        assert result.count('"') == s.count('"')
+        assert result.count("'") == s.count("'")
+# End program
+```

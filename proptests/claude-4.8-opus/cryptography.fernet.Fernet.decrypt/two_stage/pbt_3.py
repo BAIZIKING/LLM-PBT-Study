@@ -1,0 +1,96 @@
+from hypothesis import given, strategies as st, assume
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import time
+import base64
+import os
+import pytest
+
+
+# Property 1: The output of decrypt(token) is always of type bytes.
+@given(data=st.binary(max_size=1024))
+def test_cryptography_fernet_Fernet_decrypt_returns_bytes(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    result = f.decrypt(token)
+    assert isinstance(result, bytes)
+# End program
+
+
+# Property 2: Round-trip: decrypt(encrypt(data)) == data with same key.
+@given(data=st.binary(max_size=1024))
+def test_cryptography_fernet_Fernet_decrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    result = f.decrypt(token)
+    assert result == data
+# End program
+
+
+# Property 3: Decrypting a token older than ttl raises InvalidToken.
+@given(
+    data=st.binary(max_size=1024),
+    age=st.integers(min_value=1, max_value=10**6),
+    ttl=st.integers(min_value=0, max_value=10**6),
+)
+def test_cryptography_fernet_Fernet_decrypt_ttl_expired(data, age, ttl):
+    assume(age > ttl)
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    current_time = int(time.time())
+    creation_time = current_time - age
+    # avoid negative or overflow timestamps
+    assume(creation_time >= 0)
+    token = f.encrypt_at_time(data, creation_time)
+    with pytest.raises(InvalidToken):
+        f.decrypt_at_time(token, ttl, current_time)
+# End program
+
+
+# Property 4: Decrypting a tampered token or wrong-key token raises InvalidToken.
+@given(
+    data=st.binary(max_size=1024),
+    flip_index=st.integers(min_value=0, max_value=10000),
+)
+def test_cryptography_fernet_Fernet_decrypt_tampered(data, flip_index):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+
+    # Case A: wrong key
+    other_key = Fernet.generate_key()
+    assume(other_key != key)
+    other_f = Fernet(other_key)
+    with pytest.raises(InvalidToken):
+        other_f.decrypt(token)
+
+    # Case B: tampered token bytes
+    token_bytes = bytearray(token)
+    if len(token_bytes) > 0:
+        idx = flip_index % len(token_bytes)
+        token_bytes[idx] ^= 0x01
+        tampered = bytes(token_bytes)
+        if tampered != bytes(token):
+            with pytest.raises(InvalidToken):
+                f.decrypt(tampered)
+# End program
+
+
+# Property 5: Passing a token not of type bytes or str raises TypeError.
+@given(
+    bad_token=st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+        st.lists(st.integers(min_value=0, max_value=255), max_size=64),
+        st.none(),
+        st.dictionaries(st.text(max_size=8), st.integers(), max_size=4),
+    )
+)
+def test_cryptography_fernet_Fernet_decrypt_typeerror(bad_token):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    with pytest.raises(TypeError):
+        f.decrypt(bad_token)
+# End program

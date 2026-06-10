@@ -1,0 +1,58 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+bounded_numbers = st.integers(min_value=-(10**12), max_value=10**12)
+
+
+@given(st.data())
+def test_statistics_median_empty_data_raises_statistics_error(data):
+    try:
+        statistics.median([])
+    except statistics.StatisticsError:
+        return
+    assert False
+
+
+@given(st.data())
+def test_statistics_median_is_invariant_under_permutation(data):
+    values = data.draw(st.lists(bounded_numbers, min_size=1, max_size=50))
+    permuted_values = data.draw(st.permutations(values))
+
+    assert statistics.median(values) == statistics.median(permuted_values)
+
+
+@given(st.data())
+def test_statistics_median_odd_length_is_middle_sorted_value(data):
+    half_length = data.draw(st.integers(min_value=0, max_value=25))
+    length = 2 * half_length + 1
+    values = data.draw(st.lists(bounded_numbers, min_size=length, max_size=length))
+
+    sorted_values = sorted(values)
+
+    assert statistics.median(values) == sorted_values[half_length]
+
+
+@given(st.data())
+def test_statistics_median_even_length_is_mean_of_middle_sorted_values(data):
+    half_length = data.draw(st.integers(min_value=1, max_value=25))
+    length = 2 * half_length
+    values = data.draw(st.lists(bounded_numbers, min_size=length, max_size=length))
+
+    sorted_values = sorted(values)
+    expected = (sorted_values[half_length - 1] + sorted_values[half_length]) / 2
+
+    assert statistics.median(values) == expected
+
+
+@given(st.data())
+def test_statistics_median_lies_between_minimum_and_maximum(data):
+    values = data.draw(st.lists(bounded_numbers, min_size=1, max_size=50))
+
+    result = statistics.median(values)
+
+    assert min(values) <= result <= max(values)
+
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. For any valid non-constant inputs `x` and `y`, the returned correlation coefficient is always between `-1.0` and `1.0`, inclusive.
+
+2. The result is symmetric: `correlation(x, y, method=method)` equals `correlation(y, x, method=method)` for both `"linear"` and `"ranked"` methods.
+
+3. For any valid non-constant input `x`, `correlation(x, x, method=method)` returns `1.0` for both `"linear"` and `"ranked"` methods.
+
+4. For `method="linear"`, applying a positive linear transformation to either input does not change the result, while applying a negative linear transformation flips the sign of the result.
+
+5. For `method="ranked"`, applying a strictly increasing transformation to either input does not change the result, while applying a strictly decreasing transformation flips the sign of the result.

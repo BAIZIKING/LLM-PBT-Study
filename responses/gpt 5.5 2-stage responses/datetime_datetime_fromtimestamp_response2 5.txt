@@ -1,0 +1,74 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+
+_SAFE_TIMESTAMPS = st.floats(
+    min_value=0.0,
+    max_value=2_000_000_000.0,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+_SAFE_INTEGER_TIMESTAMPS = st.integers(
+    min_value=0,
+    max_value=2_000_000_000,
+)
+
+_TIMEZONES = st.integers(
+    min_value=-23 * 60 - 59,
+    max_value=23 * 60 + 59,
+).map(lambda minutes: datetime.timezone(datetime.timedelta(minutes=minutes)))
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_returns_datetime_instance(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert isinstance(result, datetime.datetime)
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_without_tz_returns_naive_datetime(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert result.tzinfo is None
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_with_tz_returns_aware_datetime(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+    tz = data.draw(_TIMEZONES)
+
+    result = datetime.datetime.fromtimestamp(timestamp, tz)
+
+    assert result.tzinfo is not None
+    assert result.utcoffset() is not None
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_round_trips_to_timestamp(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+
+    result = datetime.datetime.fromtimestamp(timestamp)
+
+    assert abs(result.timestamp() - timestamp) <= 1e-5
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_utc_matches_epoch_plus_seconds(data):
+    timestamp = data.draw(_SAFE_INTEGER_TIMESTAMPS)
+
+    result = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+    expected = datetime.datetime(
+        1970, 1, 1, tzinfo=datetime.timezone.utc
+    ) + datetime.timedelta(seconds=timestamp)
+
+    assert result == expected
+
+# End program
+```

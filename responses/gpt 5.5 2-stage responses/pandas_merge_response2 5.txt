@@ -1,0 +1,223 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+
+KEY_LISTS = st.lists(st.integers(min_value=-5, max_value=5), min_size=0, max_size=8)
+JOIN_HOWS = st.sampled_from(["inner", "left", "right", "outer"])
+
+
+def _counts(values):
+    result = {}
+    for value in values:
+        result[value] = result.get(value, 0) + 1
+    return result
+
+
+def _expected_merge_key_counts(left_keys, right_keys, how):
+    left_counts = _counts(left_keys)
+    right_counts = _counts(right_keys)
+
+    if how == "inner":
+        keys = set(left_counts) & set(right_counts)
+    elif how == "left":
+        keys = set(left_counts)
+    elif how == "right":
+        keys = set(right_counts)
+    elif how == "outer":
+        keys = set(left_counts) | set(right_counts)
+    else:
+        raise ValueError(how)
+
+    expected = {}
+    for key in keys:
+        left_count = left_counts.get(key, 0)
+        right_count = right_counts.get(key, 0)
+
+        if left_count and right_count:
+            expected[key] = left_count * right_count
+        elif how in ("left", "outer") and left_count:
+            expected[key] = left_count
+        elif how in ("right", "outer") and right_count:
+            expected[key] = right_count
+
+    return expected
+
+
+def _key_frame(keys, id_column):
+    return pandas.DataFrame(
+        {
+            "k": pandas.Series(keys, dtype="object"),
+            id_column: list(range(len(keys))),
+        }
+    )
+
+
+def _tuple_counts(values):
+    result = {}
+    for value in values:
+        result[value] = result.get(value, 0) + 1
+    return result
+
+
+@given(st.data())
+def test_pandas_merge_key_row_counts_follow_join_semantics(data):
+    left_keys = data.draw(KEY_LISTS)
+    right_keys = data.draw(KEY_LISTS)
+    how = data.draw(JOIN_HOWS)
+
+    left = pandas.DataFrame({"k": pandas.Series(left_keys, dtype="object")})
+    right = pandas.DataFrame({"k": pandas.Series(right_keys, dtype="object")})
+
+    merged = pandas.merge(left, right, how=how, on="k")
+
+    actual = _counts(merged["k"].tolist())
+    expected = _expected_merge_key_counts(left_keys, right_keys, how)
+
+    assert actual == expected
+
+
+@given(st.data())
+def test_pandas_merge_output_key_set_matches_join_type(data):
+    left_keys = data.draw(KEY_LISTS)
+    right_keys = data.draw(KEY_LISTS)
+    how = data.draw(JOIN_HOWS)
+
+    left = pandas.DataFrame({"k": pandas.Series(left_keys, dtype="object")})
+    right = pandas.DataFrame({"k": pandas.Series(right_keys, dtype="object")})
+
+    merged = pandas.merge(left, right, how=how, on="k")
+
+    if how == "inner":
+        expected_keys = set(left_keys) & set(right_keys)
+    elif how == "left":
+        expected_keys = set(left_keys)
+    elif how == "right":
+        expected_keys = set(right_keys)
+    else:
+        expected_keys = set(left_keys) | set(right_keys)
+
+    assert set(merged["k"].tolist()) == expected_keys
+
+
+@given(st.data())
+def test_pandas_merge_preserves_non_key_values_with_suffixes(data):
+    left_keys = data.draw(KEY_LISTS)
+    right_keys = data.draw(KEY_LISTS)
+
+    left = pandas.DataFrame(
+        {
+            "k": pandas.Series(left_keys, dtype="object"),
+            "v": list(range(len(left_keys))),
+        }
+    )
+    right = pandas.DataFrame(
+        {
+            "k": pandas.Series(right_keys, dtype="object"),
+            "v": [1000 + i for i in range(len(right_keys))],
+        }
+    )
+
+    merged = pandas.merge(
+        left,
+        right,
+        how="inner",
+        on="k",
+        suffixes=("_L", "_R"),
+    )
+
+    assert "v_L" in merged.columns
+    assert "v_R" in merged.columns
+    assert "v" not in merged.columns
+
+    expected_rows = []
+    for left_index, left_key in enumerate(left_keys):
+        for right_index, right_key in enumerate(right_keys):
+            if left_key == right_key:
+                expected_rows.append((left_key, left_index, 1000 + right_index))
+
+    actual_rows = [
+        (row["k"], row["v_L"], row["v_R"])
+        for _, row in merged.iterrows()
+    ]
+
+    assert _tuple_counts(actual_rows) == _tuple_counts(expected_rows)
+
+
+@given(st.data())
+def test_pandas_merge_cross_join_contains_every_pairing(data):
+    left_size = data.draw(st.integers(min_value=0, max_value=8))
+    right_size = data.draw(st.integers(min_value=0, max_value=8))
+
+    left = pandas.DataFrame({"left_id": list(range(left_size))})
+    right = pandas.DataFrame({"right_id": list(range(right_size))})
+
+    merged = pandas.merge(left, right, how="cross")
+
+    expected_pairs = [
+        (left_id, right_id)
+        for left_id in range(left_size)
+        for right_id in range(right_size)
+    ]
+    actual_pairs = list(zip(merged["left_id"].tolist(), merged["right_id"].tolist()))
+
+    assert len(merged) == left_size * right_size
+    assert _tuple_counts(actual_pairs) == _tuple_counts(expected_pairs)
+
+
+@given(st.data())
+def test_pandas_merge_indicator_labels_row_origins(data):
+    left_keys = data.draw(KEY_LISTS)
+    right_keys = data.draw(KEY_LISTS)
+
+    left = _key_frame(left_keys, "left_id")
+    right = _key_frame(right_keys, "right_id")
+
+    merged = pandas.merge(left, right, how="outer", on="k", indicator=True)
+
+    left_counts = _counts(left_keys)
+    right_counts = _counts(right_keys)
+
+    expected_label_counts = {
+        "left_only": 0,
+        "right_only": 0,
+        "both": 0,
+    }
+
+    for key in set(left_counts) | set(right_counts):
+        left_count = left_counts.get(key, 0)
+        right_count = right_counts.get(key, 0)
+
+        if left_count and right_count:
+            expected_label_counts["both"] += left_count * right_count
+        elif left_count:
+            expected_label_counts["left_only"] += left_count
+        else:
+            expected_label_counts["right_only"] += right_count
+
+    actual_label_counts = {
+        "left_only": 0,
+        "right_only": 0,
+        "both": 0,
+    }
+
+    for _, row in merged.iterrows():
+        key = row["k"]
+        label = str(row["_merge"])
+
+        assert label in actual_label_counts
+
+        if key in left_counts and key in right_counts:
+            assert label == "both"
+        elif key in left_counts:
+            assert label == "left_only"
+        else:
+            assert label == "right_only"
+
+        actual_label_counts[label] += 1
+
+    assert actual_label_counts == expected_label_counts
+
+
+# End program
+```

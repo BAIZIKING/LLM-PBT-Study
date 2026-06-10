@@ -1,0 +1,9 @@
+1. The rotated token must be valid and decryptable by the MultiFernet instance, yielding the same plaintext as the original token decrypted before rotation.
+
+2. The rotated token preserves the original timestamp embedded in the input token (i.e., the timestamp extracted from the rotated token equals the timestamp of the original token).
+
+3. The rotated token is always returned as `bytes`, regardless of whether the input `msg` was provided as `str` or `bytes`.
+
+4. The rotated token is URL-safe base64-encoded (i.e., it only contains characters from the URL-safe base64 alphabet).
+
+5. Rotating a token re-encrypts it under the primary (first) key, so the rotated token should be decryptable by a Fernet instance consisting solely of the primary key, while the original token may not be (unless it was already encrypted with that key).

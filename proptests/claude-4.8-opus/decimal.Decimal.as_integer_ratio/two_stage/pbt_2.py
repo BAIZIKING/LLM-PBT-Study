@@ -1,0 +1,78 @@
+from hypothesis import given, assume, strategies as st
+import decimal
+from decimal import Decimal
+from math import gcd
+
+# Strategy for finite, valid Decimal instances.
+# We build them from finite floats and from strings to get good coverage,
+# avoiding infinities/NaNs (handled separately) and limiting magnitude to
+# avoid pathological precision blowups while still exercising large values.
+finite_decimals = st.one_of(
+    st.floats(allow_nan=False, allow_infinity=False,
+              min_value=-1e15, max_value=1e15).map(lambda f: Decimal(str(f))),
+    st.integers(min_value=-10**18, max_value=10**18).map(Decimal),
+    st.decimals(allow_nan=False, allow_infinity=False,
+                min_value=Decimal('-1e20'), max_value=Decimal('1e20'),
+                places=None),
+)
+
+
+@given(st.data())
+def test_property_denominator_positive(data):
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    assert den > 0
+
+
+@given(st.data())
+def test_property_lowest_terms(data):
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    assert gcd(n, den) == 1
+
+
+@given(st.data())
+def test_property_exact_conversion(data):
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    # Reconstruct exactly using a context with enough precision.
+    ctx = decimal.Context(prec=max(len(str(abs(n))), len(str(den))) + 50)
+    reconstructed = ctx.divide(Decimal(n), Decimal(den))
+    assert reconstructed == d
+
+
+@given(st.data())
+def test_property_sign_matches(data):
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    if d > 0:
+        assert n > 0
+    elif d < 0:
+        assert n < 0
+    else:
+        assert n == 0
+
+
+@given(st.data())
+def test_property_integers_and_special_values(data):
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    assert isinstance(n, int)
+    assert isinstance(den, int)
+
+    # Infinities raise OverflowError.
+    for inf in (Decimal('Infinity'), Decimal('-Infinity')):
+        try:
+            inf.as_integer_ratio()
+            assert False, "Expected OverflowError on infinity"
+        except OverflowError:
+            pass
+
+    # NaNs raise ValueError.
+    for nan in (Decimal('NaN'), Decimal('sNaN')):
+        try:
+            nan.as_integer_ratio()
+            assert False, "Expected ValueError on NaN"
+        except ValueError:
+            pass
+# End program

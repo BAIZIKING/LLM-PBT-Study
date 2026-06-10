@@ -1,0 +1,73 @@
+from hypothesis import given, strategies as st
+from datetime import date, timedelta
+
+# Summary: Generate arbitrary dates across datetime.date's full range, plus dates concentrated
+# around ISO-calendar edge cases: min/max dates, the documented 2003/2004 boundary examples,
+# early January, and late December, where ISO years often differ from Gregorian years.
+@given(st.data())
+def test_datetime_date_isocalendar(data):
+    edge_date_strategy = st.one_of(
+        st.dates(min_value=date.min, max_value=date.max),
+        st.sampled_from([
+            date.min,
+            date.max,
+            date(2003, 12, 29),
+            date(2004, 1, 4),
+            date(2004, 1, 1),
+            date(2004, 12, 31),
+        ]),
+        st.builds(
+            lambda y, d: date(y, 1, d),
+            st.integers(min_value=1, max_value=9999),
+            st.integers(min_value=1, max_value=7),
+        ),
+        st.builds(
+            lambda y, d: date(y, 12, d),
+            st.integers(min_value=1, max_value=9999),
+            st.integers(min_value=25, max_value=31),
+        ),
+    )
+
+    d = data.draw(edge_date_strategy)
+
+    iso = d.isocalendar()
+    year, week, weekday = iso
+
+    # The result is a named tuple-like object with year, week, and weekday components.
+    assert iso.year == year
+    assert iso.week == week
+    assert iso.weekday == weekday
+    assert tuple(iso) == (year, week, weekday)
+
+    # ISO weekday is Monday=1 through Sunday=7.
+    assert 1 <= weekday <= 7
+    assert weekday == d.weekday() + 1
+
+    # ISO weeks are numbered 1 through 52 or 53.
+    assert 1 <= week <= 53
+
+    # The ISO year is the Gregorian year of the Thursday in the same ISO week.
+    thursday = d + timedelta(days=4 - weekday)
+    assert year == thursday.year
+
+    # All representable days in the same Monday-Sunday ISO week share ISO year/week,
+    # and their ISO weekdays run from 1 to 7.
+    monday = d - timedelta(days=weekday - 1)
+    for offset in range(7):
+        try:
+            same_week_day = monday + timedelta(days=offset)
+        except OverflowError:
+            continue
+
+        if date.min <= same_week_day <= date.max:
+            same_iso = same_week_day.isocalendar()
+            assert same_iso.year == year
+            assert same_iso.week == week
+            assert same_iso.weekday == offset + 1
+
+    # Week number matches the documented definition: week 1 is the week containing
+    # the first Thursday, equivalently the week containing January 4.
+    jan4 = date(year, 1, 4)
+    first_iso_monday = jan4 - timedelta(days=jan4.weekday())
+    assert week == ((monday - first_iso_monday).days // 7) + 1
+# End program

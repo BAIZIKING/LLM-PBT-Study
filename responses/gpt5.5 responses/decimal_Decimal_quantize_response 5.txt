@@ -1,0 +1,177 @@
+```python
+from hypothesis import given, strategies as st
+from decimal import (
+    Decimal,
+    Context,
+    InvalidOperation,
+    Underflow,
+    Inexact,
+    Rounded,
+    Subnormal,
+    Clamped,
+    Overflow,
+    localcontext,
+    ROUND_CEILING,
+    ROUND_FLOOR,
+    ROUND_UP,
+    ROUND_DOWN,
+    ROUND_HALF_UP,
+    ROUND_HALF_DOWN,
+    ROUND_HALF_EVEN,
+    ROUND_05UP,
+)
+
+# Summary: Generate finite Decimal operands from explicit sign/digit/exponent tuples, with
+# exponents biased around Etiny(), Emin, 0, Emax, and just-outside-boundary values.
+# Generate small random Contexts with varied precision, Emax/Emin, and rounding modes,
+# plus optional explicit rounding and optional context=None. Check that quantize agrees
+# with the documented rounding-selection rule, never signals Underflow, returns the
+# right-hand operand's exponent on success, respects precision, and signals
+# InvalidOperation when the target exponent is outside [Etiny(), Emax].
+@given(st.data())
+def test_decimal_Decimal_quantize(data):
+    rounding_modes = [
+        ROUND_CEILING,
+        ROUND_FLOOR,
+        ROUND_UP,
+        ROUND_DOWN,
+        ROUND_HALF_UP,
+        ROUND_HALF_DOWN,
+        ROUND_HALF_EVEN,
+        ROUND_05UP,
+    ]
+
+    prec = data.draw(st.integers(min_value=1, max_value=10), label="prec")
+    emax = data.draw(st.integers(min_value=0, max_value=20), label="Emax")
+    emin = data.draw(st.integers(min_value=-20, max_value=0), label="Emin")
+    context_rounding = data.draw(st.sampled_from(rounding_modes), label="context_rounding")
+
+    base_context = Context(
+        prec=prec,
+        rounding=context_rounding,
+        Emin=emin,
+        Emax=emax,
+    )
+    for signal in base_context.traps:
+        base_context.traps[signal] = False
+
+    etiny = base_context.Etiny()
+
+    def draw_decimal(label):
+        sign = data.draw(st.integers(min_value=0, max_value=1), label=f"{label}_sign")
+
+        digit_count = data.draw(
+            st.one_of(
+                st.integers(min_value=1, max_value=prec + 5),
+                st.sampled_from([1, max(1, prec), prec + 1, prec + 5, 20]),
+            ),
+            label=f"{label}_digit_count",
+        )
+
+        digit_pattern = data.draw(
+            st.sampled_from(["zeros", "nines", "one_then_zeros", "random"]),
+            label=f"{label}_digit_pattern",
+        )
+
+        if digit_pattern == "zeros":
+            digits = [0] * digit_count
+        elif digit_pattern == "nines":
+            digits = [9] * digit_count
+        elif digit_pattern == "one_then_zeros":
+            digits = [1] + [0] * (digit_count - 1)
+        else:
+            digits = data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=9),
+                    min_size=digit_count,
+                    max_size=digit_count,
+                ),
+                label=f"{label}_digits",
+            )
+
+        exponent = data.draw(
+            st.one_of(
+                st.sampled_from(
+                    [
+                        etiny - 2,
+                        etiny - 1,
+                        etiny,
+                        etiny + 1,
+                        emin,
+                        -1,
+                        0,
+                        1,
+                        emax - 1,
+                        emax,
+                        emax + 1,
+                        emax + 2,
+                    ]
+                ),
+                st.integers(
+                    min_value=min(-30, etiny - 5),
+                    max_value=max(30, emax + 5),
+                ),
+            ),
+            label=f"{label}_exponent",
+        )
+
+        return Decimal((sign, tuple(digits), exponent))
+
+    operand = draw_decimal("operand")
+    quantizer = draw_decimal("quantizer")
+
+    rounding_arg = data.draw(
+        st.one_of(st.none(), st.sampled_from(rounding_modes)),
+        label="rounding_arg",
+    )
+    use_context_argument = data.draw(st.booleans(), label="use_context_argument")
+
+    actual_context = base_context.copy()
+    actual_context.clear_flags()
+
+    if use_context_argument:
+        actual_result = operand.quantize(
+            quantizer,
+            rounding=rounding_arg,
+            context=actual_context,
+        )
+        actual_flags = dict(actual_context.flags)
+    else:
+        with localcontext(actual_context) as active_context:
+            active_context.clear_flags()
+            actual_result = operand.quantize(quantizer, rounding=rounding_arg)
+            actual_flags = dict(active_context.flags)
+
+    effective_rounding = rounding_arg if rounding_arg is not None else base_context.rounding
+    expected_context = base_context.copy()
+    expected_context.rounding = effective_rounding
+    expected_context.clear_flags()
+
+    if use_context_argument:
+        expected_result = operand.quantize(quantizer, context=expected_context)
+        expected_flags = dict(expected_context.flags)
+    else:
+        with localcontext(expected_context) as active_context:
+            active_context.clear_flags()
+            expected_result = operand.quantize(quantizer)
+            expected_flags = dict(active_context.flags)
+
+    assert actual_result.as_tuple() == expected_result.as_tuple()
+
+    for signal in [InvalidOperation, Underflow, Inexact, Rounded, Subnormal, Clamped, Overflow]:
+        assert actual_flags[signal] == expected_flags[signal]
+
+    assert not actual_flags[Underflow]
+
+    target_exponent = quantizer.as_tuple().exponent
+
+    if target_exponent > base_context.Emax or target_exponent < base_context.Etiny():
+        assert actual_flags[InvalidOperation]
+
+    if not actual_flags[InvalidOperation]:
+        assert actual_result.is_finite()
+        assert actual_result.as_tuple().exponent == target_exponent
+        assert base_context.Etiny() <= actual_result.as_tuple().exponent <= base_context.Emax
+        assert len(actual_result.as_tuple().digits) <= base_context.prec
+# End program
+```

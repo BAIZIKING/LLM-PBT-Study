@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `parser.parse`:
+
+1. **Return type consistency**: When `fuzzy_with_tokens` is False (or unset), the output is always a `datetime.datetime` object; when `fuzzy_with_tokens` is True, the output is always a 2-tuple whose first element is a `datetime.datetime` object and whose second element is a tuple of strings (the ignored tokens).
+
+2. **Round-trip / idempotence on ISO formatting**: For any valid `datetime` object, formatting it as a string (e.g., ISO 8601) and then parsing it back with `parse` yields a `datetime` equal to the original (accounting for timezone handling).
+
+3. **Timezone naivety under `ignoretz`**: When `ignoretz=True`, the returned `datetime` object always has `tzinfo` equal to None (i.e., it is naive), regardless of whether the input string contained timezone information.
+
+4. **Default object substitution**: When a `default` datetime is provided, any date/time component (year, month, day, hour, minute, second) not specified in the parsed string equals the corresponding component of the `default` object, while components specified in the string override those of the default.
+
+5. **Fuzzy token reconstruction**: When `fuzzy_with_tokens=True`, concatenating the ignored token strings (the second element of the result) with the substrings consumed for the datetime reproduces a string consistent with the original input (i.e., the ignored tokens are actual contiguous substrings of the input that were skipped).

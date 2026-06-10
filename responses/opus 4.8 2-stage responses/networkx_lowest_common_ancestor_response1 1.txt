@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `lowest_common_ancestor`:
+
+1. **Symmetry of arguments:** The result of `lowest_common_ancestor(G, node1, node2)` must equal the result of `lowest_common_ancestor(G, node2, node1)`, since the lowest common ancestor relationship is symmetric.
+
+2. **Result is a valid common ancestor (when not default):** If the function returns a value other than `default`, that returned node must be an ancestor of both `node1` and `node2` (i.e., there exists a directed path from the returned node to each of the two nodes, where a node is considered an ancestor of itself).
+
+3. **Result is the lowest among common ancestors:** If the function returns a node `r` other than `default`, then no other common ancestor of `node1` and `node2` can be a proper descendant of `r`; equivalently, `r` is reachable from every other common ancestor (it sits lowest in the ancestor hierarchy).
+
+4. **Default returned only when no common ancestor exists:** The function returns `default` if and only if `node1` and `node2` share no common ancestors in `G`; if any common ancestor exists, a non-default node must be returned.
+
+5. **Self-pair gives the node itself:** For any node `n` in the graph, `lowest_common_ancestor(G, n, n)` must return `n`, since a node is its own lowest common ancestor with itself.

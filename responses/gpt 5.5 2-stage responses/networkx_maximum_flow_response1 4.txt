@@ -1,0 +1,9 @@
+1. For every edge with a finite capacity, the reported flow on that edge is between zero and the edge capacity, inclusive.
+
+2. For every node other than the source and sink, total incoming flow equals total outgoing flow.
+
+3. The returned `flow_value` equals the net flow leaving the source, i.e. total flow out of the source minus total flow into the source.
+
+4. The returned `flow_value` also equals the net flow entering the sink, i.e. total flow into the sink minus total flow out of the sink.
+
+5. The returned flow is optimal: in the residual graph induced by the returned `flow_dict`, there is no augmenting path from the source to the sink; equivalently, the capacity of the corresponding minimum cut equals `flow_value`.

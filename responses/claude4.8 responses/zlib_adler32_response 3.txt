@@ -1,0 +1,64 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `zlib.adler32`, I'll consider both parameters:
+
+1. **`data` parameter**: This must be a bytes-like object. I'll use `st.binary()` to generate byte strings of varying lengths, including empty bytes (`b""`), short, and long sequences. The `min_size=0` ensures empty input is covered as an edge case.
+
+2. **`value` parameter (optional starting value)**: This is treated as a 32-bit integer. To test edge cases, I'll generate integers across a wide range including:
+   - `0` (minimum)
+   - `1` (the default)
+   - Large values near `2**32 - 1` (max unsigned 32-bit)
+   - Values beyond 32 bits (to test masking/wrapping behavior)
+   - I use `st.none()` combined with integers so we test both the "value absent" (default) and "value present" cases.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify:
+
+1. **Result is an unsigned 32-bit integer**: The output must always be in range `[0, 2**32 - 1]` (per the "always unsigned" guarantee in 3.0).
+
+2. **Result type is `int`**.
+
+3. **Default value behavior**: Calling `adler32(data)` should equal `adler32(data, 1)` since the default starting value is 1.
+
+4. **Running checksum property (concatenation)**: Computing the checksum over concatenated inputs incrementally should equal computing it over the whole input at once. That is, `adler32(data2, adler32(data1))` should equal `adler32(data1 + data2)`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random byte strings (including empty) for `data`, and for the
+# optional `value` parameter generate either None (test default) or a wide range of
+# integers (0, 1, near/above 2**32) to cover masking/edge cases. A second byte string
+# is also generated to verify the running/concatenation checksum property.
+@given(st.data())
+def test_zlib_adler32():
+    data = st.data
+    # Draw the primary inputs
+    d = data.draw(st.binary(min_size=0, max_size=512))
+    value = data.draw(st.none() | st.integers(min_value=0, max_value=2**34))
+    d2 = data.draw(st.binary(min_size=0, max_size=512))
+
+    # Compute checksum with or without the optional value
+    if value is None:
+        result = zlib.adler32(d)
+        default_result = zlib.adler32(d, 1)
+        # Property 3: default starting value is 1
+        assert result == default_result
+    else:
+        result = zlib.adler32(d, value)
+
+    # Property 1: result is an unsigned 32-bit integer
+    assert 0 <= result <= 2**32 - 1
+    # Property 2: result is an int
+    assert isinstance(result, int)
+
+    # Property 4: running checksum over concatenation
+    start = 1 if value is None else value
+    incremental = zlib.adler32(d2, zlib.adler32(d, start))
+    whole = zlib.adler32(d + d2, start)
+    assert incremental == whole
+# End program
+```

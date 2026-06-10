@@ -1,0 +1,208 @@
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generates small left/right DataFrames with empty inputs, duplicate keys,
+# null keys, overlapping non-key columns, all merge `how` modes, multiple key-selection
+# styles (`on`, `left_on`/`right_on`, and index joins), valid suffix edge cases,
+# `sort`, `copy`, `indicator`, and `validate`. The test checks API properties:
+# expected output row counts from join-key multiplicities, pandas null-key matching,
+# indicator column labels/counts, cross-join cartesian-product order, and validate
+# relationship enforcement.
+@given(st.data())
+def test_pandas_merge(data):
+    import pandas as pd
+    from collections import Counter
+
+    how = data.draw(st.sampled_from(["inner", "left", "right", "outer", "cross"]))
+    sort = data.draw(st.booleans())
+    copy = data.draw(st.sampled_from([None, True, False]))
+    suffixes = data.draw(
+        st.sampled_from([
+            ("_x", "_y"),
+            ("_left", "_right"),
+            (None, "_right"),
+            ("_left", None),
+        ])
+    )
+    indicator = data.draw(
+        st.one_of(
+            st.just(False),
+            st.just(True),
+            st.sampled_from(["source", "merge_origin"]),
+        )
+    )
+
+    key_values = ["", "a", "b", "c"]
+    key_strategy = st.sampled_from(key_values) if sort else st.one_of(
+        st.none(),
+        st.sampled_from(key_values),
+    )
+
+    n_left = data.draw(st.integers(min_value=0, max_value=6))
+    n_right = data.draw(st.integers(min_value=0, max_value=6))
+
+    left_keys = data.draw(st.lists(key_strategy, min_size=n_left, max_size=n_left))
+    right_keys = data.draw(st.lists(key_strategy, min_size=n_right, max_size=n_right))
+
+    payload_strategy = st.one_of(st.none(), st.integers(-3, 3), st.text(max_size=3))
+    left_overlap = data.draw(
+        st.lists(payload_strategy, min_size=n_left, max_size=n_left)
+    )
+    right_overlap = data.draw(
+        st.lists(payload_strategy, min_size=n_right, max_size=n_right)
+    )
+
+    left = pd.DataFrame({
+        "key": pd.Series(left_keys, dtype="object"),
+        "left_val": list(range(n_left)),
+        "overlap": pd.Series(left_overlap, dtype="object"),
+    })
+    right = pd.DataFrame({
+        "key": pd.Series(right_keys, dtype="object"),
+        "right_val": list(range(n_right)),
+        "overlap": pd.Series(right_overlap, dtype="object"),
+    })
+
+    def normalize_key(value):
+        return ("<NA>",) if pd.isna(value) else value
+
+    left_counts = Counter(normalize_key(k) for k in left_keys)
+    right_counts = Counter(normalize_key(k) for k in right_keys)
+
+    def is_unique(keys):
+        normalized = [normalize_key(k) for k in keys]
+        return len(normalized) == len(set(normalized))
+
+    if how == "cross":
+        join_style = "cross"
+        validate = data.draw(st.sampled_from([None, "m:m", "many_to_many"]))
+        merge_kwargs = {
+            "how": "cross",
+            "sort": sort,
+            "suffixes": suffixes,
+            "copy": copy,
+            "indicator": indicator,
+            "validate": validate,
+        }
+        expected_label_counts = {
+            "left_only": 0,
+            "right_only": 0,
+            "both": n_left * n_right,
+        }
+        validate_should_pass = True
+    else:
+        join_style = data.draw(st.sampled_from(["on", "left_right_on", "index"]))
+        validate = data.draw(
+            st.sampled_from([
+                None,
+                "one_to_one",
+                "1:1",
+                "one_to_many",
+                "1:m",
+                "many_to_one",
+                "m:1",
+                "many_to_many",
+                "m:m",
+            ])
+        )
+
+        merge_kwargs = {
+            "how": how,
+            "sort": sort,
+            "suffixes": suffixes,
+            "copy": copy,
+            "indicator": indicator,
+            "validate": validate,
+        }
+
+        if join_style == "on":
+            merge_kwargs["on"] = "key"
+        elif join_style == "left_right_on":
+            right = right.rename(columns={"key": "rkey"})
+            merge_kwargs["left_on"] = "key"
+            merge_kwargs["right_on"] = "rkey"
+        else:
+            left = left.set_index("key")
+            right = right.set_index("key")
+            merge_kwargs["left_index"] = True
+            merge_kwargs["right_index"] = True
+
+        left_unique = is_unique(left_keys)
+        right_unique = is_unique(right_keys)
+
+        if validate in (None, "many_to_many", "m:m"):
+            validate_should_pass = True
+        elif validate in ("one_to_one", "1:1"):
+            validate_should_pass = left_unique and right_unique
+        elif validate in ("one_to_many", "1:m"):
+            validate_should_pass = left_unique
+        elif validate in ("many_to_one", "m:1"):
+            validate_should_pass = right_unique
+        else:
+            validate_should_pass = True
+
+        common_keys = set(left_counts) & set(right_counts)
+        left_only_keys = set(left_counts) - set(right_counts)
+        right_only_keys = set(right_counts) - set(left_counts)
+
+        both_count = sum(left_counts[k] * right_counts[k] for k in common_keys)
+        left_only_count = sum(left_counts[k] for k in left_only_keys)
+        right_only_count = sum(right_counts[k] for k in right_only_keys)
+
+        if how == "inner":
+            expected_label_counts = {
+                "left_only": 0,
+                "right_only": 0,
+                "both": both_count,
+            }
+        elif how == "left":
+            expected_label_counts = {
+                "left_only": left_only_count,
+                "right_only": 0,
+                "both": both_count,
+            }
+        elif how == "right":
+            expected_label_counts = {
+                "left_only": 0,
+                "right_only": right_only_count,
+                "both": both_count,
+            }
+        else:
+            expected_label_counts = {
+                "left_only": left_only_count,
+                "right_only": right_only_count,
+                "both": both_count,
+            }
+
+    if not validate_should_pass:
+        try:
+            pd.merge(left, right, **merge_kwargs)
+        except pd.errors.MergeError:
+            return
+        raise AssertionError("merge(validate=...) should have rejected non-unique keys")
+
+    result = pd.merge(left, right, **merge_kwargs)
+
+    assert len(result) == sum(expected_label_counts.values())
+
+    if indicator:
+        indicator_col = "_merge" if indicator is True else indicator
+        assert indicator_col in result.columns
+        assert str(result[indicator_col].dtype) == "category"
+        for label, expected_count in expected_label_counts.items():
+            assert int((result[indicator_col] == label).sum()) == expected_count
+
+    if how == "cross":
+        assert result["left_val"].tolist() == [
+            left_value
+            for left_value in range(n_left)
+            for _ in range(n_right)
+        ]
+        assert result["right_val"].tolist() == [
+            right_value
+            for _ in range(n_left)
+            for right_value in range(n_right)
+        ]
+
+# End program
+```

@@ -1,0 +1,11 @@
+Based on the API documentation, here are five properties suitable for property-based testing:
+
+1. **Default value on no common ancestor**: If `node1` and `node2` have no common ancestors in the graph, the function returns exactly the `default` value provided.
+
+2. **Output is a valid common ancestor**: When a result is returned (and it is not the default), the returned node must be an ancestor of both `node1` and `node2` (i.e., there exist directed paths from the returned node to both `node1` and `node2`, with each node being its own ancestor).
+
+3. **Lowest among common ancestors**: The returned node is the "lowest" common ancestor, meaning no other common ancestor of `node1` and `node2` is a descendant of the returned node (no common ancestor is strictly closer to the two nodes).
+
+4. **Symmetry of arguments**: The result of `lowest_common_ancestor(G, node1, node2)` equals the result of `lowest_common_ancestor(G, node2, node1)`, since the lowest common ancestor relationship is symmetric with respect to the two input nodes.
+
+5. **Self-ancestor identity**: For any single node `n`, `lowest_common_ancestor(G, n, n)` returns `n` itself, since a node is its own lowest common ancestor.

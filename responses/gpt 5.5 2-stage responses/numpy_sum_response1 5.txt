@@ -1,0 +1,9 @@
+1. The output value equals the sum of the selected input elements over the requested axis/axes, using `initial` as the starting value when provided and including only elements where `where` is `True`.
+
+2. If `axis=None`, the output is a scalar representing the sum over all selected elements of the input array.
+
+3. If an axis or tuple of axes is provided, the output shape is the input shape with those axes removed; when `keepdims=True`, those axes remain with size `1`.
+
+4. For an empty reduction, or when all elements are excluded by `where`, the output is the neutral sum value `0`, or `initial` if an initial value is provided.
+
+5. If `out` is provided, the returned object is the same `out` array, with result values cast into its dtype; otherwise the output dtype follows the requested `dtype` or NumPy’s default accumulator dtype rules.

@@ -1,0 +1,82 @@
+from hypothesis import given, strategies as st
+from cryptography.fernet import Fernet, InvalidToken
+import base64
+import time
+import pytest
+
+# Summary: Generate valid Fernet tokens from random plaintexts, as bytes or str,
+# with and without ttl; generate definitely expired tokens; generate malformed
+# base64-encoded tokens whose decoded version byte is invalid; and generate
+# non-bytes/non-str token inputs to check documented TypeError behavior.
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt(data):
+    f = Fernet(Fernet.generate_key())
+
+    case = data.draw(
+        st.sampled_from(
+            [
+                "valid_without_ttl",
+                "valid_with_ttl",
+                "expired_with_ttl",
+                "malformed_token",
+                "wrong_token_type",
+            ]
+        )
+    )
+
+    if case == "valid_without_ttl":
+        plaintext = data.draw(st.binary(max_size=1024))
+        token = f.encrypt(plaintext)
+        token_input = data.draw(st.sampled_from([token, token.decode("ascii")]))
+
+        assert f.decrypt(token_input) == plaintext
+
+    elif case == "valid_with_ttl":
+        plaintext = data.draw(st.binary(max_size=1024))
+        now = int(time.time())
+        token = f.encrypt_at_time(plaintext, now)
+        token_input = data.draw(st.sampled_from([token, token.decode("ascii")]))
+        ttl = data.draw(st.integers(min_value=10_000, max_value=1_000_000_000))
+
+        assert f.decrypt(token_input, ttl=ttl) == plaintext
+
+    elif case == "expired_with_ttl":
+        plaintext = data.draw(st.binary(max_size=1024))
+        ttl = data.draw(st.integers(min_value=0, max_value=1_000_000))
+        created_at = int(time.time()) - ttl - 2
+        token = f.encrypt_at_time(plaintext, created_at)
+        token_input = data.draw(st.sampled_from([token, token.decode("ascii")]))
+
+        with pytest.raises(InvalidToken):
+            f.decrypt(token_input, ttl=ttl)
+
+    elif case == "malformed_token":
+        first_byte = data.draw(
+            st.integers(min_value=0, max_value=255).filter(lambda b: b != 0x80)
+        )
+        rest = data.draw(st.binary(max_size=128))
+        malformed = base64.urlsafe_b64encode(bytes([first_byte]) + rest)
+        token_input = data.draw(
+            st.sampled_from([malformed, malformed.decode("ascii")])
+        )
+        ttl = data.draw(st.one_of(st.none(), st.integers(min_value=0, max_value=1000)))
+
+        with pytest.raises(InvalidToken):
+            f.decrypt(token_input, ttl=ttl)
+
+    else:
+        token_input = data.draw(
+            st.one_of(
+                st.none(),
+                st.booleans(),
+                st.integers(),
+                st.floats(allow_nan=True, allow_infinity=True),
+                st.lists(st.integers(), max_size=5),
+                st.dictionaries(st.text(max_size=5), st.integers(), max_size=5),
+            )
+        )
+
+        with pytest.raises(TypeError):
+            f.decrypt(token_input)
+
+# End program

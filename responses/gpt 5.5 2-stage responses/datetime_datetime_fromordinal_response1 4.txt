@@ -1,0 +1,9 @@
+1. For any valid ordinal, the returned object is a `datetime.datetime` instance.
+
+2. For any valid ordinal `n`, the returned datetime has `toordinal() == n`.
+
+3. For any valid ordinal, the returned datetime has time components all set to zero: `hour == 0`, `minute == 0`, `second == 0`, and `microsecond == 0`.
+
+4. For any valid ordinal, the returned datetime is timezone-naive: `tzinfo is None`.
+
+5. For any valid ordinal, the returned datetime represents a date within the valid `datetime` range, from `datetime(1, 1, 1)` through `datetime.max` inclusive.

@@ -1,0 +1,79 @@
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta
+
+# Summary: Generate POSIX timestamps as both ints and finite floats across the full
+# datetime-supported range, with explicit edge cases around the Unix epoch, fractional
+# seconds, the 2038 boundary, and datetime min/max-like limits. Generate tz as either
+# None or fixed-offset timezone instances, so the test covers naive local conversion
+# and aware timezone conversion. Properties checked: documented OverflowError/OSError
+# are acceptable; otherwise the result is a datetime, has fold 0 or 1, is naive when
+# tz is None, and for aware results represents the same instant as UTC epoch + timestamp.
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp = data.draw(
+        st.one_of(
+            st.sampled_from(
+                [
+                    0,
+                    1,
+                    -1,
+                    0.5,
+                    -0.5,
+                    1e-6,
+                    -1e-6,
+                    2**31 - 1,
+                    2**31,
+                    -2**31,
+                    -62135596800,   # near datetime.min as a POSIX timestamp in UTC
+                    253402300799,   # near datetime.max as a POSIX timestamp in UTC
+                ]
+            ),
+            st.integers(min_value=-62135596800, max_value=253402300799),
+            st.floats(
+                min_value=-62135596800,
+                max_value=253402300799,
+                allow_nan=False,
+                allow_infinity=False,
+                width=64,
+            ),
+        ),
+        label="timestamp",
+    )
+
+    tz = data.draw(
+        st.one_of(
+            st.none(),
+            st.just(timezone.utc),
+            st.integers(min_value=-(23 * 60 + 59), max_value=23 * 60 + 59).map(
+                lambda minutes: timezone(timedelta(minutes=minutes))
+            ),
+        ),
+        label="tz",
+    )
+
+    try:
+        result = datetime.fromtimestamp(timestamp, tz)
+    except (OverflowError, OSError):
+        return
+
+    assert isinstance(result, datetime)
+    assert result.fold in (0, 1)
+
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is tz
+
+        try:
+            expected = (
+                datetime(1970, 1, 1, tzinfo=timezone.utc)
+                + timedelta(seconds=timestamp)
+            ).astimezone(tz)
+        except OverflowError:
+            return
+
+        assert result == expected
+
+# End program
+```

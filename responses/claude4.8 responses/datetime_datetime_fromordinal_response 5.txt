@@ -1,0 +1,53 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromordinal(ordinal)`, I'll use `st.integers()` with explicit bounds. The valid range is `1 <= ordinal <= datetime.max.toordinal()`. 
+
+To thoroughly test:
+- **Valid values**: Generate integers within `[1, datetime.max.toordinal()]`, which Hypothesis will sample including edge cases like the boundaries (1 and the max).
+- **Invalid values**: Generate integers outside the valid range (e.g., 0, negatives, or values exceeding the max ordinal) to verify `ValueError` is raised.
+
+I'll use `st.one_of` to mix valid and invalid integers, ensuring both normal and edge/error cases are covered.
+
+## Properties to Check
+
+Based on the API documentation:
+1. **Validity / Error behavior**: If `ordinal` is in `[1, datetime.max.toordinal()]`, a valid `datetime` is returned; otherwise `ValueError` is raised.
+2. **Time components are zero**: `hour`, `minute`, `second`, and `microsecond` of the result must all be 0.
+3. **tzinfo is None**: The result must have `tzinfo` set to `None`.
+4. **Round-trip consistency**: Calling `.toordinal()` on the result returns the original `ordinal`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+import pytest
+
+# Summary: Generate integers both inside the valid ordinal range [1, datetime.max.toordinal()]
+# (including boundary edge cases) and outside it (<=0 or > max), to verify correct datetime
+# construction (zeroed time, None tzinfo, round-trip) for valid inputs and ValueError otherwise.
+@given(st.data())
+def test_datetime_datetime_fromordinal(data):
+    max_ordinal = datetime.max.toordinal()
+    ordinal = data.draw(st.one_of(
+        st.integers(min_value=1, max_value=max_ordinal),          # valid range
+        st.integers(min_value=-1000, max_value=0),                # invalid low
+        st.integers(min_value=max_ordinal + 1, max_value=max_ordinal + 1000),  # invalid high
+    ))
+
+    if 1 <= ordinal <= max_ordinal:
+        result = datetime.fromordinal(ordinal)
+        # Time components must all be zero
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+        # tzinfo must be None
+        assert result.tzinfo is None
+        # Round-trip consistency
+        assert result.toordinal() == ordinal
+    else:
+        with pytest.raises(ValueError):
+            datetime.fromordinal(ordinal)
+# End program
+```

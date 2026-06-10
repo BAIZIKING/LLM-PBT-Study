@@ -1,0 +1,9 @@
+1. The output is always a Python `str`.
+
+2. If the input contains no `&` characters, the output is identical to the input.
+
+3. Any valid named HTML 5 character reference in the input is replaced in the output by its corresponding Unicode character or characters.
+
+4. Any valid decimal or hexadecimal numeric character reference in the input is replaced in the output according to HTML 5 rules.
+
+5. Text that is not part of an HTML character reference appears unchanged and in the same order in the output.

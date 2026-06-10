@@ -1,0 +1,97 @@
+# Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `quantize`, I'll create Decimal values using multiple approaches:
+
+1. **The first operand (the value to quantize)**: Generate from a mix of regular floats, integers, string representations of decimals (to control exponents precisely), and edge cases like zero. I avoid NaN/Infinity to keep the property checks meaningful, but vary the magnitude and number of significant digits.
+
+2. **The second operand (`exp`)**: This determines the target exponent. I generate Decimals whose exponent spans a controlled range (e.g., from `1E-10` to `1E5`) so that we exercise both rounding-down (target exponent larger) and exact representation cases. The actual coefficient of `exp` is irrelevant—only its exponent matters—so I focus on producing varied exponents.
+
+3. **The `rounding` argument**: Randomly choose `None` or one of the valid rounding modes (`ROUND_HALF_EVEN`, `ROUND_DOWN`, `ROUND_UP`, `ROUND_CEILING`, `ROUND_FLOOR`, `ROUND_HALF_UP`, `ROUND_HALF_DOWN`, `ROUND_05UP`).
+
+4. To avoid `InvalidOperation`/`Overflow`/`InvalidContext` errors making the test trivial, I wrap the call and only assert properties when it succeeds; if it raises the documented error conditions (coefficient too long, exponent out of bounds), I accept that as valid behavior.
+
+# Properties to Check
+
+Based on the documentation:
+
+1. **Exponent equality**: On success, the result's exponent must equal the exponent of the second operand (`exp`).
+2. **No Underflow**: `quantize` never signals Underflow, so we should not see that even for subnormal results (we ensure no Underflow flag is set after a successful operation).
+3. **Coefficient length bound**: On success, the length of the result's coefficient must not exceed the context precision.
+4. **Value closeness**: The result should be equal to the original after rounding to that exponent (i.e., re-quantizing the result yields the same result, and the difference from the original is bounded by one unit in the last place of `exp`).
+
+```python
+from hypothesis import given, strategies as st, assume
+from decimal import (Decimal, localcontext, InvalidOperation, Overflow,
+                     ROUND_HALF_EVEN, ROUND_DOWN, ROUND_UP, ROUND_CEILING,
+                     ROUND_FLOOR, ROUND_HALF_UP, ROUND_HALF_DOWN, ROUND_05UP,
+                     Inexact, Rounded)
+
+# Summary: Generate the value-operand from floats/ints/decimal-strings with varied
+# magnitudes & significant digits; generate the exp-operand as Decimals with a
+# controlled exponent range; pick rounding from None or all valid modes. On a
+# successful quantize, assert exponent equality, coefficient-length <= precision,
+# no Underflow signaled, and idempotence/closeness to the original value.
+@given(st.data())
+def test_decimal_Decimal_quantize(data):
+    rounding_modes = [None, ROUND_HALF_EVEN, ROUND_DOWN, ROUND_UP,
+                      ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP,
+                      ROUND_HALF_DOWN, ROUND_05UP]
+
+    # Strategy for the first operand (the value to quantize) - finite decimals.
+    value_strategy = st.one_of(
+        st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e15, max_value=1e15).map(lambda f: Decimal(repr(f))),
+        st.tuples(
+            st.integers(min_value=-10**18, max_value=10**18),
+            st.integers(min_value=-15, max_value=10),
+        ).map(lambda t: Decimal(t[0]).scaleb(t[1])),
+    )
+    value = data.draw(value_strategy)
+
+    # Strategy for the second operand: only its exponent matters.
+    exp_value = data.draw(st.integers(min_value=-15, max_value=10))
+    exp = Decimal(1).scaleb(exp_value)
+
+    rounding = data.draw(st.sampled_from(rounding_modes))
+    precision = data.draw(st.integers(min_value=1, max_value=50))
+
+    with localcontext() as ctx:
+        ctx.prec = precision
+        try:
+            result = value.quantize(exp, rounding=rounding)
+        except (InvalidOperation, Overflow):
+            # Documented error conditions: coefficient too long for precision,
+            # or resulting exponent out of [Etiny, Emax]. Accept as valid.
+            return
+
+        # Property 2: quantize never signals Underflow.
+        # (Underflow flag is keyed under the decimal.Underflow exception class.)
+        from decimal import Underflow
+        assert ctx.flags[Underflow] == 0
+
+        # Determine the exponent of exp and of the result.
+        (_, _, exp_exponent) = exp.as_tuple()
+        (sign, digits, res_exponent) = result.as_tuple()
+
+        # Property 1: resulting exponent equals exp's exponent (on success).
+        assert res_exponent == exp_exponent, (
+            f"exponent {res_exponent} != target {exp_exponent}")
+
+        # Property 3: coefficient length must not exceed precision.
+        assert len(digits) <= precision, (
+            f"coefficient length {len(digits)} > precision {precision}")
+
+        # Property 4a: idempotence - re-quantizing gives the same result.
+        requantized = result.quantize(exp, rounding=rounding)
+        assert requantized == result
+
+        # Property 4b: closeness - the result is within one ULP of the target
+        # exponent from the original value (rounding error bounded).
+        ulp = Decimal(1).scaleb(exp_exponent)
+        with localcontext() as ctx2:
+            ctx2.prec = 60
+            diff = abs(result - value)
+        assert diff <= ulp, f"rounding diff {diff} exceeds ulp {ulp}"
+# End program
+```

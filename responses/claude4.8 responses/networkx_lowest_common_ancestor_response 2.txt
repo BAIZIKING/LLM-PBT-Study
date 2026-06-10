@@ -1,0 +1,75 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+
+To generate a wide variety of inputs and edge cases for `lowest_common_ancestor`, I will build a random Directed Acyclic Graph (DAG) since the function operates on directed graphs and ancestor relationships are most meaningful in DAGs (NetworkX's implementation requires the graph to be a DAG). My approach:
+
+1. **Build a DAG safely**: Generate a list of integer nodes, then add edges only from lower-indexed nodes to higher-indexed nodes. This guarantees acyclicity (no cycles can form going strictly "forward"), which is required for the algorithm.
+2. **Vary graph size**: Use a variable number of nodes (including small graphs with 1-2 nodes) to hit edge cases.
+3. **Vary edge density**: Use a probability-driven approach to include/exclude each potential forward edge, covering sparse graphs (disconnected nodes with no common ancestors → `default`) and dense graphs.
+4. **Pick nodes from the graph**: Sample `node1` and `node2` from existing nodes (allowing them to be the same node, which is an important edge case).
+5. **Random default**: Use a sentinel default value to detect the "no common ancestor" case.
+
+**Properties to Check (based on API documentation):**
+
+1. **Return type / membership**: The result is either the `default` value, or it must be a node that exists in the graph `G`.
+2. **Common ancestor property**: If the result is not `default`, it must actually be an ancestor (or equal to) of *both* `node1` and `node2`. (An ancestor of a node is reachable to that node; a node is trivially its own ancestor in the LCA sense.)
+3. **Symmetry**: `lowest_common_ancestor(G, node1, node2)` should equal `lowest_common_ancestor(G, node2, node1)`.
+4. **Self LCA**: If `node1 == node2`, the LCA should be the node itself (it's its own lowest common ancestor).
+
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Build a random DAG by adding edges only from lower-indexed to higher-indexed
+# nodes (guaranteeing acyclicity), vary node count and edge density, then sample two
+# nodes (possibly equal) and a sentinel default. Check membership, the common-ancestor
+# property, symmetry, and self-LCA.
+@given(st.data())
+def test_networkx_lowest_common_ancestor(data):
+    # Generate nodes
+    n = data.draw(st.integers(min_value=1, max_value=8), label="num_nodes")
+    nodes = list(range(n))
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+
+    # Add forward edges (u < v) to guarantee a DAG
+    for u in nodes:
+        for v in nodes:
+            if u < v:
+                if data.draw(st.booleans(), label=f"edge_{u}_{v}"):
+                    G.add_edge(u, v)
+
+    # Sample two nodes (possibly equal)
+    node1 = data.draw(st.sampled_from(nodes), label="node1")
+    node2 = data.draw(st.sampled_from(nodes), label="node2")
+
+    sentinel = object()
+
+    result = nx.lowest_common_ancestor(G, node1, node2, default=sentinel)
+    result_sym = nx.lowest_common_ancestor(G, node2, node1, default=sentinel)
+
+    # Property 3: Symmetry
+    assert result == result_sym
+
+    if result is sentinel:
+        # No common ancestor reported; verify there genuinely is none.
+        anc1 = nx.ancestors(G, node1) | {node1}
+        anc2 = nx.ancestors(G, node2) | {node2}
+        assert len(anc1 & anc2) == 0
+    else:
+        # Property 1: Returned value must be a node in the graph
+        assert result in G.nodes
+
+        # Property 2: result must be a common ancestor of both nodes
+        anc1 = nx.ancestors(G, node1) | {node1}
+        anc2 = nx.ancestors(G, node2) | {node2}
+        assert result in anc1
+        assert result in anc2
+
+        # Property 4: Self LCA
+        if node1 == node2:
+            assert result == node1
+# End program
+```

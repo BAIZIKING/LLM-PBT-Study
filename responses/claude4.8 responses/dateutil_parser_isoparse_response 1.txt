@@ -1,0 +1,71 @@
+# Generation Strategy
+
+To generate a wide variety of valid ISO-8601 datetime strings (and exercise edge cases), I'll build the strings from structured components rather than random text, ensuring we cover the documented formats:
+
+1. **Date portion**: Use Hypothesis's `st.datetimes()` to generate valid `datetime` objects, then format them with `.isoformat()`. This naturally produces valid ISO-8601 strings that the parser must round-trip correctly. To increase variety, I'll generate timezone-aware datetimes using `st.timezones()` (with `tzinfo`) and naive ones.
+
+2. **Edge cases covered by `isoformat()`**:
+   - Dates with and without time components.
+   - Microsecond precision (up to 6 digits, matching the documented limit).
+   - UTC offsets (`+00:00`), which the docs say must become `tzutc`.
+   - Non-UTC offsets (`±HH:MM`), which must become `tzoffset`.
+   - Midnight (`00:00:00`).
+
+3. **Separator variation**: The standard separator is `T`, but the docs say the date and time portions are separated by a single character. I'll keep `T` (the canonical output of `isoformat()`) to stay within guaranteed-stable parsing.
+
+# Properties to Check
+
+Based on the documentation, the key property is **round-trip consistency**: `isoparse(dt.isoformat())` should reconstruct a datetime equal to the original `dt`. Specifically:
+
+1. The result is a `datetime.datetime`.
+2. The result equals the original datetime (`isoparse(dt.isoformat()) == dt`). Equality of timezone-aware datetimes compares the actual instants, so even though `dateutil` returns `tzutc`/`tzoffset` objects rather than the original `tzinfo`, equality should hold if offsets match.
+3. UTC offsets (`+00:00`) must produce a `tzutc` instance per the documentation.
+
+```python
+from hypothesis import given, strategies as st
+import datetime
+from dateutil import parser as dateutil_parser
+from dateutil import tz
+
+# Summary: Generate valid datetimes (naive and tz-aware, including UTC and
+# arbitrary offsets), format them with isoformat() to produce guaranteed-valid
+# ISO-8601 strings, and verify that isoparse round-trips back to an equal
+# datetime, returns a datetime.datetime, and represents +00:00 offsets as tzutc.
+@given(st.data())
+def test_dateutil_parser_isoparse():
+    data = st.data()
+    # Choose whether to attach timezone info and which kind.
+    tz_strategy = st.one_of(
+        st.none(),
+        st.just(tz.UTC),
+        st.builds(
+            tz.tzoffset,
+            st.none(),
+            st.integers(min_value=-86399, max_value=86399).map(
+                # restrict to whole-minute offsets so isoformat -> isoparse is exact
+                lambda s: (s // 60) * 60
+            ),
+        ),
+    )
+    dt = data.draw(
+        st.datetimes(
+            min_value=datetime.datetime(1, 1, 1, 0, 0, 0),
+            max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+            timezones=tz_strategy,
+        )
+    )
+
+    iso_str = dt.isoformat()
+    result = dateutil_parser.isoparse(iso_str)
+
+    # Property 1: result is a datetime.datetime
+    assert isinstance(result, datetime.datetime)
+
+    # Property 2: round-trip equality (compares instants for aware datetimes)
+    assert result == dt
+
+    # Property 3: a +00:00 (UTC-equivalent) offset must be represented as tzutc
+    if dt.tzinfo is not None and dt.utcoffset() == datetime.timedelta(0):
+        assert isinstance(result.tzinfo, tz.tzutc)
+# End program
+```

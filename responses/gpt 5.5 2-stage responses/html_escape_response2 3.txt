@@ -1,0 +1,64 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+MAX_SIZE = 1000
+
+
+@given(st.data())
+def test_html_escape_output_contains_no_raw_angle_brackets(data):
+    s = data.draw(st.text(max_size=MAX_SIZE))
+    quote = data.draw(st.booleans())
+
+    escaped = html.escape(s, quote=quote)
+
+    assert "<" not in escaped
+    assert ">" not in escaped
+
+
+@given(st.data())
+def test_html_escape_raw_ampersands_are_escaped_as_amp_entities(data):
+    s = data.draw(st.text(max_size=MAX_SIZE))
+    quote = data.draw(st.booleans())
+
+    escaped = html.escape(s, quote=quote)
+
+    assert escaped.count("&amp;") == s.count("&")
+
+
+@given(st.data())
+def test_html_escape_quote_true_contains_no_raw_quotes(data):
+    s = data.draw(st.text(max_size=MAX_SIZE))
+
+    escaped = html.escape(s, quote=True)
+
+    assert '"' not in escaped
+    assert "'" not in escaped
+
+
+@given(st.data())
+def test_html_escape_quote_false_preserves_quote_characters(data):
+    s = data.draw(st.text(max_size=MAX_SIZE))
+
+    escaped = html.escape(s, quote=False)
+
+    assert escaped.count('"') == s.count('"')
+    assert escaped.count("'") == s.count("'")
+
+
+@given(st.data())
+def test_html_escape_leaves_non_special_characters_unchanged(data):
+    s = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters='&<>"\''),
+            max_size=MAX_SIZE,
+        )
+    )
+
+    escaped = html.escape(s, quote=True)
+
+    assert escaped == s
+
+
+# End program
+```

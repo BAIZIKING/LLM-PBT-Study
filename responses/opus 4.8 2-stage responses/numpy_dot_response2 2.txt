@@ -1,0 +1,161 @@
+```python
+from hypothesis import given, strategies as st, assume, settings
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# Use a modest float range to avoid overflow / precision issues in sum products
+safe_floats = st.floats(
+    min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=64
+)
+# Modest integers to avoid integer overflow when summing products
+safe_ints = st.integers(min_value=-1000, max_value=1000)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_scalar_multiplication_equivalence():
+    # Property 1: when either a or b is a 0-D scalar, dot == multiply
+    data = st.data().example  # placeholder, not used
+    pass
+
+
+# Property 1: Scalar multiplication equivalence
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_scalar_equivalence(data=None):
+    pass
+
+
+# Rewriting cleanly below; each property as its own test function.
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_property_1_scalar(data):
+    # When either a or b is a 0-D scalar, dot(a,b) == a * b
+    scalar = data.draw(safe_floats, label="scalar")
+    other_shape = data.draw(
+        hnp.array_shapes(min_dims=0, max_dims=3, min_side=0, max_side=4),
+        label="other_shape",
+    )
+    other = data.draw(
+        hnp.arrays(dtype=np.float64, shape=other_shape, elements=safe_floats),
+        label="other",
+    )
+    # scalar as first argument
+    result1 = np.dot(scalar, other)
+    expected1 = np.multiply(scalar, other)
+    assert np.allclose(result1, expected1, equal_nan=True)
+    # scalar as second argument
+    result2 = np.dot(other, scalar)
+    expected2 = np.multiply(other, scalar)
+    assert np.allclose(result2, expected2, equal_nan=True)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_property_2_inner_product(data):
+    # Both 1-D arrays => inner product == sum(a*b) without conjugation
+    n = data.draw(st.integers(min_value=0, max_value=20), label="n")
+    a = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(n,), elements=safe_floats), label="a"
+    )
+    b = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(n,), elements=safe_floats), label="b"
+    )
+    result = np.dot(a, b)
+    expected = np.sum(a * b)
+    assert np.ndim(result) == 0
+    assert np.allclose(result, expected, equal_nan=True)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_property_3_matrix_multiplication(data):
+    # Both 2-D arrays => dot == matmul
+    m = data.draw(st.integers(min_value=0, max_value=8), label="m")
+    k = data.draw(st.integers(min_value=0, max_value=8), label="k")
+    p = data.draw(st.integers(min_value=0, max_value=8), label="p")
+    a = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(m, k), elements=safe_floats), label="a"
+    )
+    b = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(k, p), elements=safe_floats), label="b"
+    )
+    result = np.dot(a, b)
+    expected = a @ b
+    assert result.shape == expected.shape
+    assert np.allclose(result, expected, equal_nan=True)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_property_4_output_shape(data):
+    # Output shape correctness for N-D a and M-D b
+    a_extra = data.draw(
+        hnp.array_shapes(min_dims=1, max_dims=3, min_side=1, max_side=4),
+        label="a_extra",
+    )
+    contract = data.draw(st.integers(min_value=1, max_value=4), label="contract")
+
+    # Decide whether b is 1-D or M-D (M>=2)
+    b_is_1d = data.draw(st.booleans(), label="b_is_1d")
+
+    a_shape = a_extra + (contract,)
+    a = data.draw(
+        hnp.arrays(dtype=np.float64, shape=a_shape, elements=safe_floats), label="a"
+    )
+
+    if b_is_1d:
+        b_shape = (contract,)
+        b = data.draw(
+            hnp.arrays(dtype=np.float64, shape=b_shape, elements=safe_floats),
+            label="b",
+        )
+        result = np.dot(a, b)
+        expected_shape = a.shape[:-1]
+    else:
+        b_extra = data.draw(
+            hnp.array_shapes(min_dims=0, max_dims=2, min_side=1, max_side=4),
+            label="b_extra",
+        )
+        last = data.draw(st.integers(min_value=1, max_value=4), label="last")
+        b_shape = b_extra + (contract, last)
+        b = data.draw(
+            hnp.arrays(dtype=np.float64, shape=b_shape, elements=safe_floats),
+            label="b",
+        )
+        result = np.dot(a, b)
+        expected_shape = a.shape[:-1] + b.shape[:-2] + (b.shape[-1],)
+
+    assert result.shape == expected_shape
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_dot_property_5_sum_product_definition(data):
+    # General sum-product: dot(a,b)[i,j,k,m] == sum(a[i,j,:] * b[k,:,m])
+    # Use a 2-D 'a' and a 3-D 'b' to keep indexing manageable.
+    i = data.draw(st.integers(min_value=1, max_value=4), label="i")
+    contract = data.draw(st.integers(min_value=1, max_value=4), label="contract")
+    k = data.draw(st.integers(min_value=1, max_value=4), label="k")
+    m = data.draw(st.integers(min_value=1, max_value=4), label="m")
+
+    a = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(i, contract), elements=safe_floats),
+        label="a",
+    )
+    b = data.draw(
+        hnp.arrays(dtype=np.float64, shape=(k, contract, m), elements=safe_floats),
+        label="b",
+    )
+    result = np.dot(a, b)
+    # result shape: (i, k, m)
+    assert result.shape == (i, k, m)
+    for ii in range(i):
+        for kk in range(k):
+            for mm in range(m):
+                expected = np.sum(a[ii, :] * b[kk, :, mm])
+                assert np.allclose(result[ii, kk, mm], expected, equal_nan=True)
+# End program
+```

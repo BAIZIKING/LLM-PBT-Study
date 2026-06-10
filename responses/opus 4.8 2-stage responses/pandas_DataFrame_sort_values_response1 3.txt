@@ -1,0 +1,9 @@
+1. The output DataFrame has the same shape (same number of rows and columns) as the input DataFrame, and contains exactly the same set of rows (as a multiset), just potentially reordered.
+
+2. When sorting by a single column with `ascending=True` and no NaNs, the values in that column appear in non-decreasing order in the output; with `ascending=False`, they appear in non-increasing order.
+
+3. NaN values in the sort column(s) are placed at the end of the output when `na_position='last'` and at the beginning when `na_position='first'`, regardless of the `ascending` setting.
+
+4. When `ignore_index=True`, the resulting index is exactly the default RangeIndex (0, 1, ..., n-1); when `ignore_index=False`, the original index labels are preserved and travel with their corresponding rows.
+
+5. When `inplace=True`, the function returns None and modifies the original DataFrame to match the sorted result; when `inplace=False`, it returns a new sorted DataFrame and leaves the original DataFrame unchanged.

@@ -1,0 +1,9 @@
+1. The output has one bin assignment per input value, preserving positional correspondence; when the input is a `Series`, the result preserves the original index.
+
+2. Every non-missing input value that falls inside exactly one bin is assigned to that bin; input `NA` values and values outside the bin range are `NA` in the output.
+
+3. When `labels=None`, the non-missing output values are interval categories whose boundaries and closure match the effective bins, respecting `right` and `include_lowest`.
+
+4. When `labels=False`, the non-missing output values are integer bin codes in the range `0` to `number_of_bins - 1`, and no other integer codes appear.
+
+5. When `retbins=True`, the function returns `(out, bins_out)`, where `bins_out` is the effective bin definition used for assignment: the supplied `IntervalIndex`, the computed edges for scalar `bins`, or the supplied scalar edges after applying `duplicates='drop'` if requested.

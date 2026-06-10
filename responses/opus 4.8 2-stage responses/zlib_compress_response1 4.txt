@@ -1,0 +1,11 @@
+Here are five properties of the output of `zlib.compress` suitable for property-based testing:
+
+1. **Round-trip correctness (decompression recovers input):** Decompressing the output (with a matching `wbits`/format) using `zlib.decompress` must yield exactly the original `data` input.
+
+2. **Output type:** The return value is always a `bytes` object, regardless of the input data or arguments.
+
+3. **Header/format depends on wbits:** When `wbits` is in the range +9 to +15, the output begins with a zlib-specific header; when in +25 to +31, the output begins with a gzip header (magic bytes `0x1f 0x8b`); when negative (−9 to −15), the output contains no header or trailing checksum.
+
+4. **Empty input still produces valid (non-error) output:** Compressing empty `data` (`b""`) returns a valid `bytes` object that decompresses back to `b""`.
+
+5. **Level equivalence for default:** The output of compressing with `level=-1` equals the output of compressing with `level=6`, since the default is currently equivalent to level 6 (for the same `data` and `wbits`).

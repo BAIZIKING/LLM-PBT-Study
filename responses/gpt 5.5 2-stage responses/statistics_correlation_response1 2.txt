@@ -1,0 +1,9 @@
+1. For any valid non-constant inputs of equal length, the returned correlation coefficient is always between `-1.0` and `1.0`, inclusive.
+
+2. The result is symmetric: `correlation(x, y, method=...)` should equal `correlation(y, x, method=...)`.
+
+3. An input is perfectly positively correlated with itself: `correlation(x, x, method=...)` should return `1.0`.
+
+4. For `method='linear'`, applying an affine transformation to either input preserves or flips the sign predictably: adding a constant does not change the result, multiplying by a positive constant does not change the result, and multiplying by a negative constant negates the result.
+
+5. For `method='ranked'`, two inputs with the same ordering should return `1.0`, while two inputs with exactly opposite ordering should return `-1.0`.

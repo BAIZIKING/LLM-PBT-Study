@@ -1,0 +1,9 @@
+1. The output DataFrame contains exactly the same set of rows (as multisets of records) as the input DataFrame; sorting only reorders rows without adding, removing, or modifying any data.
+
+2. The output DataFrame has the same shape (number of rows and columns) and the same column labels as the input DataFrame.
+
+3. The values in the column(s) specified by `by` are in sorted order according to `ascending` (non-decreasing when True, non-increasing when False), after applying the `key` function if provided.
+
+4. When `na_position='last'`, all NaN values in the sort column appear after all non-NaN values; when `na_position='first'`, they appear before all non-NaN values, regardless of `ascending`.
+
+5. When `ignore_index=True`, the resulting index is exactly 0, 1, …, n-1; when `ignore_index=False`, the resulting index values are a permutation of the original index values. Additionally, when `inplace=True`, the function returns None.

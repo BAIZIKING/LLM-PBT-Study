@@ -1,0 +1,9 @@
+1. The denominator `d` is always a positive integer (strictly greater than zero).
+
+2. The returned fraction is in lowest terms, meaning the greatest common divisor of `abs(n)` and `d` is 1.
+
+3. The conversion is exact, meaning the original Decimal value equals `n / d` (verifiable by checking that `Decimal(n) / Decimal(d)` reproduces the original, or that `n == original * d` for the appropriate scaling).
+
+4. The sign of the numerator `n` matches the sign of the original Decimal value (negative Decimals yield negative `n`, positive yield positive `n`, and zero yields `n == 0`).
+
+5. Both `n` and `d` are of type `int`, and the function raises `OverflowError` for infinities and `ValueError` for NaNs.

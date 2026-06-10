@@ -1,0 +1,11 @@
+Here are five properties on the output of `parser.isoparse` suitable for property-based testing:
+
+1. **Output type:** For any valid ISO-8601 datetime string input, the function returns a `datetime.datetime` object.
+
+2. **Round-trip consistency:** For any `datetime.datetime` object, formatting it to an ISO-8601 string (e.g., via `.isoformat()`) and then parsing it back with `isoparse` yields a `datetime.datetime` equal to the original.
+
+3. **Default lowest values:** When date or time components are unspecified in the input, the corresponding fields in the output default to their lowest valid value (e.g., a "YYYY-MM" input yields day = 1, hour = 0, minute = 0, second = 0, microsecond = 0).
+
+4. **Timezone representation for UTC:** For any input with a UTC-equivalent offset (such as `Z`, `+00:00`, or `+0000`), the resulting datetime's `tzinfo` is a `dateutil.tz.tzutc` instance, while non-UTC offsets yield a `dateutil.tz.tzoffset` instance (and naive inputs yield `tzinfo` of `None`).
+
+5. **Component value bounds:** For any valid input, the output datetime's fields fall within their valid ranges (month in 1–12, day in 1–31 and valid for that month/year, hour in 0–23, minute and second in 0–59, microsecond in 0–999999), and the timezone offset (if present) matches the offset encoded in the input string.

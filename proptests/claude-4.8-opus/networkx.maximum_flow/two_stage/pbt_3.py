@@ -1,0 +1,97 @@
+from hypothesis import given, strategies as st, assume, settings
+import networkx as nx
+from networkx.algorithms.flow import (
+    edmonds_karp,
+    shortest_augmenting_path,
+    preflow_push,
+)
+
+
+# Strategy to build a random directed graph with capacities and a chosen source/sink.
+@st.composite
+def flow_graph(draw):
+    n = draw(st.integers(min_value=2, max_value=8))
+    nodes = list(range(n))
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+
+    # All possible directed edges (no self-loops)
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+    # Decide which edges to include
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges),
+            unique=True,
+            max_size=len(possible_edges),
+        )
+    )
+    for (u, v) in edges:
+        # Use bounded, finite capacities to avoid overflow / unbounded flow.
+        cap = draw(
+            st.one_of(
+                st.integers(min_value=0, max_value=1000),
+                st.floats(
+                    min_value=0.0,
+                    max_value=1000.0,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+            )
+        )
+        G.add_edge(u, v, capacity=cap)
+
+    s = draw(st.sampled_from(nodes))
+    t = draw(st.sampled_from([x for x in nodes if x != s]))
+    return G, s, t
+
+
+def _edge_capacity(G, u, v):
+    # Infinite capacity if attribute absent; we always set it, so default high.
+    return G[u][v].get("capacity", float("inf"))
+
+
+TOL = 1e-6
+
+
+@settings(max_examples=300)
+@given(flow_graph())
+def test_networkx_maximum_flow_property(args):
+    G, s, t = args
+
+    flow_value, flow_dict = nx.maximum_flow(G, s, t)
+
+    # Property 5 (part 1): flow_value should be non-negative.
+    assert flow_value >= -TOL
+
+    # Helper: net outflow from a node based on flow_dict.
+    def net_outflow(node):
+        out_flow = sum(flow_dict.get(node, {}).values())
+        in_flow = 0.0
+        for u in flow_dict:
+            in_flow += flow_dict[u].get(node, 0.0)
+        return out_flow - in_flow
+
+    # Property 1: flow_value equals net outflow from the source.
+    assert abs(net_outflow(s) - flow_value) <= TOL * max(1.0, abs(flow_value))
+
+    # Property 2: flow_value equals net inflow into the sink.
+    assert abs((-net_outflow(t)) - flow_value) <= TOL * max(1.0, abs(flow_value))
+
+    # Property 3: flow conservation at all non-source, non-sink nodes.
+    for node in G.nodes():
+        if node == s or node == t:
+            continue
+        assert abs(net_outflow(node)) <= TOL * max(1.0, abs(flow_value) + 1.0)
+
+    # Property 4: capacity constraints and non-negativity on each edge.
+    for u in flow_dict:
+        for v, f in flow_dict[u].items():
+            assert f >= -TOL
+            cap = _edge_capacity(G, u, v)
+            assert f <= cap + TOL * max(1.0, abs(cap))
+
+    # Property 5 (part 2): flow_value independent of flow_func choice.
+    for func in (edmonds_karp, shortest_augmenting_path, preflow_push):
+        fv = nx.maximum_flow(G, s, t, flow_func=func)[0]
+        assert abs(fv - flow_value) <= TOL * max(1.0, abs(flow_value))
+# End program

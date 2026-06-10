@@ -1,0 +1,119 @@
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+from networkx.classes.function import degree as networkx_degree
+
+# Summary: Generate Graph/DiGraph/MultiGraph/MultiDiGraph instances with random
+# hashable nodes, isolated nodes, self-loops, repeated/parallel edges, and edge
+# attributes that may or may not contain the requested weight key. Generate
+# nbunch as None, a single existing node, or an iterable containing existing and
+# non-existing nodes. Check that degree returns the documented all-node view,
+# single-node value, or nbunch-restricted view, and that weighted/unweighted
+# degrees match an independent manual computation.
+@given(st.data())
+def test_networkx_degree(data):
+    node_strategy = st.one_of(
+        st.integers(min_value=-5, max_value=5),
+        st.text(min_size=0, max_size=3),
+        st.tuples(st.integers(min_value=-2, max_value=2), st.text(max_size=2)),
+    )
+
+    nodes = data.draw(
+        st.lists(node_strategy, min_size=0, max_size=8, unique=True),
+        label="nodes",
+    )
+
+    graph_cls = data.draw(
+        st.sampled_from([nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]),
+        label="graph_cls",
+    )
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+
+    if nodes:
+        edge_attr_strategy = st.dictionaries(
+            keys=st.sampled_from(["w", "other"]),
+            values=st.integers(min_value=-10, max_value=10),
+            min_size=0,
+            max_size=2,
+        )
+        edges = data.draw(
+            st.lists(
+                st.tuples(
+                    st.sampled_from(nodes),
+                    st.sampled_from(nodes),
+                    edge_attr_strategy,
+                ),
+                min_size=0,
+                max_size=20,
+            ),
+            label="edges",
+        )
+        for u, v, attrs in edges:
+            G.add_edge(u, v, **attrs)
+
+    weight = data.draw(st.sampled_from([None, "w", "other", "missing"]), label="weight")
+
+    def manual_degrees():
+        expected = {n: 0 for n in G.nodes}
+
+        def edge_value(attrs):
+            return 1 if weight is None else attrs.get(weight, 1)
+
+        if G.is_multigraph():
+            edge_iter = G.edges(keys=True, data=True)
+            for u, v, _key, attrs in edge_iter:
+                value = edge_value(attrs)
+                expected[u] += value
+                expected[v] += value
+        else:
+            edge_iter = G.edges(data=True)
+            for u, v, attrs in edge_iter:
+                value = edge_value(attrs)
+                expected[u] += value
+                expected[v] += value
+
+        return expected
+
+    expected_degrees = manual_degrees()
+
+    if not nodes:
+        nbunch_kind = data.draw(st.sampled_from(["none", "list", "tuple", "set"]))
+    else:
+        nbunch_kind = data.draw(
+            st.sampled_from(["none", "single_node", "list", "tuple", "set"])
+        )
+
+    extra_nodes = data.draw(
+        st.lists(node_strategy, min_size=0, max_size=5),
+        label="extra_nodes",
+    )
+    nbunch_values = data.draw(
+        st.lists(st.sampled_from(nodes + extra_nodes), min_size=0, max_size=10),
+        label="nbunch_values",
+    ) if nodes or extra_nodes else []
+
+    if nbunch_kind == "none":
+        assert dict(networkx_degree(G, weight=weight)) == expected_degrees
+        assert dict(networkx_degree(G, nbunch=None, weight=weight)) == expected_degrees
+
+    elif nbunch_kind == "single_node":
+        node = data.draw(st.sampled_from(nodes), label="single_node")
+        assert networkx_degree(G, nbunch=node, weight=weight) == expected_degrees[node]
+
+    else:
+        if nbunch_kind == "list":
+            nbunch = list(nbunch_values)
+        elif nbunch_kind == "tuple":
+            nbunch = tuple(nbunch_values)
+        else:
+            nbunch = set(nbunch_values)
+
+        expected_for_nbunch = {
+            n: expected_degrees[n]
+            for n in nbunch
+            if n in G
+        }
+        assert dict(networkx_degree(G, nbunch=nbunch, weight=weight)) == expected_for_nbunch
+# End program
+```

@@ -1,0 +1,116 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+from itertools import combinations
+
+# Summary: We generate a random simple undirected graph by choosing integer node
+# labels and a random subset of possible edges (covering empty, edgeless, sparse,
+# and dense graphs, plus optional self-loops which must be ignored). We optionally
+# supply a `nodes` argument that is either None, a guaranteed clique (subset of an
+# existing edge or a single node), or an arbitrary node subset (which may not be a
+# clique). We then verify: returned cliques are valid lists of graph nodes, are
+# genuine cliques, are maximal, contain all `nodes` when provided, and that a
+# ValueError is raised when `nodes` is not a clique.
+@given(st.data())
+def test_networkx_find_cliques(data):
+    # --- Generate graph ---
+    n = data.draw(st.integers(min_value=0, max_value=8), label="num_nodes")
+    nodes_list = list(range(n))
+
+    G = nx.Graph()
+    G.add_nodes_from(nodes_list)
+
+    possible_edges = list(combinations(nodes_list, 2))
+    if possible_edges:
+        chosen_edges = data.draw(
+            st.lists(st.sampled_from(possible_edges), unique=True),
+            label="edges",
+        )
+        G.add_edges_from(chosen_edges)
+
+    # Optionally add self-loops (must be ignored by the algorithm)
+    if nodes_list and data.draw(st.booleans(), label="add_self_loops"):
+        loop_nodes = data.draw(
+            st.lists(st.sampled_from(nodes_list), unique=True),
+            label="self_loop_nodes",
+        )
+        for v in loop_nodes:
+            G.add_edge(v, v)
+
+    def is_clique(subset):
+        subset = list(subset)
+        for a, b in combinations(subset, 2):
+            if not G.has_edge(a, b):
+                return False
+        return True
+
+    # --- Generate the optional `nodes` parameter ---
+    nodes_mode = data.draw(
+        st.sampled_from(["none", "single", "edge_subset", "arbitrary"]),
+        label="nodes_mode",
+    )
+
+    nodes_arg = None
+    if nodes_mode == "single" and nodes_list:
+        nodes_arg = [data.draw(st.sampled_from(nodes_list), label="single_node")]
+    elif nodes_mode == "edge_subset" and G.number_of_edges() > 0:
+        # pick a guaranteed-clique subset from an existing (non-self-loop) edge
+        real_edges = [(u, v) for u, v in G.edges() if u != v]
+        if real_edges:
+            u, v = data.draw(st.sampled_from(real_edges), label="edge")
+            nodes_arg = [u, v]
+        elif nodes_list:
+            nodes_arg = [data.draw(st.sampled_from(nodes_list), label="fallback_node")]
+    elif nodes_mode == "arbitrary" and nodes_list:
+        nodes_arg = data.draw(
+            st.lists(st.sampled_from(nodes_list), unique=True, min_size=1),
+            label="arbitrary_nodes",
+        )
+
+    # --- Run and check properties ---
+    if nodes_arg is not None and not is_clique(nodes_arg):
+        # Property 5: ValueError must be raised when `nodes` is not a clique.
+        try:
+            list(nx.find_cliques(G, nodes=nodes_arg))
+            assert False, "Expected ValueError when `nodes` is not a clique"
+        except ValueError:
+            return  # Correct behavior; nothing more to check.
+
+    cliques = list(nx.find_cliques(G, nodes=nodes_arg))
+    graph_nodes = set(G.nodes())
+    nodes_arg_set = set(nodes_arg) if nodes_arg is not None else set()
+
+    seen_nodes = set()
+    for clique in cliques:
+        # Property 1: clique is a list of nodes in G.
+        assert isinstance(clique, list)
+        assert all(node in graph_nodes for node in clique)
+        # Property 6: no empty cliques when the graph has nodes.
+        if graph_nodes:
+            assert len(clique) >= 1
+
+        clique_set = set(clique)
+
+        # Property 2: it is genuinely a clique (ignoring self-loops).
+        assert is_clique(clique)
+
+        # Property 3: maximality — no outside node is adjacent to all clique nodes.
+        for outside in graph_nodes - clique_set:
+            adjacent_to_all = all(
+                G.has_edge(outside, member)
+                for member in clique
+                if member != outside
+            )
+            assert not adjacent_to_all, (
+                f"Clique {clique} is not maximal; node {outside} could extend it"
+            )
+
+        # Property 4: must contain all required `nodes`.
+        assert nodes_arg_set.issubset(clique_set)
+
+        seen_nodes.update(clique_set)
+
+    # Property 6 (global): every node belongs to at least one maximal clique
+    # when no `nodes` filter is applied.
+    if nodes_arg is None and graph_nodes:
+        assert seen_nodes == graph_nodes
+# End program

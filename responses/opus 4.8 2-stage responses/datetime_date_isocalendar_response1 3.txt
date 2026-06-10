@@ -1,0 +1,9 @@
+1. The output is a named tuple with exactly three components named `year`, `week`, and `weekday`.
+
+2. The `weekday` component is always an integer between 1 and 7 inclusive (Monday=1, Sunday=7).
+
+3. The `week` component is always an integer between 1 and 53 inclusive.
+
+4. The `year` component is always within 1 of the date's Gregorian year (i.e., it equals the Gregorian year, or the year before/after near year boundaries).
+
+5. Reconstructing a date from the ISO calendar output (using `date.fromisocalendar(year, week, weekday)`) returns the original date.

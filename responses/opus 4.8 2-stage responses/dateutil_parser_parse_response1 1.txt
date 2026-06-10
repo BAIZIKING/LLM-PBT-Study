@@ -1,0 +1,9 @@
+1. The output is always a `datetime.datetime` object, except when `fuzzy_with_tokens=True`, in which case it is a tuple whose first element is a `datetime.datetime` object and whose second element is a tuple of strings (the ignored fuzzy tokens).
+
+2. When `ignoretz=True`, the returned `datetime.datetime` object is always naive (its `tzinfo` attribute is `None`), regardless of any time zone information present in the input string.
+
+3. When a `default` datetime object is provided, any date/time component (year, month, day, hour, minute, second, etc.) not explicitly specified in the input string is equal to the corresponding component of the `default` object, while components specified in the string override those of the default.
+
+4. When `tzinfos` is provided (and `ignoretz` is not set) and the input string contains a matching time zone name, the resulting `datetime`'s `tzinfo`/UTC offset corresponds to the mapping given in `tzinfos` (either the integer offset in seconds or the supplied `tzinfo` object).
+
+5. For an unambiguous date string, swapping `dayfirst`/`yearfirst` flags does not change the parsed result, whereas for an ambiguous 3-integer date these flags deterministically control which numbers are interpreted as day, month, and year (e.g., with `yearfirst=True` the first integer becomes the year), and the resulting components are always valid calendar values.

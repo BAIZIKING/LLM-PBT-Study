@@ -1,0 +1,174 @@
+```python
+from hypothesis import given, strategies as st, assume, settings
+import networkx as nx
+import math
+
+
+# ----- Strategy helpers -----
+
+def node_strategy():
+    # Use small integers as node labels to allow easy reuse / overlap of edges.
+    return st.integers(min_value=0, max_value=30)
+
+
+@st.composite
+def graph_strategy(draw, weighted=False):
+    n_nodes = draw(st.integers(min_value=0, max_value=15))
+    nodes = list(range(n_nodes))
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+
+    if n_nodes > 0:
+        n_edges = draw(st.integers(min_value=0, max_value=20))
+        for _ in range(n_edges):
+            u = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            v = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            if weighted:
+                w = draw(st.floats(min_value=-1e6, max_value=1e6,
+                                   allow_nan=False, allow_infinity=False))
+                G.add_edge(u, v, weight=w)
+            else:
+                G.add_edge(u, v)
+    return G
+
+
+# ----- Property 1: handshaking lemma -----
+
+@given(graph_strategy())
+@settings(max_examples=200)
+def test_networkx_degree_property():
+    # Property 1: Sum of all unweighted degrees == 2 * number of edges.
+    G = graph
+    deg_view = nx.degree(G)
+    total = sum(d for _, d in deg_view)
+    assert total == 2 * G.number_of_edges()
+# End program
+```
+
+I'll provide a single consolidated suite covering all five properties below, following the format for each test:
+
+```python
+from hypothesis import given, strategies as st, assume, settings
+import networkx as nx
+import math
+
+
+@st.composite
+def graph_strategy(draw, weighted=False):
+    n_nodes = draw(st.integers(min_value=0, max_value=15))
+    G = nx.Graph()
+    G.add_nodes_from(range(n_nodes))
+    if n_nodes > 0:
+        n_edges = draw(st.integers(min_value=0, max_value=20))
+        for _ in range(n_edges):
+            u = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            v = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            if weighted:
+                w = draw(st.floats(min_value=-1e6, max_value=1e6,
+                                   allow_nan=False, allow_infinity=False))
+                G.add_edge(u, v, weight=w)
+            else:
+                G.add_edge(u, v)
+    return G
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_networkx_degree_property():
+    data = st.data().example  # placeholder; real draws via the data fixture below
+# End program
+```
+
+Let me write the proper version using the `st.data()` fixture as required by the format:
+
+```python
+from hypothesis import given, strategies as st, assume, settings
+import networkx as nx
+import math
+
+
+@st.composite
+def _graph(draw, weighted=False):
+    n_nodes = draw(st.integers(min_value=0, max_value=15))
+    G = nx.Graph()
+    G.add_nodes_from(range(n_nodes))
+    if n_nodes > 0:
+        n_edges = draw(st.integers(min_value=0, max_value=20))
+        for _ in range(n_edges):
+            u = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            v = draw(st.integers(min_value=0, max_value=n_nodes - 1))
+            if weighted:
+                w = draw(st.floats(min_value=-1e6, max_value=1e6,
+                                   allow_nan=False, allow_infinity=False))
+                G.add_edge(u, v, weight=w)
+            else:
+                G.add_edge(u, v)
+    return G
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_networkx_degree_property(data):
+    # ---------- Property 1: Handshaking lemma ----------
+    G = data.draw(_graph())
+    deg_view = nx.degree(G)
+    total = sum(d for _, d in deg_view)
+    assert total == 2 * G.number_of_edges()
+
+    # ---------- Property 2: Coverage of all nodes when nbunch is None ----------
+    deg_view = nx.degree(G)
+    out_nodes = set(n for n, _ in deg_view)
+    assert out_nodes == set(G.nodes())
+    assert len(list(deg_view)) == G.number_of_nodes()
+    # All degrees non-negative for unweighted graphs.
+    assert all(d >= 0 for _, d in deg_view)
+
+    # ---------- Property 3: Restriction to nbunch ----------
+    full = dict(nx.degree(G))
+    all_nodes = list(G.nodes())
+    if all_nodes:
+        # Draw a subset (possibly with non-existent nodes excluded by indexing).
+        idxs = data.draw(st.lists(st.integers(min_value=0, max_value=len(all_nodes) - 1),
+                                  max_size=len(all_nodes)))
+        nbunch = [all_nodes[i] for i in idxs]
+        restricted = nx.degree(G, nbunch)
+        result = list(restricted)
+        # Output order matches nbunch order, entries only for nodes present in G.
+        expected_nodes = [nd for nd in nbunch if nd in G]
+        assert [n for n, _ in result] == expected_nodes
+        # Degree values match the full degree view.
+        for n, d in result:
+            assert d == full[n]
+
+    # ---------- Property 4: Single-node case returns a number ----------
+    if all_nodes:
+        single = data.draw(st.sampled_from(all_nodes))
+        d = nx.degree(G, single)
+        assert isinstance(d, (int, float))
+        assert d >= 0
+        assert d == full[single]
+
+    # ---------- Property 5: Weighted degree == sum of incident edge weights ----------
+    Gw = data.draw(_graph(weighted=True))
+    wdeg = dict(nx.degree(Gw, weight="weight"))
+    for node in Gw.nodes():
+        expected = 0.0
+        for nbr, attr in Gw[node].items():
+            w = attr.get("weight", 1)
+            if nbr == node:
+                expected += 2 * w   # self-loop counted twice
+            else:
+                expected += w
+        assert math.isclose(wdeg[node], expected, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Weighted degree reduces to unweighted when all weights are 1.
+    G_ones = nx.Graph()
+    G_ones.add_nodes_from(G.nodes())
+    for u, v in G.edges():
+        G_ones.add_edge(u, v, weight=1)
+    unw = dict(nx.degree(G_ones))
+    w_as_one = dict(nx.degree(G_ones, weight="weight"))
+    for node in G_ones.nodes():
+        assert w_as_one[node] == unw[node]
+# End program
+```

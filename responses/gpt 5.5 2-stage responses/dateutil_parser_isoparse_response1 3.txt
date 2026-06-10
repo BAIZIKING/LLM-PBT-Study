@@ -1,0 +1,9 @@
+1. For any successfully parsed valid input, the result is a `datetime.datetime` instance representing the encoded date and time.
+
+2. Any unspecified components in a valid partial ISO date/time default to their lowest valid values, such as month/day defaulting to `1` and time fields defaulting to `00:00:00.000000`.
+
+3. Equivalent basic and extended ISO-8601 representations parse to the same `datetime.datetime`, for example `YYYYMMDD` and `YYYY-MM-DD`, or `hhmmss` and `hh:mm:ss`.
+
+4. Time zone information in the output matches the input offset: `Z`, `+00:00`, `+0000`, and `+00` produce UTC `tzinfo`, while nonzero offsets produce a fixed-offset `tzinfo` with the corresponding offset.
+
+5. Fractional seconds using either `.` or `,` are reflected exactly in the output `microsecond` field up to six digits, and absent fractional seconds produce `microsecond == 0`.

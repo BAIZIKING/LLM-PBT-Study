@@ -1,0 +1,11 @@
+Here are five properties of `pandas.merge` suitable for property-based testing:
+
+1. **Cross merge row count**: When `how='cross'`, the number of rows in the output equals the product of the number of rows in `left` and `right` (`len(left) * len(right)`), and the output columns are the union of all columns from both frames (with suffixes applied to overlaps).
+
+2. **Inner merge is a subset of outer merge**: For the same merge keys, the set of rows produced by an inner join is contained within (a subset of) the rows produced by an outer join, since inner uses the intersection of keys while outer uses the union.
+
+3. **Left merge preserves all left keys / row count bound**: When `how='left'`, every key present in `left` appears in the output, and the number of output rows is at least `len(left)` (equal when keys are unique in `right`, larger when `right` has duplicate matching keys).
+
+4. **Indicator column correctness**: When `indicator=True`, the output contains a `_merge` column of Categorical type whose values are exactly drawn from {`left_only`, `right_only`, `both`}, and each value correctly reflects whether that row's key appeared only in left, only in right, or in both frames.
+
+5. **Output column set with suffixes**: For a column-based merge, overlapping non-key column names appear in the output with the configured suffixes appended (default `_x`/`_y`), while non-overlapping columns retain their original names; the total set of output columns is determined deterministically by the input columns, join keys, and suffix settings.

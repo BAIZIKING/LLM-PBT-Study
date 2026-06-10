@@ -1,0 +1,11 @@
+Here are five properties of the output of `datetime.fromordinal(ordinal)` suitable for property-based testing:
+
+1. The hour, minute, second, and microsecond of the returned datetime are all 0.
+
+2. The `tzinfo` of the returned datetime is None.
+
+3. Calling `.toordinal()` on the returned datetime yields back the original input ordinal (round-trip consistency).
+
+4. The returned object is an instance of `datetime.datetime`, and its year, month, and day are valid (within their respective allowed ranges).
+
+5. For inputs outside the valid range (i.e., ordinal < 1 or ordinal > datetime.max.toordinal()), a ValueError is raised instead of returning a datetime.

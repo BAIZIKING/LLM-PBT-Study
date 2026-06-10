@@ -1,0 +1,65 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+# Strategy for finite floats with bounded magnitude to avoid overflow
+finite_floats = st.floats(
+    allow_nan=False,
+    allow_infinity=False,
+    min_value=-1e6,
+    max_value=1e6,
+)
+
+# Non-empty lists of bounded floats
+data_lists = st.lists(finite_floats, min_size=1, max_size=100)
+
+
+@given(data=data_lists)
+def test_statistics_mean_within_range(data):
+    # Property 1: mean lies within [min, max] of the data
+    m = statistics.mean(data)
+    # Allow tiny floating point tolerance
+    assert min(data) - 1e-6 <= m <= max(data) + 1e-6
+# End program
+
+
+@given(value=finite_floats, n=st.integers(min_value=1, max_value=100))
+def test_statistics_mean_constant_list(value, n):
+    # Property 2: mean of a repeated value equals that value
+    data = [value] * n
+    m = statistics.mean(data)
+    assert math.isclose(m, value, rel_tol=1e-9, abs_tol=1e-9)
+# End program
+
+
+@given(data=data_lists, c=finite_floats)
+def test_statistics_mean_translation_invariance(data, c):
+    # Property 3: adding c to every element increases mean by c
+    original = statistics.mean(data)
+    shifted = statistics.mean([x + c for x in data])
+    expected = original + c
+    scale = max(1.0, abs(expected))
+    assert math.isclose(shifted, expected, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+
+
+@given(data=data_lists, k=st.floats(allow_nan=False, allow_infinity=False, min_value=-1e3, max_value=1e3))
+def test_statistics_mean_scaling(data, k):
+    # Property 4: multiplying every element by k multiplies mean by k
+    original = statistics.mean(data)
+    scaled = statistics.mean([x * k for x in data])
+    expected = original * k
+    scale = max(1.0, abs(expected))
+    assert math.isclose(scaled, expected, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+
+
+@given(data=data_lists)
+def test_statistics_mean_times_count_equals_sum(data):
+    # Property 5: mean * count == sum of data
+    m = statistics.mean(data)
+    total = sum(data)
+    expected = m * len(data)
+    scale = max(1.0, abs(total))
+    assert math.isclose(expected, total, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program

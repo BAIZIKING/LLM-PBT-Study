@@ -1,0 +1,74 @@
+from hypothesis import given, strategies as st
+import struct
+import base64
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_property(data):
+    # Strategy: a list of Fernet instances (the key set) with at least one key
+    keys = data.draw(
+        st.lists(
+            st.builds(lambda _: Fernet(Fernet.generate_key()), st.just(None)),
+            min_size=1,
+            max_size=4,
+        )
+    )
+    mf = MultiFernet(keys)
+
+    # Strategy: plaintext message, aware of large inputs / overflows
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+
+    # Create an original token using this MultiFernet instance
+    original_token = mf.encrypt(plaintext)
+
+    # Optionally rotate the key set: prepend a new key (simulating key rotation)
+    add_new_key = data.draw(st.booleans())
+    if add_new_key:
+        new_key = Fernet(Fernet.generate_key())
+        mf_rotated = MultiFernet([new_key] + keys)
+    else:
+        mf_rotated = mf
+
+    rotated_token = mf_rotated.rotate(original_token)
+
+    # Property 1: The rotated token is of type bytes.
+    assert isinstance(rotated_token, bytes)
+
+    # Property 2: Decrypting the rotated token yields the same plaintext.
+    assert mf_rotated.decrypt(rotated_token) == plaintext
+
+    # Property 3: The rotated token preserves the original timestamp.
+    def extract_timestamp(token_bytes):
+        raw = base64.urlsafe_b64decode(token_bytes)
+        return struct.unpack(">Q", raw[1:9])[0]
+
+    assert extract_timestamp(rotated_token) == extract_timestamp(original_token)
+
+    # Property 4: The rotated token is valid URL-safe base64.
+    # Should decode without error.
+    decoded = base64.urlsafe_b64decode(rotated_token)
+    assert isinstance(decoded, bytes)
+
+    # Property 5a: Rotating an invalid/tampered token raises InvalidToken.
+    tampered = bytearray(base64.urlsafe_b64decode(original_token))
+    if len(tampered) > 0:
+        # flip a byte in the HMAC/ciphertext region to invalidate it
+        tampered[-1] ^= 0xFF
+        tampered_token = base64.urlsafe_b64encode(bytes(tampered))
+        with pytest.raises(InvalidToken):
+            mf_rotated.rotate(tampered_token)
+
+    # Property 5b: Rotating with a non-bytes/non-str argument raises TypeError.
+    bad_input = data.draw(
+        st.one_of(
+            st.integers(),
+            st.floats(allow_nan=False, allow_infinity=False),
+            st.lists(st.integers()),
+            st.none(),
+        )
+    )
+    with pytest.raises(TypeError):
+        mf_rotated.rotate(bad_input)
+# End program

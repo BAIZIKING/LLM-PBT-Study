@@ -1,0 +1,60 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Strategy for data: bytes of reasonable size to avoid excessive memory use
+data_strategy = st.binary(max_size=4096)
+# Strategy for the starting value: valid unsigned 32-bit integers
+value_strategy = st.integers(min_value=0, max_value=2**32 - 1)
+
+
+@given(data=data_strategy, value=value_strategy)
+def test_zlib_adler32_output_is_unsigned_32bit(data, value):
+    # Property 1: The output is always an unsigned 32-bit integer.
+    result_default = zlib.adler32(data)
+    result_with_value = zlib.adler32(data, value)
+    assert isinstance(result_default, int)
+    assert 0 <= result_default <= 2**32 - 1
+    assert isinstance(result_with_value, int)
+    assert 0 <= result_with_value <= 2**32 - 1
+# End program
+
+
+@given(data=data_strategy, value=value_strategy)
+def test_zlib_adler32_is_deterministic(data, value):
+    # Property 2: The function is deterministic for the same inputs.
+    assert zlib.adler32(data) == zlib.adler32(data)
+    assert zlib.adler32(data, value) == zlib.adler32(data, value)
+# End program
+
+
+@given(data1=data_strategy, data2=data_strategy)
+def test_zlib_adler32_composable_for_concatenation(data1, data2):
+    # Property 3: Checksum is composable over concatenation.
+    direct = zlib.adler32(data1 + data2)
+    running = zlib.adler32(data2, zlib.adler32(data1))
+    assert direct == running
+# End program
+
+
+@given(value=value_strategy)
+def test_zlib_adler32_empty_data_returns_starting_value(value):
+    # Property 4: Empty data returns the starting value (or default 1).
+    assert zlib.adler32(b"") == 1
+    assert zlib.adler32(b"", value) == value
+# End program
+
+
+@given(data=st.binary(min_size=1, max_size=4096),
+       value1=value_strategy, value2=value_strategy)
+def test_zlib_adler32_depends_on_starting_value(data, value1, value2):
+    # Property 5: Different starting values generally produce different
+    # checksums for the same non-empty data. Conversely, equal starting
+    # values must produce equal checksums.
+    if value1 == value2:
+        assert zlib.adler32(data, value1) == zlib.adler32(data, value2)
+    else:
+        # The Adler-32 update is injective with respect to the starting
+        # value for fixed data, so distinct starting values yield distinct
+        # checksums.
+        assert zlib.adler32(data, value1) != zlib.adler32(data, value2)
+# End program

@@ -1,0 +1,97 @@
+from hypothesis import given, strategies as st, assume, settings
+import numpy
+import hypothesis.extra.numpy as hnp
+
+
+# Strategy for finite floats with bounded magnitude to avoid overflow.
+safe_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+
+def vector_arrays():
+    """1-D float arrays of moderate size and bounded magnitude."""
+    return hnp.arrays(
+        dtype=numpy.float64,
+        shape=st.integers(min_value=1, max_value=20),
+        elements=safe_floats,
+    )
+
+
+def true_norm_orders_for_vectors():
+    """ord values that correspond to genuine (non-negative) norms for vectors."""
+    return st.sampled_from([None, 1, 2, 3, numpy.inf])
+
+
+@given(st.data())
+@settings(max_examples=500)
+def test_numpy_linalg_norm_property(data):
+    # ---------------------------------------------------------------
+    # Property 1: Non-negativity for true norms.
+    # ---------------------------------------------------------------
+    x1 = data.draw(vector_arrays(), label="x1")
+    ord1 = data.draw(true_norm_orders_for_vectors(), label="ord1")
+    n1 = numpy.linalg.norm(x1, ord=ord1)
+    assert n1 >= -1e-12, f"Norm should be non-negative, got {n1}"
+
+    # ---------------------------------------------------------------
+    # Property 2: Zero array yields zero norm for true norms.
+    # ---------------------------------------------------------------
+    size2 = data.draw(st.integers(min_value=1, max_value=20), label="size2")
+    ord2 = data.draw(true_norm_orders_for_vectors(), label="ord2")
+    x2 = numpy.zeros(size2, dtype=numpy.float64)
+    n2 = numpy.linalg.norm(x2, ord=ord2)
+    assert n2 == 0.0, f"Norm of zero vector should be 0, got {n2}"
+
+    # ---------------------------------------------------------------
+    # Property 3: Absolute homogeneity: norm(c*x) == |c| * norm(x).
+    # ---------------------------------------------------------------
+    x3 = data.draw(vector_arrays(), label="x3")
+    ord3 = data.draw(true_norm_orders_for_vectors(), label="ord3")
+    c = data.draw(
+        st.floats(min_value=-100.0, max_value=100.0,
+                  allow_nan=False, allow_infinity=False),
+        label="c",
+    )
+    lhs = numpy.linalg.norm(c * x3, ord=ord3)
+    rhs = abs(c) * numpy.linalg.norm(x3, ord=ord3)
+    assert numpy.isclose(lhs, rhs, rtol=1e-6, atol=1e-6), (
+        f"Homogeneity failed: norm(c*x)={lhs}, |c|*norm(x)={rhs}"
+    )
+
+    # ---------------------------------------------------------------
+    # Property 4: Triangle inequality: norm(x+y) <= norm(x) + norm(y).
+    # ---------------------------------------------------------------
+    size4 = data.draw(st.integers(min_value=1, max_value=20), label="size4")
+    elems = hnp.arrays(dtype=numpy.float64, shape=size4, elements=safe_floats)
+    x4 = data.draw(elems, label="x4")
+    y4 = data.draw(elems, label="y4")
+    ord4 = data.draw(true_norm_orders_for_vectors(), label="ord4")
+    n_sum = numpy.linalg.norm(x4 + y4, ord=ord4)
+    n_parts = numpy.linalg.norm(x4, ord=ord4) + numpy.linalg.norm(y4, ord=ord4)
+    assert n_sum <= n_parts + 1e-6, (
+        f"Triangle inequality failed: norm(x+y)={n_sum}, "
+        f"norm(x)+norm(y)={n_parts}"
+    )
+
+    # ---------------------------------------------------------------
+    # Property 5: Consistency with explicit formula.
+    #   - For finite numeric ord p: norm == sum(|x|**p)**(1/p).
+    #   - For ord=None: norm == sqrt(sum(x**2)).
+    # ---------------------------------------------------------------
+    x5 = data.draw(vector_arrays(), label="x5")
+    ord5 = data.draw(st.sampled_from([None, 1, 2, 3]), label="ord5")
+    result = numpy.linalg.norm(x5, ord=ord5)
+    if ord5 is None:
+        expected = numpy.sqrt(numpy.sum(numpy.abs(x5.ravel()) ** 2))
+    else:
+        expected = numpy.sum(numpy.abs(x5) ** ord5) ** (1.0 / ord5)
+    assert numpy.isclose(result, expected, rtol=1e-6, atol=1e-6), (
+        f"Formula consistency failed for ord={ord5}: "
+        f"result={result}, expected={expected}"
+    )
+# End program

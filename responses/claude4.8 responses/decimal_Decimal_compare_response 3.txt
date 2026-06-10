@@ -1,0 +1,69 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.compare()`, I need to create two `Decimal` instances (`self` and `other`). I'll use a composite strategy combining:
+
+1. **Regular finite decimals**: Using `st.decimals()` with various ranges, including negative, positive, zero, and fractional values.
+2. **Special values**: Explicitly including `NaN`, `sNaN`, `Infinity`, `-Infinity`, and `-0`/`+0` since these are critical edge cases for comparison.
+3. **Boundary values**: Very large and very small magnitudes, and values with many decimal places.
+4. **Equal values**: To exercise the `a == b ==> 0` branch, I'll occasionally generate the same value for both operands.
+
+I'll use `st.one_of()` to mix sampled special values with `st.decimals()`, and allow NaN/Infinity in the `decimals` strategy.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The result is always a `Decimal` instance.
+2. **NaN propagation**: If either operand is a NaN (quiet NaN), the result is `Decimal('NaN')`.
+3. **Less than**: If `a < b` (and neither is NaN), result is `Decimal('-1')`.
+4. **Equal**: If `a == b` (and neither is NaN), result is `Decimal('0')`.
+5. **Greater than**: If `a > b` (and neither is NaN), result is `Decimal('1')`.
+6. **Result domain**: The non-NaN result is always one of `{-1, 0, 1}`.
+
+Note: Signaling NaN (`sNaN`) raises an `InvalidOperation` exception in the default context, so I'll filter those out (or only use quiet NaN) to test the documented behavior cleanly.
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+
+# Summary: Generate two Decimals mixing st.decimals() (with NaN/Infinity allowed)
+# and explicitly sampled special values (NaN, +/-Inf, +/-0). Signaling NaNs are
+# excluded since they raise InvalidOperation rather than returning a result.
+# Verify: return type is Decimal; NaN operand => NaN; otherwise result is in
+# {-1, 0, 1} consistent with Python's <, ==, > comparison of the operands.
+@given(st.data())
+def test_decimal_Decimal_compare(data):
+    special = st.sampled_from([
+        Decimal('NaN'), Decimal('-NaN'),
+        Decimal('Infinity'), Decimal('-Infinity'),
+        Decimal('0'), Decimal('-0'),
+        Decimal('1'), Decimal('-1'),
+    ])
+    finite = st.decimals(allow_nan=True, allow_infinity=True)
+    dec_strategy = st.one_of(special, finite)
+
+    a = data.draw(dec_strategy)
+    b = data.draw(dec_strategy)
+
+    result = a.compare(b)
+
+    # Property 1: result is always a Decimal
+    assert isinstance(result, Decimal)
+
+    if a.is_nan() or b.is_nan():
+        # Property 2: NaN operand => NaN result
+        assert result.is_nan()
+    else:
+        # Property 6: non-NaN result must be -1, 0, or 1
+        assert result in (Decimal('-1'), Decimal('0'), Decimal('1'))
+        # Properties 3, 4, 5: consistent with ordering
+        if a < b:
+            assert result == Decimal('-1')
+        elif a == b:
+            assert result == Decimal('0')
+        else:  # a > b
+            assert result == Decimal('1')
+# End program
+```

@@ -1,0 +1,9 @@
+1. **Commutativity**: The result of `np.add(x1, x2)` equals the result of `np.add(x2, x1)` (element-wise sums are equal regardless of operand order).
+
+2. **Identity element**: Adding zero leaves the input unchanged, i.e., `np.add(x, 0)` equals `x` element-wise (for the same dtype/shape considerations).
+
+3. **Equivalence to the `+` operator**: For ndarray inputs, `np.add(x1, x2)` produces the same result as `x1 + x2`.
+
+4. **Output shape matches broadcasting**: The shape of `np.add(x1, x2)` equals the broadcasted shape of `x1` and `x2`; and if both inputs are scalars, the result is a scalar.
+
+5. **`where` masking with `out`**: When called as `np.add(x1, x2, out=out, where=mask)`, the output equals the element-wise sum at positions where `mask` is True, and retains the original `out` values at positions where `mask` is False.

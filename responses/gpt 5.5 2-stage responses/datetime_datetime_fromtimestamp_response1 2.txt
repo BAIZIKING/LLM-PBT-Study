@@ -1,0 +1,9 @@
+1. On successful return, the result is an instance of `datetime.datetime`.
+
+2. If `tz` is `None` or omitted, the returned `datetime` is naive: its `tzinfo` is `None`.
+
+3. If `tz` is provided, the returned `datetime` is timezone-aware and represents the timestamp converted into that timezone.
+
+4. For a successful aware result, `result.timestamp()` should equal the input timestamp up to normal floating-point/microsecond rounding error.
+
+5. The returned `datetime` may have `fold` set to either `0` or `1`, but `fold` must always be one of those two valid values.

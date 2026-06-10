@@ -1,0 +1,113 @@
+```python
+from hypothesis import given, strategies as st
+import math
+from statistics import StatisticsError, linear_regression as statistics_linear_regression
+
+# Summary: Generate proportional=True/False plus valid and invalid x/y cases:
+# same-length non-constant numeric sequences, unequal lengths, too-short inputs,
+# and constant/all-zero x edge cases. For valid inputs, compare the result with
+# the ordinary least squares formula from the documentation and check that
+# proportional=True always gives intercept 0.0. For invalid inputs, check that
+# StatisticsError is raised.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    x_value = st.integers(min_value=-1000, max_value=1000).map(float)
+    y_value = st.one_of(
+        st.sampled_from([0.0, -0.0, 1.0, -1.0, 1e-12, -1e-12, 1e6, -1e6]),
+        st.integers(min_value=-1_000_000, max_value=1_000_000).map(float),
+        st.floats(
+            min_value=-1_000_000,
+            max_value=1_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        ),
+    )
+
+    proportional = data.draw(st.booleans())
+    case = data.draw(
+        st.sampled_from(["valid", "unequal_lengths", "too_short", "constant_x"])
+    )
+
+    x_container = data.draw(st.sampled_from([list, tuple]))
+    y_container = data.draw(st.sampled_from([list, tuple]))
+
+    if case == "valid":
+        n = data.draw(st.integers(min_value=2, max_value=20))
+        x = data.draw(st.lists(x_value, min_size=n, max_size=n))
+        y = data.draw(st.lists(y_value, min_size=n, max_size=n))
+
+        if all(xi == x[0] for xi in x):
+            x[-1] = x[0] + 1.0 if x[0] < 1000.0 else x[0] - 1.0
+
+        x_arg = x_container(x)
+        y_arg = y_container(y)
+
+        result = statistics_linear_regression(
+            x_arg, y_arg, proportional=proportional
+        )
+
+        slope, intercept = result
+        assert slope == result.slope
+        assert intercept == result.intercept
+
+        if proportional:
+            expected_slope = math.fsum(xi * yi for xi, yi in zip(x, y)) / math.fsum(
+                xi * xi for xi in x
+            )
+            expected_intercept = 0.0
+            assert result.intercept == 0.0
+        else:
+            x_mean = math.fsum(x) / n
+            y_mean = math.fsum(y) / n
+            expected_slope = math.fsum(
+                (xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)
+            ) / math.fsum((xi - x_mean) ** 2 for xi in x)
+            expected_intercept = y_mean - expected_slope * x_mean
+
+        assert math.isclose(
+            result.slope, expected_slope, rel_tol=1e-10, abs_tol=1e-7
+        )
+        assert math.isclose(
+            result.intercept, expected_intercept, rel_tol=1e-10, abs_tol=1e-7
+        )
+
+    elif case == "unequal_lengths":
+        n = data.draw(st.integers(min_value=0, max_value=10))
+        m = data.draw(
+            st.integers(min_value=0, max_value=10).filter(lambda size: size != n)
+        )
+        x = x_container(data.draw(st.lists(x_value, min_size=n, max_size=n)))
+        y = y_container(data.draw(st.lists(y_value, min_size=m, max_size=m)))
+
+        try:
+            statistics_linear_regression(x, y, proportional=proportional)
+            assert False, "unequal input lengths should raise StatisticsError"
+        except StatisticsError:
+            pass
+
+    elif case == "too_short":
+        n = data.draw(st.integers(min_value=0, max_value=1))
+        x = x_container(data.draw(st.lists(x_value, min_size=n, max_size=n)))
+        y = y_container(data.draw(st.lists(y_value, min_size=n, max_size=n)))
+
+        try:
+            statistics_linear_regression(x, y, proportional=proportional)
+            assert False, "inputs with fewer than two points should raise StatisticsError"
+        except StatisticsError:
+            pass
+
+    else:
+        n = data.draw(st.integers(min_value=2, max_value=20))
+        constant = 0.0 if proportional else data.draw(x_value)
+        x = x_container([constant] * n)
+        y = y_container(data.draw(st.lists(y_value, min_size=n, max_size=n)))
+
+        try:
+            statistics_linear_regression(x, y, proportional=proportional)
+            assert False, "constant x should raise StatisticsError"
+        except StatisticsError:
+            pass
+
+# End program
+```

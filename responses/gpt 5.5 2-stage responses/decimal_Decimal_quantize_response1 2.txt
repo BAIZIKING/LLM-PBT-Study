@@ -1,0 +1,9 @@
+1. On successful completion, the result has the same exponent as the `exp` operand.
+
+2. On successful completion, the result is numerically equal to the original Decimal rounded to the exponent of `exp`.
+
+3. If rounding is required, the result respects the explicitly supplied `rounding` mode; otherwise it uses the supplied `context` rounding mode, or the current thread context if neither is provided.
+
+4. If the coefficient length of the quantized result would exceed the active context precision, the operation signals `InvalidOperation` rather than returning such a result.
+
+5. The operation never signals `Underflow`, even when the returned result is both subnormal and inexact.

@@ -1,0 +1,114 @@
+from hypothesis import given, strategies as st
+import networkx
+
+
+def _draw_directed_forest(data, min_nodes=1, max_nodes=25):
+    n = data.draw(st.integers(min_value=min_nodes, max_value=max_nodes), label="n")
+    G = networkx.DiGraph()
+    G.add_nodes_from(range(n))
+
+    for child in range(1, n):
+        has_parent = data.draw(st.booleans(), label=f"has_parent_{child}")
+        if has_parent:
+            parent = data.draw(
+                st.integers(min_value=0, max_value=child - 1),
+                label=f"parent_{child}",
+            )
+            G.add_edge(parent, child)
+
+    return G
+
+
+def _draw_graph_and_pair(data):
+    G = _draw_directed_forest(data)
+    nodes = list(G.nodes)
+    node1 = data.draw(st.sampled_from(nodes), label="node1")
+    node2 = data.draw(st.sampled_from(nodes), label="node2")
+    return G, node1, node2
+
+
+def _ancestors_including_self(G, node):
+    return networkx.ancestors(G, node) | {node}
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_result_is_common_ancestor(data):
+    G, node1, node2 = _draw_graph_and_pair(data)
+    default = object()
+
+    result = networkx.lowest_common_ancestor(G, node1, node2, default=default)
+
+    if result is not default:
+        assert result in G
+        assert result in _ancestors_including_self(G, node1)
+        assert result in _ancestors_including_self(G, node2)
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_default_exactly_when_no_common_ancestor(data):
+    G, node1, node2 = _draw_graph_and_pair(data)
+    default = object()
+
+    result = networkx.lowest_common_ancestor(G, node1, node2, default=default)
+    common_ancestors = (
+        _ancestors_including_self(G, node1)
+        & _ancestors_including_self(G, node2)
+    )
+
+    if result is default:
+        assert not common_ancestors
+    if not common_ancestors:
+        assert result is default
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_has_no_lower_common_descendant(data):
+    G, node1, node2 = _draw_graph_and_pair(data)
+    default = object()
+
+    result = networkx.lowest_common_ancestor(G, node1, node2, default=default)
+
+    if result is not default:
+        common_ancestors = (
+            _ancestors_including_self(G, node1)
+            & _ancestors_including_self(G, node2)
+        )
+        strict_descendants = networkx.descendants(G, result)
+        assert not (strict_descendants & common_ancestors)
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_is_symmetric(data):
+    G, node1, node2 = _draw_graph_and_pair(data)
+    default = object()
+
+    forward = networkx.lowest_common_ancestor(G, node1, node2, default=default)
+    backward = networkx.lowest_common_ancestor(G, node2, node1, default=default)
+
+    assert forward is backward or forward == backward
+
+
+@given(st.data())
+def test_networkx_lowest_common_ancestor_returns_ancestor_when_one_node_ancestor_of_other(data):
+    G = _draw_directed_forest(data)
+    nodes = list(G.nodes)
+
+    ancestor = data.draw(st.sampled_from(nodes), label="ancestor")
+    possible_descendants = sorted(networkx.descendants(G, ancestor) | {ancestor})
+    descendant = data.draw(st.sampled_from(possible_descendants), label="descendant")
+
+    default = object()
+
+    assert (
+        networkx.lowest_common_ancestor(
+            G, ancestor, descendant, default=default
+        )
+        == ancestor
+    )
+    assert (
+        networkx.lowest_common_ancestor(
+            G, descendant, ancestor, default=default
+        )
+        == ancestor
+    )
+# End program

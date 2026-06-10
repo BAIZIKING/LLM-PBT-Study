@@ -1,0 +1,87 @@
+from hypothesis import given, strategies as st
+import math
+import statistics
+from decimal import Decimal
+from fractions import Fraction
+
+# Summary: Generate homogeneous lists of ints, finite floats, Decimals, or Fractions, including empty and singleton lists to test StatisticsError, repeated values to test zero variance, and negative/positive bounded values to test spread. For valid data, randomly call variance with omitted xbar, xbar=None, or the true mean. Check that invalid sizes raise, valid results match the documented sample-variance formula with N-1 degrees of freedom, match automatic calculation when xbar is the true mean, are non-negative, and are zero exactly when all values are equal.
+@given(st.data())
+def test_statistics_variance(data):
+    kind = data.draw(st.sampled_from(["int", "float", "decimal", "fraction"]))
+
+    if kind == "int":
+        element_strategy = st.integers(min_value=-10**6, max_value=10**6)
+    elif kind == "float":
+        element_strategy = st.one_of(
+            st.just(0.0),
+            st.just(-0.0),
+            st.floats(
+                min_value=-10**6,
+                max_value=10**6,
+                allow_nan=False,
+                allow_infinity=False,
+                allow_subnormal=False,
+                width=32,
+            ),
+        )
+    elif kind == "decimal":
+        element_strategy = st.decimals(
+            min_value=Decimal("-1000000"),
+            max_value=Decimal("1000000"),
+            allow_nan=False,
+            allow_infinity=False,
+            places=6,
+        )
+    else:
+        element_strategy = st.fractions(
+            min_value=Fraction(-10**6),
+            max_value=Fraction(10**6),
+            max_denominator=1000,
+        )
+
+    values = data.draw(st.lists(element_strategy, min_size=0, max_size=30))
+
+    if len(values) < 2:
+        try:
+            statistics.variance(values)
+        except statistics.StatisticsError:
+            return
+        assert False, "variance() must raise StatisticsError for fewer than two values"
+
+    mean_value = statistics.mean(values)
+    call_mode = data.draw(st.sampled_from(["omitted_xbar", "none_xbar", "true_xbar"]))
+
+    if call_mode == "omitted_xbar":
+        result = statistics.variance(values)
+    elif call_mode == "none_xbar":
+        result = statistics.variance(values, None)
+    else:
+        result = statistics.variance(values, mean_value)
+
+    automatic_result = statistics.variance(values)
+
+    expected = sum((x - mean_value) ** 2 for x in values) / (len(values) - 1)
+
+    assert math.isclose(
+        float(result),
+        float(expected),
+        rel_tol=1e-9,
+        abs_tol=1e-9,
+    )
+
+    assert math.isclose(
+        float(result),
+        float(automatic_result),
+        rel_tol=1e-9,
+        abs_tol=1e-9,
+    )
+
+    assert result >= 0
+
+    all_equal = all(x == values[0] for x in values)
+    if all_equal:
+        assert result == 0
+    else:
+        assert result > 0
+
+# End program

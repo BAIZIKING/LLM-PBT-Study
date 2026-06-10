@@ -1,0 +1,71 @@
+from hypothesis import given, strategies as st
+import base64
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+_PRIMARY = Fernet(base64.urlsafe_b64encode(b"\x01" * 32))
+_OLD = Fernet(base64.urlsafe_b64encode(b"\x02" * 32))
+_MULTI = MultiFernet([_PRIMARY, _OLD])
+
+# Summary: Generate valid Fernet tokens encrypted with either the primary or old key,
+# pass them as bytes or str, and also generate malformed bytes/str tokens plus
+# non-bytes/non-str values. For valid tokens, rotation should preserve plaintext and
+# timestamp while re-encrypting under the primary key. Invalid tokens should raise
+# InvalidToken, and wrong input types should raise TypeError.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate(data):
+    case = data.draw(
+        st.sampled_from(["valid_primary", "valid_old", "invalid_bytes", "invalid_str", "wrong_type"])
+    )
+
+    if case in {"valid_primary", "valid_old"}:
+        plaintext = data.draw(st.binary(min_size=0, max_size=1024))
+        as_str = data.draw(st.booleans())
+
+        encrypting_fernet = _PRIMARY if case == "valid_primary" else _OLD
+        token = encrypting_fernet.encrypt(plaintext)
+        original_timestamp = encrypting_fernet.extract_timestamp(token)
+
+        msg = token.decode("ascii") if as_str else token
+        rotated = _MULTI.rotate(msg)
+
+        assert isinstance(rotated, bytes)
+        assert _MULTI.decrypt(rotated) == plaintext
+        assert _PRIMARY.decrypt(rotated) == plaintext
+        assert _PRIMARY.extract_timestamp(rotated) == original_timestamp
+
+    elif case == "invalid_bytes":
+        suffix = data.draw(st.binary(min_size=0, max_size=256))
+        msg = b"not-a-valid-fernet-token:" + suffix
+
+        with pytest.raises(InvalidToken):
+            _MULTI.rotate(msg)
+
+    elif case == "invalid_str":
+        suffix = data.draw(
+            st.text(
+                alphabet=st.characters(min_codepoint=32, max_codepoint=126),
+                min_size=0,
+                max_size=256,
+            )
+        )
+        msg = "not-a-valid-fernet-token:" + suffix
+
+        with pytest.raises(InvalidToken):
+            _MULTI.rotate(msg)
+
+    else:
+        msg = data.draw(
+            st.one_of(
+                st.none(),
+                st.booleans(),
+                st.integers(),
+                st.floats(allow_nan=True, allow_infinity=True),
+                st.lists(st.integers(), max_size=10),
+                st.dictionaries(st.text(max_size=10), st.integers(), max_size=10),
+            )
+        )
+
+        with pytest.raises(TypeError):
+            _MULTI.rotate(msg)
+# End program

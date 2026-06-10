@@ -1,0 +1,110 @@
+# Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `numpy.cumsum`, I'll use hypothesis's `numpy` extension via `hypothesis.extra.numpy`:
+
+1. **Array shapes**: Use `array_shapes` to generate arrays with varying dimensions (1-D, 2-D, 3-D, etc.) and varying sizes, including small arrays. I avoid empty arrays for the main property checks since they make `[-1]` indexing invalid (handled by only running those checks when size > 0).
+
+2. **Data types (dtype)**: Test with a mix of integer and floating-point dtypes to exercise the dtype defaulting behavior (e.g., integer precision promotion to platform integer) and modular arithmetic.
+
+3. **Values**: Use `elements` strategies constrained to avoid `NaN`/`inf` for floats (so summation comparisons are meaningful) and reasonable magnitude bounds to avoid overflow surprises while still hitting edge cases.
+
+4. **axis parameter**: Pick a valid axis (including `None` for flattened cumsum) based on the generated array's number of dimensions.
+
+# Properties to Check
+
+Based on the API documentation:
+
+1. **Shape/size property**: The result has the same total size as `a`. If `axis is None` (or `a` is 1-D), the result is flattened (1-D). If `axis` is not None, the result has the same shape as `a`.
+
+2. **Last element equals total sum**: For `axis=None`, `cumsum(a)[-1]` should be approximately equal to `sum(a)` (allowing floating-point roundoff differences, since the docs note exact equality may fail for floats).
+
+3. **Cumulative/recurrence property**: Each element of the cumulative sum equals the previous cumulative value plus the corresponding input element. Equivalently, the differences of the cumsum recover the original array along the axis.
+
+4. **dtype property**: When a `dtype` is specified, the output array should have that dtype.
+
+```python
+from hypothesis import given, strategies as st, settings
+from hypothesis.extra.numpy import arrays, array_shapes, floating_dtypes, integer_dtypes
+import numpy as np
+
+# Summary: Generate n-dimensional int/float arrays (no NaN/inf, bounded magnitude)
+# with a valid axis (or None), optionally specifying an output dtype. Check size,
+# shape, the cumulative recurrence, last-element-equals-sum, and dtype properties.
+@given(st.data())
+@settings(max_examples=500)
+def test_numpy_cumsum(data):
+    # Choose a dtype: mix of integer and floating types.
+    dtype = data.draw(
+        st.one_of(
+            integer_dtypes(endianness="="),
+            floating_dtypes(endianness="=", sizes=(32, 64)),
+        ),
+        label="dtype",
+    )
+
+    is_float = np.issubdtype(dtype, np.floating)
+
+    if is_float:
+        elements = st.floats(
+            min_value=-1e6, max_value=1e6,
+            allow_nan=False, allow_infinity=False, width=32,
+        )
+    else:
+        info = np.iinfo(dtype)
+        lo = max(int(info.min), -10000)
+        hi = min(int(info.max), 10000)
+        elements = st.integers(min_value=lo, max_value=hi)
+
+    shape = data.draw(array_shapes(min_dims=1, max_dims=3, min_side=1, max_side=5),
+                      label="shape")
+    a = data.draw(arrays(dtype=dtype, shape=shape, elements=elements), label="a")
+
+    ndim = a.ndim
+    axis = data.draw(
+        st.one_of(st.none(), st.integers(min_value=0, max_value=ndim - 1)),
+        label="axis",
+    )
+
+    # Optionally specify an output dtype.
+    out_dtype = data.draw(st.one_of(st.none(), st.just(np.float64)), label="out_dtype")
+
+    result = np.cumsum(a, axis=axis, dtype=out_dtype)
+
+    # Property 1: total size is preserved.
+    assert result.size == a.size
+
+    # Property: shape behavior depending on axis.
+    if axis is None:
+        assert result.ndim == 1
+    else:
+        assert result.shape == a.shape
+
+    # Property 4: explicit dtype is respected.
+    if out_dtype is not None:
+        assert result.dtype == np.dtype(out_dtype)
+
+    # Determine a tolerance for floating-point comparisons.
+    use_float = is_float or out_dtype is not None
+
+    if a.size > 0:
+        # Property 2: last element of flattened cumsum equals total sum.
+        flat_cumsum = np.cumsum(a, axis=None, dtype=out_dtype)
+        total = np.sum(a, dtype=out_dtype)
+        if use_float:
+            assert np.allclose(flat_cumsum[-1], total, rtol=1e-3, atol=1e-3)
+        else:
+            assert flat_cumsum[-1] == total
+
+        # Property 3: cumulative recurrence -- diff of cumsum recovers input.
+        recovered = np.diff(result, axis=(0 if axis is None else axis), prepend=0)
+        if axis is None:
+            expected = a.flatten().astype(result.dtype)
+        else:
+            expected = a.astype(result.dtype)
+
+        if use_float:
+            assert np.allclose(recovered, expected, rtol=1e-3, atol=1e-3)
+        else:
+            assert np.array_equal(recovered, expected)
+# End program
+```

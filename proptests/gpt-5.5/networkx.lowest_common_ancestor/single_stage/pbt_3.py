@@ -1,0 +1,83 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate nonempty directed acyclic graphs by first drawing a unique ordered
+# list of hashable node labels, then drawing only "forward" edges in that order. This
+# covers single-node graphs, disconnected graphs, chains, trees, diamonds, and DAGs
+# with multiple possible lowest common ancestors. node1 and node2 are drawn from the
+# graph's nodes, and default is drawn from several object types, including unhashable
+# values.
+@given(st.data())
+def test_networkx_lowest_common_ancestor(data):
+    node_label_strategy = st.one_of(
+        st.integers(min_value=-20, max_value=20),
+        st.text(max_size=3),
+        st.tuples(st.integers(min_value=-5, max_value=5), st.integers(min_value=-5, max_value=5)),
+    )
+
+    nodes = data.draw(
+        st.lists(node_label_strategy, min_size=1, max_size=8, unique=True),
+        label="nodes",
+    )
+
+    possible_edges = [
+        (nodes[i], nodes[j])
+        for i in range(len(nodes))
+        for j in range(i + 1, len(nodes))
+    ]
+
+    if possible_edges:
+        edges = data.draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                max_size=len(possible_edges),
+                unique=True,
+            ),
+            label="edges",
+        )
+    else:
+        edges = []
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+
+    node1 = data.draw(st.sampled_from(nodes), label="node1")
+    node2 = data.draw(st.sampled_from(nodes), label="node2")
+
+    default = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-100, max_value=100),
+            st.text(max_size=5),
+            st.lists(st.integers(min_value=-5, max_value=5), max_size=3),
+            st.dictionaries(
+                st.text(max_size=3),
+                st.integers(min_value=-5, max_value=5),
+                max_size=3,
+            ),
+        ),
+        label="default",
+    )
+
+    result = nx.lowest_common_ancestor(G, node1, node2, default=default)
+
+    # Properties:
+    # 1. If node1 and node2 have no common ancestors, the API must return default.
+    # 2. Otherwise, the result must be a common ancestor of node1 and node2.
+    # 3. The result must be "lowest": no other common ancestor may be reachable
+    #    from it, because that other common ancestor would be lower in the DAG.
+    ancestors1 = nx.ancestors(G, node1) | {node1}
+    ancestors2 = nx.ancestors(G, node2) | {node2}
+    common_ancestors = ancestors1 & ancestors2
+
+    if not common_ancestors:
+        assert result == default
+    else:
+        assert result in common_ancestors
+        assert all(
+            other == result or not nx.has_path(G, result, other)
+            for other in common_ancestors
+        )
+
+# End program

@@ -1,0 +1,9 @@
+1. **Identity/initial property:** When `initial` is provided, the result equals the sum of the array elements plus the initial value; conversely, summing an empty array yields the neutral element 0 (or the `initial` value if given).
+
+2. **Axis reduction shape property:** The shape of the output equals the input shape with the specified axis (or axes) removed; if `keepdims=True`, those axes are retained with size 1 instead; if `axis=None`, the result is a scalar.
+
+3. **Consistency with manual/additive summation:** The output equals the result of adding all the included elements together (equivalent to `np.add.reduce`), and summing along all axes individually/sequentially yields the same total as summing with `axis=None`.
+
+4. **`where` masking property:** Elements where the `where` mask is `False` are excluded from the sum, so the result equals summing only the masked-in elements (with `False` positions contributing the neutral element 0 or `initial`).
+
+5. **Dtype property:** The dtype of the output matches the specified `dtype` argument when provided (and otherwise follows the documented default-promotion rules), and the output values are consistent with computing the sum using that accumulator type.

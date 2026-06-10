@@ -1,0 +1,55 @@
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate arbitrary byte strings, including empty, small, repetitive, and random
+# binary data; generate both valid and invalid compression levels; and generate valid zlib,
+# raw-deflate, and gzip wbits values plus invalid edge values. For valid inputs, compressed
+# output must be bytes and must decompress back to the original data using the same wbits.
+# For invalid level or wbits values, zlib.compress should raise an exception rather than
+# silently producing invalid output.
+@given(st.data())
+def test_zlib_compress(data):
+    input_data = data.draw(
+        st.one_of(
+            st.just(b""),
+            st.binary(min_size=0, max_size=1024),
+            st.builds(lambda b, n: b * n, st.binary(min_size=1, max_size=8), st.integers(1, 128)),
+        ),
+        label="input_data",
+    )
+
+    valid_levels = st.integers(min_value=-1, max_value=9)
+    invalid_levels = st.integers(min_value=-100, max_value=100).filter(
+        lambda level: level < -1 or level > 9
+    )
+    level = data.draw(st.one_of(valid_levels, invalid_levels), label="level")
+
+    valid_wbits_values = list(range(9, 16)) + list(range(-15, -8)) + list(range(25, 32))
+    valid_wbits = st.sampled_from(valid_wbits_values)
+    invalid_wbits = st.integers(min_value=-100, max_value=100).filter(
+        lambda wbits: wbits not in valid_wbits_values
+    )
+    wbits = data.draw(st.one_of(valid_wbits, invalid_wbits), label="wbits")
+
+    is_valid_level = -1 <= level <= 9
+    is_valid_wbits = wbits in valid_wbits_values
+
+    if is_valid_level and is_valid_wbits:
+        compressed = zlib.compress(input_data, level=level, wbits=wbits)
+
+        assert isinstance(compressed, bytes)
+        assert zlib.decompress(compressed, wbits=wbits) == input_data
+    else:
+        try:
+            zlib.compress(input_data, level=level, wbits=wbits)
+        except Exception as exc:
+            assert isinstance(exc, (zlib.error, ValueError))
+        else:
+            raise AssertionError(
+                f"zlib.compress unexpectedly accepted invalid arguments: "
+                f"level={level}, wbits={wbits}"
+            )
+
+# End program
+```

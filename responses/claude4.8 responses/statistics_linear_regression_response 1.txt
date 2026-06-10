@@ -1,0 +1,86 @@
+# Strategy Explanation
+
+**Generation Strategy:**
+
+To generate a wide variety of inputs for `statistics.linear_regression(x, y, *, proportional=False)`, I'll use the following approach:
+
+1. **Generate a list of `x` values** using `st.lists` of finite, reasonably-bounded floats. The list must have length ≥ 2 (the API requires "no less than two"). I'll cap the magnitude to avoid floating-point overflow/precision issues.
+
+2. **Ensure `x` is not constant** — the API raises `StatisticsError` if `x` is constant. I'll filter/assume this to focus on the valid (non-error) regression behavior.
+
+3. **Generate the `y` values by constructing them from a known `slope` and `intercept`** plus optional noise. This is a powerful technique because if I build `y = slope*x + intercept` exactly (zero noise), then I know the *true* regression parameters and can check that the function recovers them (this is the most testable property). I'll generate the true slope/intercept from bounded floats.
+
+4. **Generate the `proportional` flag** randomly (True/False). When `proportional=True`, the line passes through the origin (intercept = 0), so I construct `y = slope*x` (no intercept) to match.
+
+**Properties to Check:**
+
+Based on the API documentation:
+
+1. **Return structure**: The result has `.slope` and `.intercept` attributes and can be unpacked into two values.
+
+2. **`intercept == 0.0` when `proportional=True`**: The doc explicitly states "Since the intercept will always be 0.0."
+
+3. **Perfect-fit recovery / predictive consistency**: When `y` is constructed exactly as a linear function of `x` (no noise), the regression should reproduce that line. The most robust check is that **predictions match the input** within tolerance: `slope * x_i + intercept ≈ y_i` for all points (the noise is zero, so the model should explain the data perfectly).
+
+4. **Finiteness**: slope and intercept should be finite numbers for valid finite input.
+
+---
+
+```python
+from hypothesis import given, strategies as st, assume
+import math
+import statistics
+
+# Summary: Generate a non-constant list of finite, bounded x values (length >= 2),
+# pick a known true slope and intercept (intercept forced to 0 when proportional),
+# build y = slope*x + intercept exactly (zero noise), and randomly choose the
+# proportional flag. Then verify the returned regression reproduces the data:
+# predictions equal y within tolerance, intercept is 0.0 when proportional=True,
+# and outputs are finite and unpackable.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    # Bounded finite floats to avoid overflow / catastrophic precision loss
+    safe_float = st.floats(
+        min_value=-1e6, max_value=1e6,
+        allow_nan=False, allow_infinity=False,
+    )
+
+    # x: list of at least 2 finite values
+    x = data.draw(st.lists(safe_float, min_size=2, max_size=30))
+
+    # x must not be constant (else StatisticsError); skip degenerate cases
+    assume(len(set(x)) > 1)
+
+    proportional = data.draw(st.booleans())
+
+    true_slope = data.draw(safe_float)
+    # When proportional, the fitted line passes through origin -> build y with intercept 0
+    true_intercept = 0.0 if proportional else data.draw(safe_float)
+
+    # Build y as an exact linear function (zero noise) so true parameters are known
+    y = [true_slope * xi + true_intercept for xi in x]
+
+    # Skip if construction produced non-finite values
+    assume(all(math.isfinite(yi) for yi in y))
+
+    result = statistics.linear_regression(x, y, proportional=proportional)
+
+    # Property 1: result is unpackable into (slope, intercept) and has attributes
+    slope, intercept = result
+    assert slope == result.slope
+    assert intercept == result.intercept
+
+    # Property 2: outputs are finite for valid finite inputs
+    assert math.isfinite(slope)
+    assert math.isfinite(intercept)
+
+    # Property 3: intercept must be exactly 0.0 when proportional=True
+    if proportional:
+        assert intercept == 0.0
+
+    # Property 4: with zero-noise data, predictions must reproduce y within tolerance
+    for xi, yi in zip(x, y):
+        predicted = slope * xi + intercept
+        assert math.isclose(predicted, yi, rel_tol=1e-6, abs_tol=1e-6)
+# End program
+```

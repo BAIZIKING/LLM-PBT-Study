@@ -1,0 +1,77 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromtimestamp(timestamp, tz)`:
+
+1. **Timestamp generation**: Use `st.floats()` to generate timestamps including:
+   - Normal values (positive floats representing POSIX time)
+   - Edge cases like `0.0` (epoch), very small/large values
+   - Fractional seconds
+   - We restrict to a safe range (e.g., year 1970–2038 equivalent) to avoid the platform-dependent `OverflowError`/`OSError`. A reasonable safe range is roughly `[0, 2_000_000_000]`. We exclude NaN and infinity (which would raise errors unrelated to the core behavior).
+
+2. **Timezone generation**: Use `st.sampled_from()` or `st.one_of()` to generate:
+   - `None` (default, produces a naive datetime in local time)
+   - A `tzinfo` instance (e.g., `timezone.utc`, or `timezone` with various offsets), which should produce an aware datetime.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Return type**: The result is always a `datetime` instance.
+2. **Naive vs aware**: If `tz is None`, the result is naive (`tzinfo is None`). If `tz` is provided, the result is aware and its `tzinfo` equals `tz`.
+3. **Round-trip consistency**: Converting the resulting datetime back to a timestamp via `.timestamp()` should approximately recover the original timestamp (within sub-second tolerance, since fractional precision and fold semantics can introduce tiny differences).
+4. **The `fold` attribute** is `0` or `1`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta, tzinfo
+
+# Summary: Generate safe-range POSIX timestamps as floats in [0, 2e9] (avoiding
+# NaN/inf and platform overflow), paired with either None or a variety of fixed-offset
+# timezones. Check return type, naive/aware semantics, valid fold, and round-trip via timestamp().
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp = data.draw(
+        st.floats(
+            min_value=0,
+            max_value=2_000_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+    )
+    tz = data.draw(
+        st.one_of(
+            st.none(),
+            st.sampled_from([
+                timezone.utc,
+                timezone(timedelta(hours=0)),
+                timezone(timedelta(hours=5, minutes=30)),
+                timezone(timedelta(hours=-8)),
+                timezone(timedelta(hours=14)),
+                timezone(timedelta(hours=-12)),
+            ]),
+        )
+    )
+
+    result = datetime.fromtimestamp(timestamp, tz)
+
+    # Property 1: result is always a datetime instance
+    assert isinstance(result, datetime)
+
+    # Property 2: naive vs aware semantics
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert isinstance(tz, tzinfo)
+        assert result.tzinfo is tz
+
+    # Property 3: fold is 0 or 1
+    assert result.fold in (0, 1)
+
+    # Property 4: round-trip consistency (within sub-second tolerance)
+    # For aware datetimes, .timestamp() is unambiguous; for naive ones it uses local time.
+    recovered = result.timestamp()
+    assert abs(recovered - timestamp) <= 1.0
+# End program
+```

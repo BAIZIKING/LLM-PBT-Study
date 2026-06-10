@@ -1,0 +1,155 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `find_cycle`, I'll focus on these dimensions:
+
+1. **Graph type**: Generate both directed (`DiGraph`, `MultiDiGraph`) and undirected (`Graph`, `MultiGraph`) graphs, since orientation behavior differs.
+
+2. **Edges**: Generate random lists of edges between a small set of node integers (e.g., 0–6). Using a small node pool increases the likelihood of forming cycles, while still allowing acyclic configurations. Including small node ranges naturally produces self-loops, parallel edges (in multigraphs), and dense subgraphs.
+
+3. **Source**: Sometimes `None`, sometimes a node that exists in the graph, sometimes a list of nodes, and occasionally a node not in the graph (edge case).
+
+4. **Orientation**: Pick from `None`, `'original'`, `'reverse'`, `'ignore'` to cover all branches.
+
+5. **Edge cases**: empty graphs, single-node graphs, self-loops, multi-edges.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Either a cycle is returned or `NetworkXNoCycle` is raised** — these are the only two outcomes. (For invalid source nodes, a different exception may occur, so we guard against that.)
+
+2. **Return type / element structure**: When a cycle is found, the result is a list of edge tuples. 
+   - If `orientation is None`: tuples have no direction tag (length 2 for graphs, 3 for multigraphs).
+   - If `orientation is not None`: tuples are extended with a direction string `'forward'` or `'reverse'`.
+
+3. **Validity of the cycle**: The returned edges must form a genuine cyclic path — consecutive edges connect (head of one == tail of next, accounting for orientation/reversal), and the path closes into a cycle. Each underlying edge must actually exist in `G`.
+
+4. **Consistency**: If `find_cycle` raises `NetworkXNoCycle`, then for the same orientation a cycle truly should not exist (we at least verify the exception type is correct).
+
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+from networkx.exception import NetworkXNoCycle, NetworkXError, NodeNotFound
+
+# Summary: Generate directed/undirected (multi)graphs over a small node pool to
+# encourage cycles and edge cases (self-loops, parallel edges, empty graphs),
+# pair them with varied source (None/valid/list/invalid) and orientation values,
+# then verify that find_cycle either returns a structurally valid cycle whose
+# edges exist in G or raises NetworkXNoCycle, with correct tuple shapes per the docs.
+@given(st.data())
+def test_networkx_find_cycle(data):
+    # Choose graph class
+    graph_cls = data.draw(st.sampled_from([
+        nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph
+    ]))
+    is_directed = graph_cls in (nx.DiGraph, nx.MultiDiGraph)
+    is_multi = graph_cls in (nx.MultiGraph, nx.MultiDiGraph)
+
+    nodes = list(range(7))
+    edges = data.draw(st.lists(
+        st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)),
+        min_size=0, max_size=15,
+    ))
+
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+
+    # Choose orientation
+    if is_directed:
+        orientation = data.draw(st.sampled_from([None, "original", "reverse", "ignore"]))
+    else:
+        orientation = data.draw(st.sampled_from([None, "ignore"]))
+
+    # Choose source
+    source_kind = data.draw(st.sampled_from(["none", "node", "list", "invalid"]))
+    if source_kind == "none":
+        source = None
+    elif source_kind == "node":
+        source = data.draw(st.sampled_from(nodes))
+    elif source_kind == "list":
+        source = data.draw(st.lists(st.sampled_from(nodes), min_size=1, max_size=3))
+    else:
+        source = 999  # node not in graph
+
+    try:
+        result = nx.find_cycle(G, source=source, orientation=orientation)
+    except NetworkXNoCycle:
+        # Valid outcome: no cycle found. Nothing more to assert.
+        return
+    except (NodeNotFound, NetworkXError):
+        # Invalid source node may legitimately raise; ignore these cases.
+        return
+
+    # Result must be a list of edge tuples
+    result = list(result)
+    assert len(result) >= 1, "A found cycle must contain at least one edge"
+
+    # Determine expected base tuple length (2 for graphs, 3 for multigraphs)
+    base_len = 3 if is_multi else 2
+    # If orientation is not None, tuple is extended with a direction string
+    expected_len = base_len + (1 if orientation is not None else 0)
+
+    for edge in result:
+        assert isinstance(edge, tuple)
+        assert len(edge) == expected_len, (
+            f"Edge {edge} has length {len(edge)}, expected {expected_len}"
+        )
+        if orientation is not None:
+            direction = edge[-1]
+            assert direction in ("forward", "reverse"), (
+                f"Direction tag {direction!r} not in expected set"
+            )
+            u, v = edge[0], edge[1]
+        else:
+            u, v = edge[0], edge[1]
+
+        # Endpoints must be real nodes in G
+        assert u in G, f"Tail {u} of edge not in graph"
+        assert v in G, f"Head {v} of edge not in graph"
+        # The underlying edge must exist in G
+        assert G.has_edge(u, v), f"Edge ({u}, {v}) does not exist in G"
+
+    # Verify the result forms a connected cyclic path.
+    # Build the sequence of (tail, head) as actually traversed.
+    def traversed_endpoints(edge):
+        u, v = edge[0], edge[1]
+        if orientation is not None:
+            direction = edge[-1]
+            # 'reverse' means the edge was traversed from v to u
+            if direction == "reverse":
+                return v, u
+            return u, v
+        # No orientation reported: for undirected graphs traversal direction
+        # is as given; for directed graphs edges respect actual direction.
+        return u, v
+
+    traversal = [traversed_endpoints(e) for e in result]
+
+    # For undirected graphs (or ignore orientation), an edge can be walked in
+    # either direction. To robustly check connectivity, verify that consecutive
+    # edges share a node, and that the path closes into a cycle.
+    if orientation in (None,) and not is_directed:
+        # Undirected: just confirm consecutive edges share a vertex and it closes.
+        all_nodes_seq = []
+        for (a, b) in traversal:
+            all_nodes_seq.append((a, b))
+        # Check chain connectivity allowing either endpoint to connect.
+        for i in range(len(all_nodes_seq)):
+            a, b = all_nodes_seq[i]
+            na, nb = all_nodes_seq[(i + 1) % len(all_nodes_seq)]
+            shared = len({a, b} & {na, nb}) > 0
+            assert shared, f"Edges {all_nodes_seq[i]} and {all_nodes_seq[(i+1)%len(all_nodes_seq)]} not connected"
+    else:
+        # Directed-style traversal: head of one edge == tail of next, and closes.
+        for i in range(len(traversal)):
+            _, head = traversal[i]
+            next_tail, _ = traversal[(i + 1) % len(traversal)]
+            assert head == next_tail, (
+                f"Cycle not contiguous: edge {traversal[i]} head {head} "
+                f"!= next tail {next_tail}"
+            )
+# End program
+```

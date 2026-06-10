@@ -1,0 +1,9 @@
+1. The output has the broadcasted shape of `x1` and `x2`; if both inputs are scalars, the output is a scalar.
+
+2. For every position selected by broadcasting, each output element equals the element-wise sum of the corresponding values from `x1` and `x2`.
+
+3. For numeric inputs, the result is commutative: `np.add(x1, x2)` produces the same values as `np.add(x2, x1)`, subject to the same broadcasting rules.
+
+4. If an `out` array is provided, the returned object contains the result stored in that array rather than in a newly allocated array.
+
+5. If `where` is provided, output positions where `where` is `True` contain the element-wise sum, while positions where `where` is `False` retain their previous value from `out`.

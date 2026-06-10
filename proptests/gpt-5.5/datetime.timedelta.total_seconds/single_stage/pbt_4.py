@@ -1,0 +1,57 @@
+from hypothesis import given, strategies as st
+from datetime import timedelta
+
+# Summary: Generate timedeltas from both canonical normalized fields and varied constructor fields,
+# including boundary values near timedelta limits, zero, negative durations, sub-second values,
+# and very large intervals. Check that total_seconds() matches the documented division form,
+# and that it agrees with the normalized days/seconds/microseconds representation.
+@given(st.data())
+def test_datetime_timedelta_total_seconds(data):
+    canonical_timedelta = st.builds(
+        timedelta,
+        days=st.integers(min_value=-999_999_999, max_value=999_999_999),
+        seconds=st.integers(min_value=0, max_value=86_399),
+        microseconds=st.integers(min_value=0, max_value=999_999),
+    )
+
+    edge_timedelta = st.sampled_from(
+        [
+            timedelta(0),
+            timedelta(microseconds=1),
+            timedelta(microseconds=-1),
+            timedelta(seconds=1),
+            timedelta(seconds=-1),
+            timedelta(days=1),
+            timedelta(days=-1),
+            timedelta(days=365),
+            timedelta(days=365 * 270),
+            timedelta(days=-365 * 270),
+            timedelta.max,
+            timedelta.min,
+        ]
+    )
+
+    varied_constructor_timedelta = st.builds(
+        timedelta,
+        weeks=st.integers(min_value=-10_000, max_value=10_000),
+        days=st.integers(min_value=-10_000, max_value=10_000),
+        hours=st.integers(min_value=-1_000, max_value=1_000),
+        minutes=st.integers(min_value=-10_000, max_value=10_000),
+        seconds=st.integers(min_value=-100_000, max_value=100_000),
+        milliseconds=st.integers(min_value=-100_000, max_value=100_000),
+        microseconds=st.integers(min_value=-1_000_000, max_value=1_000_000),
+    )
+
+    td = data.draw(
+        st.one_of(edge_timedelta, canonical_timedelta, varied_constructor_timedelta)
+    )
+
+    total = td.total_seconds()
+
+    assert total == td / timedelta(seconds=1)
+
+    expected = (
+        (td.days * 86_400 + td.seconds) * 1_000_000 + td.microseconds
+    ) / 1_000_000
+    assert total == expected
+# End program

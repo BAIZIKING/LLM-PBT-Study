@@ -1,0 +1,9 @@
+1. **Scalar multiplication equivalence**: When either `a` or `b` is a 0-D scalar, the output of `np.dot(a, b)` equals the element-wise product `a * b` (i.e., `np.multiply(a, b)`).
+
+2. **1-D inner product correctness**: When both `a` and `b` are 1-D arrays of equal length, the output is a scalar equal to the sum of the element-wise products `sum(a[i] * b[i])`, without any complex conjugation.
+
+3. **2-D matrix multiplication equivalence**: When both `a` and `b` are 2-D arrays with compatible shapes, the output equals the matrix product `a @ b` (equivalently `np.matmul(a, b)`).
+
+4. **Output shape correctness**: For an N-D array `a` and M-D array `b`, the resulting output shape equals `a.shape[:-1] + b.shape[:-2] + b.shape[-1:]` (with the contracted last axis of `a` and second-to-last axis of `b` removed), and the result is a scalar only when both inputs are scalars or both are 1-D.
+
+5. **`out` parameter consistency**: When a valid `out` array is provided (correct dtype, shape, and C-contiguity), the function returns that same `out` array, and its contents are identical to the result computed without the `out` argument.

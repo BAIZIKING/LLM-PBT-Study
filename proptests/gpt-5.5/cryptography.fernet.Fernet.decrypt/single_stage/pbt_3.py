@@ -1,0 +1,105 @@
+from hypothesis import given, strategies as st
+import base64
+import time
+
+from cryptography.fernet import Fernet, InvalidToken
+
+_FERNET = Fernet(Fernet.generate_key())
+
+# Summary: Generate valid Fernet tokens from random plaintext, both bytes and str token forms,
+# malformed-but-base64 tokens with an invalid Fernet version byte, expired tokens with random ttl
+# values, and non-bytes/non-str token inputs. Check that valid tokens decrypt to the original
+# plaintext, expired or malformed tokens raise InvalidToken, and invalid token types raise TypeError.
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt(data):
+    case = data.draw(
+        st.sampled_from(
+            [
+                "valid_without_ttl",
+                "valid_with_none_ttl",
+                "valid_with_large_ttl",
+                "expired",
+                "malformed",
+                "wrong_token_type",
+            ]
+        )
+    )
+
+    def maybe_as_str(token):
+        if data.draw(st.booleans()):
+            return token.decode("ascii")
+        return token
+
+    if case == "valid_without_ttl":
+        plaintext = data.draw(st.binary(max_size=4096))
+        token = maybe_as_str(_FERNET.encrypt(plaintext))
+
+        assert _FERNET.decrypt(token) == plaintext
+
+    elif case == "valid_with_none_ttl":
+        plaintext = data.draw(st.binary(max_size=4096))
+        token = maybe_as_str(_FERNET.encrypt(plaintext))
+
+        assert _FERNET.decrypt(token, ttl=None) == plaintext
+
+    elif case == "valid_with_large_ttl":
+        plaintext = data.draw(st.binary(max_size=4096))
+        ttl = data.draw(st.integers(min_value=60, max_value=10**9))
+        token = maybe_as_str(_FERNET.encrypt_at_time(plaintext, int(time.time())))
+
+        assert _FERNET.decrypt(token, ttl=ttl) == plaintext
+
+    elif case == "expired":
+        plaintext = data.draw(st.binary(max_size=4096))
+        ttl = data.draw(st.integers(min_value=0, max_value=100_000))
+        extra_age = data.draw(st.integers(min_value=1, max_value=100_000))
+        created_at = int(time.time()) - ttl - extra_age
+        token = maybe_as_str(_FERNET.encrypt_at_time(plaintext, created_at))
+
+        try:
+            _FERNET.decrypt(token, ttl=ttl)
+        except InvalidToken:
+            pass
+        else:
+            assert False, "Expired token should raise InvalidToken"
+
+    elif case == "malformed":
+        body = data.draw(st.binary(max_size=4096))
+        token = maybe_as_str(base64.urlsafe_b64encode(b"\x00" + body))
+        ttl_mode = data.draw(st.sampled_from(["omit", "none", "int"]))
+
+        try:
+            if ttl_mode == "omit":
+                _FERNET.decrypt(token)
+            elif ttl_mode == "none":
+                _FERNET.decrypt(token, ttl=None)
+            else:
+                _FERNET.decrypt(
+                    token,
+                    ttl=data.draw(st.integers(min_value=0, max_value=100_000)),
+                )
+        except InvalidToken:
+            pass
+        else:
+            assert False, "Malformed token should raise InvalidToken"
+
+    else:
+        token = data.draw(
+            st.one_of(
+                st.none(),
+                st.integers(),
+                st.floats(allow_nan=True, allow_infinity=True),
+                st.lists(st.integers(), max_size=8),
+                st.dictionaries(st.text(max_size=8), st.integers(), max_size=8),
+                st.tuples(st.binary(max_size=8)),
+            )
+        )
+
+        try:
+            _FERNET.decrypt(token)
+        except TypeError:
+            pass
+        else:
+            assert False, "Non-bytes/non-str token should raise TypeError"
+
+# End program

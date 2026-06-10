@@ -1,0 +1,159 @@
+from hypothesis import given, strategies as st
+import pandas as pd
+from collections import Counter
+from datetime import datetime
+
+# Summary: Generate small DataFrames with uniquely named columns, 0+ rows, repeated-prone
+# scalar values including None/empty strings/small integers, and varied indexes including
+# duplicate and datetime indexes. Randomly generate valid drop_duplicates parameters:
+# subset=None/single column/list of columns, keep='first'/'last'/False, inplace, and
+# ignore_index. Check an independent oracle for retained rows/order, duplicate removal
+# semantics, index ignoring, ignore_index reset behavior, return type, and inplace behavior.
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates(data):
+    columns = data.draw(
+        st.lists(
+            st.text(min_size=1, max_size=5),
+            min_size=1,
+            max_size=5,
+            unique=True,
+        )
+    )
+    n_rows = data.draw(st.integers(min_value=0, max_value=20))
+
+    value_strategy = st.one_of(
+        st.none(),
+        st.integers(min_value=-3, max_value=3),
+        st.text(min_size=0, max_size=3),
+    )
+    row_strategy = st.lists(
+        value_strategy,
+        min_size=len(columns),
+        max_size=len(columns),
+    )
+    rows = data.draw(st.lists(row_strategy, min_size=n_rows, max_size=n_rows))
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    index_kind = data.draw(st.sampled_from(["range", "int", "string", "datetime"]))
+    if index_kind == "range":
+        start = data.draw(st.integers(min_value=-10, max_value=10))
+        df.index = pd.RangeIndex(start=start, stop=start + n_rows)
+    elif index_kind == "int":
+        df.index = pd.Index(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=-5, max_value=5),
+                    min_size=n_rows,
+                    max_size=n_rows,
+                )
+            )
+        )
+    elif index_kind == "string":
+        df.index = pd.Index(
+            data.draw(
+                st.lists(
+                    st.text(min_size=0, max_size=4),
+                    min_size=n_rows,
+                    max_size=n_rows,
+                )
+            )
+        )
+    else:
+        df.index = pd.DatetimeIndex(
+            data.draw(
+                st.lists(
+                    st.datetimes(
+                        min_value=datetime(2000, 1, 1),
+                        max_value=datetime(2030, 12, 31),
+                    ),
+                    min_size=n_rows,
+                    max_size=n_rows,
+                )
+            )
+        )
+
+    subset = data.draw(
+        st.one_of(
+            st.none(),
+            st.sampled_from(columns),
+            st.lists(
+                st.sampled_from(columns),
+                min_size=1,
+                max_size=len(columns),
+                unique=True,
+            ),
+        )
+    )
+    keep = data.draw(st.sampled_from(["first", "last", False]))
+    inplace = data.draw(st.booleans())
+    ignore_index = data.draw(st.booleans())
+
+    if subset is None:
+        subset_columns = columns
+    elif isinstance(subset, list):
+        subset_columns = subset
+    else:
+        subset_columns = [subset]
+
+    def normalize(value):
+        if pd.isna(value):
+            return ("<NA>",)
+        return ("VALUE", type(value).__name__, value)
+
+    def key_for(frame, position):
+        return tuple(normalize(frame.iloc[position][col]) for col in subset_columns)
+
+    keys = [key_for(df, i) for i in range(len(df))]
+
+    if keep == "first":
+        seen = set()
+        expected_positions = []
+        for i, key in enumerate(keys):
+            if key not in seen:
+                seen.add(key)
+                expected_positions.append(i)
+    elif keep == "last":
+        last_position = {key: i for i, key in enumerate(keys)}
+        expected_positions = [
+            i for i, key in enumerate(keys) if last_position[key] == i
+        ]
+    else:
+        counts = Counter(keys)
+        expected_positions = [i for i, key in enumerate(keys) if counts[key] == 1]
+
+    expected = df.iloc[expected_positions].copy()
+    if ignore_index:
+        expected.index = pd.RangeIndex(len(expected))
+
+    original = df.copy(deep=True)
+
+    if inplace:
+        target = df.copy(deep=True)
+        returned = target.drop_duplicates(
+            subset=subset,
+            keep=keep,
+            inplace=True,
+            ignore_index=ignore_index,
+        )
+        assert returned is None
+        result = target
+    else:
+        result = df.drop_duplicates(
+            subset=subset,
+            keep=keep,
+            inplace=False,
+            ignore_index=ignore_index,
+        )
+        assert isinstance(result, pd.DataFrame)
+        pd.testing.assert_frame_equal(df, original)
+
+    pd.testing.assert_frame_equal(result, expected)
+
+    result_keys = [key_for(result, i) for i in range(len(result))]
+    assert len(result_keys) == len(set(result_keys))
+
+    if ignore_index:
+        assert result.index.equals(pd.RangeIndex(len(result)))
+
+# End program

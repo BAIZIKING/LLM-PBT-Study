@@ -1,0 +1,118 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.linear_regression(x, y, *, proportional=False)`, I'll consider:
+
+1. **List length**: The API requires both `x` and `y` to have the same length, with at least 2 elements. I'll generate a shared length (≥2) and use it for both lists.
+
+2. **Value variety**: I'll use floats including normal values, integers, negative numbers, and small/large magnitudes. I'll exclude `nan` and `inf` to avoid undefined behavior, and bound the range to avoid overflow issues in the least-squares math.
+
+3. **Edge cases**:
+   - Minimum length (exactly 2 elements).
+   - The `x` cannot be constant (otherwise `StatisticsError`), so I'll detect and handle that case.
+   - The `proportional` flag (True/False) toggled randomly.
+   - Perfectly linear data, where I can check the recovered slope/intercept against known values.
+
+4. **Using `st.data()`** to draw the length first, then draw `x` and `y` of that length, then draw the `proportional` boolean.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return structure**: The result is a named tuple with `.slope` and `.intercept` attributes (also unpackable into two values).
+
+2. **Constant x raises StatisticsError**: If `x` is constant (all values equal), a `StatisticsError` must be raised.
+
+3. **Proportional means zero intercept**: When `proportional=True`, the intercept must be exactly `0.0`.
+
+4. **Recovery of known linear relationship**: If we construct `y = slope * x + intercept` exactly (non-constant x), the regression should recover those parameters (within floating-point tolerance). For `proportional=True`, intercept is 0.
+
+5. **Finiteness**: The returned slope and intercept should be finite numbers.
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate a shared length (>=2), then two equal-length lists of finite,
+# bounded floats, and a proportional flag. We construct y from a known linear
+# relationship so we can verify parameter recovery, and we also verify the
+# constant-x error, the zero-intercept property under proportional, and finiteness.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+
+    finite_floats = st.floats(
+        min_value=-1e6, max_value=1e6,
+        allow_nan=False, allow_infinity=False,
+    )
+
+    x = data.draw(st.lists(finite_floats, min_size=n, max_size=n))
+    proportional = data.draw(st.booleans())
+
+    # Decide whether to build y from a known linear model, or use arbitrary y.
+    use_known_model = data.draw(st.booleans())
+
+    if use_known_model:
+        true_slope = data.draw(finite_floats)
+        true_intercept = 0.0 if proportional else data.draw(finite_floats)
+        y = [true_slope * xi + true_intercept for xi in x]
+    else:
+        true_slope = None
+        true_intercept = None
+        y = data.draw(st.lists(finite_floats, min_size=n, max_size=n))
+
+    x_is_constant = all(xi == x[0] for xi in x)
+
+    if x_is_constant:
+        # Property: constant x must raise StatisticsError.
+        try:
+            statistics.linear_regression(x, y, proportional=proportional)
+            assert False, "Expected StatisticsError for constant x"
+        except statistics.StatisticsError:
+            return  # correct behavior, nothing more to check
+
+    # x is non-constant: regression should succeed.
+    try:
+        result = statistics.linear_regression(x, y, proportional=proportional)
+    except statistics.StatisticsError:
+        # Acceptable only for degenerate proportional cases (e.g. all x effectively
+        # collapsing); otherwise re-raise to surface unexpected errors.
+        if proportional:
+            return
+        raise
+
+    # Property: result has slope and intercept (named tuple, unpackable).
+    slope, intercept = result
+    assert slope == result.slope
+    assert intercept == result.intercept
+
+    # Property: returned parameters are finite.
+    assert math.isfinite(slope), f"slope not finite: {slope}"
+    assert math.isfinite(intercept), f"intercept not finite: {intercept}"
+
+    # Property: proportional => intercept is exactly 0.0.
+    if proportional:
+        assert intercept == 0.0, f"proportional intercept must be 0.0, got {intercept}"
+
+    # Property: recover known linear parameters within tolerance.
+    if use_known_model:
+        if not proportional:
+            # Compare predicted values against the true model at the data points.
+            for xi in x:
+                predicted = slope * xi + intercept
+                expected = true_slope * xi + true_intercept
+                assert math.isclose(predicted, expected, rel_tol=1e-6, abs_tol=1e-3), (
+                    f"prediction mismatch: predicted={predicted}, expected={expected}"
+                )
+        else:
+            # For proportional fit through origin with exact data, slope should match.
+            for xi in x:
+                predicted = slope * xi
+                expected = true_slope * xi
+                assert math.isclose(predicted, expected, rel_tol=1e-6, abs_tol=1e-3), (
+                    f"proportional prediction mismatch: {predicted} vs {expected}"
+                )
+# End program
+```

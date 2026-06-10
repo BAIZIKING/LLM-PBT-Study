@@ -1,0 +1,88 @@
+from hypothesis import given, strategies as st
+import html
+import html.entities
+
+# Summary: Generate strings as concatenations of chunks: arbitrary plain Unicode
+# text without '&', valid HTML5 named character references, valid decimal/hex
+# numeric references for safe Unicode characters, and malformed references that
+# should remain unchanged. The property checks that html.unescape converts each
+# generated reference according to the HTML5 rules described in the API docs and
+# leaves non-reference text unchanged.
+@given(st.data())
+def test_html_unescape(data):
+    named_reference_pairs = [
+        (f"&{name}", value)
+        for name, value in html.entities.html5.items()
+        if name.endswith(";")
+    ]
+
+    safe_unicode_char = st.characters(
+        whitelist_categories=(
+            "Lu", "Ll", "Lt", "Lm", "Lo",
+            "Mn", "Mc", "Me",
+            "Nd", "Nl", "No",
+            "Pc", "Pd", "Ps", "Pe", "Pi", "Pf", "Po",
+            "Sm", "Sc", "Sk", "So",
+            "Zs",
+        )
+    )
+
+    def numeric_reference_pair(ch_and_base):
+        ch, base = ch_and_base
+        codepoint = ord(ch)
+        if base == "dec":
+            return f"&#{codepoint};", ch
+        if base == "hex_lower":
+            return f"&#x{codepoint:x};", ch
+        return f"&#x{codepoint:X};", ch
+
+    plain_text_chunk = st.text(
+        alphabet=st.characters(blacklist_characters="&"),
+        max_size=20,
+    ).map(lambda s: (s, s))
+
+    named_reference_chunk = st.sampled_from(named_reference_pairs)
+
+    numeric_reference_chunk = st.tuples(
+        safe_unicode_char,
+        st.sampled_from(("dec", "hex_lower", "hex_upper")),
+    ).map(numeric_reference_pair)
+
+    documented_example_chunk = st.sampled_from([
+        ("&gt;", ">"),
+        ("&#62;", ">"),
+        ("&#x3e;", ">"),
+        ("&lt;", "<"),
+        ("&amp;", "&"),
+        ("&quot;", '"'),
+    ])
+
+    invalid_or_edge_reference_chunk = st.sampled_from([
+        ("&zzzz;", "&zzzz;"),
+        ("&#;", "&#;"),
+        ("&#x;", "&#x;"),
+        ("&#xZZ;", "&#xZZ;"),
+        ("&;", "&;"),
+        ("&#0;", "\uFFFD"),
+        ("&#xD800;", "\uFFFD"),
+        ("&#x110000;", "\uFFFD"),
+    ])
+
+    chunk = st.one_of(
+        plain_text_chunk,
+        named_reference_chunk,
+        numeric_reference_chunk,
+        documented_example_chunk,
+        invalid_or_edge_reference_chunk,
+    )
+
+    chunks = data.draw(st.lists(chunk, min_size=0, max_size=50))
+
+    s = "".join(raw for raw, expected in chunks)
+    expected = "".join(expected for raw, expected in chunks)
+
+    result = html.unescape(s)
+
+    assert isinstance(result, str)
+    assert result == expected
+# End program

@@ -1,0 +1,9 @@
+1. The output value equals the sum of all included elements of `a` over the specified `axis` or axes, plus `initial` if provided, ignoring elements where `where` is `False`.
+
+2. If `axis=None`, the output is a scalar unless `keepdims=True`, in which case all input dimensions are retained with size one.
+
+3. If `axis` is an integer or tuple of integers, the output shape is the input shape with those axes removed, or retained as size-one dimensions when `keepdims=True`.
+
+4. The output dtype is `dtype` if explicitly provided; otherwise it follows NumPy’s default accumulator dtype rules, including promotion of small integer types to the platform integer type.
+
+5. If `out` is provided, the function returns the same `out` object, and the computed result is written into it with values cast to `out`’s dtype if necessary.

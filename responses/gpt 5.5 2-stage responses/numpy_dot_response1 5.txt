@@ -1,0 +1,9 @@
+1. If either input is a scalar/0-D array, the output is equal to elementwise multiplication of the inputs.
+
+2. For two 1-D arrays of the same length, the output is a scalar equal to the sum of pairwise products, with no complex conjugation applied.
+
+3. For two 2-D arrays with shapes `(m, n)` and `(n, p)`, the output has shape `(m, p)` and each element is the standard matrix product sum.
+
+4. For higher-dimensional inputs, the output sums over the last axis of `a` and the second-to-last axis of `b`, with output shape `a.shape[:-1] + b.shape[:-2] + b.shape[-1:]`.
+
+5. For compatible numeric inputs, the operation is linear in each argument: distributing over addition and scaling by constants, subject to normal floating-point rounding behavior.

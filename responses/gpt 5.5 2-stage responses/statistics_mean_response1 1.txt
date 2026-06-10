@@ -1,0 +1,9 @@
+1. For any non-empty numeric data, the result equals `sum(data) / len(data)`.
+
+2. The result is invariant under reordering of the input data.
+
+3. If all input values are equal to `x`, the result is exactly `x`.
+
+4. For any non-empty real-valued data, the result lies between the minimum and maximum input values, inclusive.
+
+5. Adding a constant `c` to every input value increases the result by `c`; multiplying every input value by a scalar `k` multiplies the result by `k`.

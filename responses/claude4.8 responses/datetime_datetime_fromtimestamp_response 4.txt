@@ -1,0 +1,67 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromtimestamp(timestamp, tz)`, I'll consider:
+
+1. **The `timestamp` parameter**: This is a POSIX timestamp (float). To stay within the platform-safe range (commonly years 1970–2038 mentioned in the docs), I'll use `st.floats` bounded to a safe range. I'll use `min_value=0` (epoch start) and `max_value` around 2^31 (~year 2038) to avoid `OverflowError`/`OSError`. I'll exclude NaN and infinity (`allow_nan=False`, `allow_infinity=False`). This range naturally covers edge cases like the epoch (0.0), fractional seconds, and large positive timestamps.
+
+2. **The `tz` parameter**: I'll generate either `None` (testing the naive datetime path) or a `timezone` instance (testing the aware path). I'll use `st.timezones()` to draw real IANA time zones, plus explicitly include `None` and fixed-offset `timezone` objects to cover variety.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The result must be a `datetime` instance.
+2. **Naive vs aware**: If `tz is None`, the returned datetime must be naive (`tzinfo is None`). If `tz` is not None, the result must be aware with `tzinfo` set to the given `tz`.
+3. **Round-trip consistency**: Converting the resulting datetime back to a timestamp via `.timestamp()` should approximately recover the original timestamp (within a small tolerance to account for floating-point precision and microsecond truncation).
+4. **The `fold` attribute** must be 0 or 1 (per the 3.6 change note).
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, tzinfo
+
+# Summary: Generate POSIX timestamps as bounded, finite, non-NaN floats within the
+# platform-safe range (epoch through ~year 2038) to avoid OverflowError/OSError, and
+# generate tz as either None, a fixed-offset timezone, or a real IANA timezone. Then
+# verify the result is a datetime with correct naive/aware status, a valid fold flag,
+# and that it round-trips back to the original timestamp within tolerance.
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp = data.draw(
+        st.floats(
+            min_value=0,
+            max_value=2**31 - 1,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+    )
+    tz = data.draw(
+        st.one_of(
+            st.none(),
+            st.timezones(),
+            st.builds(timezone, st.timedeltas(
+                min_value=-timezone.max.utcoffset(None) if False else __import__("datetime").timedelta(hours=-23),
+                max_value=__import__("datetime").timedelta(hours=23),
+            )),
+        )
+    )
+
+    result = datetime.fromtimestamp(timestamp, tz)
+
+    # Property 1: result must be a datetime instance
+    assert isinstance(result, datetime)
+
+    # Property 2: naive vs aware behavior
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert isinstance(tz, tzinfo)
+        assert result.tzinfo is tz
+
+    # Property 4: fold must be 0 or 1
+    assert result.fold in (0, 1)
+
+    # Property 3: round-trip consistency (allow tolerance for float/microsecond rounding)
+    recovered = result.timestamp()
+    assert abs(recovered - timestamp) <= 1e-3
+# End program
+```

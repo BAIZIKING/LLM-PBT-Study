@@ -1,0 +1,217 @@
+```python
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _size(shape):
+    result = 1
+    for dim in shape:
+        result *= dim
+    return result
+
+
+def _shape_strategy(min_dim_size=0, max_dim_size=4):
+    return st.lists(
+        st.integers(min_value=min_dim_size, max_value=max_dim_size),
+        min_size=1,
+        max_size=3,
+    ).map(tuple)
+
+
+def _array_from_data(data, shape, dtype):
+    dtype = numpy.dtype(dtype)
+    size = _size(shape)
+
+    if numpy.issubdtype(dtype, numpy.integer):
+        values = data.draw(
+            st.lists(
+                st.integers(min_value=-50, max_value=50),
+                min_size=size,
+                max_size=size,
+            )
+        )
+    else:
+        width = 32 if dtype == numpy.dtype(numpy.float32) else 64
+        values = data.draw(
+            st.lists(
+                st.floats(
+                    min_value=-50,
+                    max_value=50,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=width,
+                ),
+                min_size=size,
+                max_size=size,
+            )
+        )
+
+    return numpy.array(values, dtype=dtype).reshape(shape)
+
+
+def _assert_equal_or_close(actual, expected):
+    actual_array = numpy.asarray(actual)
+    expected_array = numpy.asarray(expected)
+
+    if (
+        numpy.issubdtype(actual_array.dtype, numpy.floating)
+        or numpy.issubdtype(expected_array.dtype, numpy.floating)
+    ):
+        assert numpy.allclose(actual_array, expected_array, rtol=1e-5, atol=1e-5)
+    else:
+        assert numpy.array_equal(actual_array, expected_array)
+
+
+@given(st.data())
+def test_numpy_cumsum_output_shape_and_size(data):
+    shape = data.draw(_shape_strategy(min_dim_size=0, max_dim_size=4))
+    dtype = data.draw(st.sampled_from([numpy.int8, numpy.int16, numpy.int64, numpy.float32, numpy.float64]))
+    array = _array_from_data(data, shape, dtype)
+
+    axis = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-array.ndim, max_value=array.ndim - 1),
+        )
+    )
+
+    result = numpy.cumsum(array, axis=axis)
+
+    assert result.size == array.size
+    if axis is None:
+        assert result.shape == (array.size,)
+    else:
+        assert result.shape == array.shape
+
+
+@given(st.data())
+def test_numpy_cumsum_recurrence_property(data):
+    shape = data.draw(_shape_strategy(min_dim_size=1, max_dim_size=4))
+    dtype = data.draw(st.sampled_from([numpy.int64, numpy.float32, numpy.float64]))
+    array = _array_from_data(data, shape, dtype)
+
+    axis = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-array.ndim, max_value=array.ndim - 1),
+        )
+    )
+
+    result = numpy.cumsum(array, axis=axis)
+
+    if axis is None:
+        flat_array = array.ravel()
+        flat_result = result.ravel()
+
+        _assert_equal_or_close(flat_result[0], flat_array[0])
+        for index in range(1, flat_array.size):
+            expected = flat_result[index - 1] + flat_array[index]
+            _assert_equal_or_close(flat_result[index], expected)
+    else:
+        moved_array = numpy.moveaxis(array, axis, 0)
+        moved_result = numpy.moveaxis(result, axis, 0)
+
+        _assert_equal_or_close(moved_result[0], moved_array[0])
+        for index in range(1, moved_array.shape[0]):
+            expected = moved_result[index - 1] + moved_array[index]
+            _assert_equal_or_close(moved_result[index], expected)
+
+
+@given(st.data())
+def test_numpy_cumsum_first_element_matches_cast_input(data):
+    shape = data.draw(_shape_strategy(min_dim_size=1, max_dim_size=4))
+    input_dtype = data.draw(st.sampled_from([numpy.int8, numpy.int16, numpy.int64, numpy.float32, numpy.float64]))
+    array = _array_from_data(data, shape, input_dtype)
+
+    dtype_argument = data.draw(
+        st.one_of(
+            st.none(),
+            st.sampled_from([numpy.int16, numpy.int64, numpy.float32, numpy.float64]),
+        )
+    )
+
+    axis = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-array.ndim, max_value=array.ndim - 1),
+        )
+    )
+
+    result = numpy.cumsum(array, axis=axis, dtype=dtype_argument)
+
+    if axis is None:
+        expected = numpy.array(array.ravel()[0], dtype=result.dtype)
+        actual = result.ravel()[0]
+    else:
+        first_index = [slice(None)] * array.ndim
+        first_index[axis % array.ndim] = 0
+        first_index = tuple(first_index)
+
+        expected = array[first_index].astype(result.dtype, copy=False)
+        actual = result[first_index]
+
+    _assert_equal_or_close(actual, expected)
+
+
+@given(st.data())
+def test_numpy_cumsum_final_element_matches_sequential_integer_sum(data):
+    shape = data.draw(_shape_strategy(min_dim_size=1, max_dim_size=4))
+    dtype = data.draw(st.sampled_from([numpy.int8, numpy.int16, numpy.int32, numpy.int64]))
+    array = _array_from_data(data, shape, dtype)
+
+    axis = data.draw(
+        st.one_of(
+            st.none(),
+            st.integers(min_value=-array.ndim, max_value=array.ndim - 1),
+        )
+    )
+
+    result = numpy.cumsum(array, axis=axis)
+
+    if axis is None:
+        expected = sum(int(value) for value in array.ravel())
+        assert int(result[-1]) == expected
+    else:
+        moved_array = numpy.moveaxis(array, axis, 0)
+        moved_result = numpy.moveaxis(result, axis, 0)
+
+        expected = numpy.zeros(moved_array.shape[1:], dtype=numpy.int64)
+        for index in range(moved_array.shape[0]):
+            expected += moved_array[index].astype(numpy.int64)
+
+        assert numpy.array_equal(moved_result[-1], expected.astype(moved_result.dtype, copy=False))
+
+
+@given(st.data())
+def test_numpy_cumsum_dtype_rules(data):
+    shape = data.draw(_shape_strategy(min_dim_size=1, max_dim_size=4))
+    input_dtype = data.draw(
+        st.sampled_from([numpy.int8, numpy.int16, numpy.int32, numpy.int64, numpy.float32, numpy.float64])
+    )
+    array = _array_from_data(data, shape, input_dtype)
+
+    use_explicit_dtype = data.draw(st.booleans())
+
+    if use_explicit_dtype:
+        dtype_argument = data.draw(st.sampled_from([numpy.int16, numpy.int64, numpy.float32, numpy.float64]))
+        result = numpy.cumsum(array, dtype=dtype_argument)
+        assert result.dtype == numpy.dtype(dtype_argument)
+    else:
+        result = numpy.cumsum(array)
+
+        input_dtype = numpy.dtype(input_dtype)
+        platform_int_dtype = numpy.dtype(int)
+
+        if (
+            numpy.issubdtype(input_dtype, numpy.signedinteger)
+            and input_dtype.itemsize < platform_int_dtype.itemsize
+        ):
+            expected_dtype = platform_int_dtype
+        else:
+            expected_dtype = input_dtype
+
+        assert result.dtype == expected_dtype
+
+
+# End program
+```

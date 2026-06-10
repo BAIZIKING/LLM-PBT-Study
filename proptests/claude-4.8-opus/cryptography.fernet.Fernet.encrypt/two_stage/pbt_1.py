@@ -1,0 +1,59 @@
+from hypothesis import given, strategies as st
+import base64
+from cryptography.fernet import Fernet
+
+# Property 1: The output is always of type bytes.
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_returns_bytes(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert isinstance(token, bytes)
+# End program
+
+# Property 2: The output is URL-safe base64-encoded (only valid alphabet chars).
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_is_urlsafe_base64(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    allowed = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
+    assert set(token).issubset(allowed)
+    # And it must actually decode without error.
+    base64.urlsafe_b64decode(token)
+# End program
+
+# Property 3: Decrypting the output with the same key returns the original data.
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert f.decrypt(token) == data
+# End program
+
+# Property 4: Encrypting the same data twice produces different tokens.
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_non_deterministic(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token1 = f.encrypt(data)
+    token2 = f.encrypt(data)
+    assert token1 != token2
+# End program
+
+# Property 5: The decoded token has the expected fernet structure and is non-empty.
+# Fernet layout: 1 (version) + 8 (timestamp) + 16 (IV) + ciphertext + 32 (HMAC)
+# ciphertext is AES-CBC with PKCS7 padding, hence a positive multiple of 16.
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_encrypt_token_structure(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert len(token) > 0
+    raw = base64.urlsafe_b64decode(token)
+    overhead = 1 + 8 + 16 + 32  # version + timestamp + IV + HMAC
+    ciphertext_len = len(raw) - overhead
+    assert ciphertext_len > 0
+    assert ciphertext_len % 16 == 0
+# End program

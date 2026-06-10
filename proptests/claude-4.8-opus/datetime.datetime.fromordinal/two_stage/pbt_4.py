@@ -1,0 +1,47 @@
+from hypothesis import given, strategies as st
+import datetime
+import pytest
+
+# Valid ordinal range
+MIN_ORD = 1
+MAX_ORD = datetime.datetime.max.toordinal()
+
+@given(st.integers(min_value=MIN_ORD, max_value=MAX_ORD))
+def test_datetime_datetime_fromordinal_time_fields_zero(ordinal):
+    result = datetime.datetime.fromordinal(ordinal)
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+# End program
+
+@given(st.integers(min_value=MIN_ORD, max_value=MAX_ORD))
+def test_datetime_datetime_fromordinal_tzinfo_none(ordinal):
+    result = datetime.datetime.fromordinal(ordinal)
+    assert result.tzinfo is None
+# End program
+
+@given(st.integers(min_value=MIN_ORD, max_value=MAX_ORD))
+def test_datetime_datetime_fromordinal_roundtrip(ordinal):
+    result = datetime.datetime.fromordinal(ordinal)
+    assert result.toordinal() == ordinal
+# End program
+
+@given(
+    st.one_of(
+        st.integers(max_value=MIN_ORD - 1),
+        st.integers(min_value=MAX_ORD + 1, max_value=MAX_ORD + 10**18),
+    )
+)
+def test_datetime_datetime_fromordinal_out_of_range_raises(ordinal):
+    with pytest.raises((ValueError, OverflowError)):
+        datetime.datetime.fromordinal(ordinal)
+# End program
+
+@given(st.just(1))
+def test_datetime_datetime_fromordinal_ordinal_one_is_year_one(ordinal):
+    result = datetime.datetime.fromordinal(ordinal)
+    assert result.year == 1
+    assert result.month == 1
+    assert result.day == 1
+# End program

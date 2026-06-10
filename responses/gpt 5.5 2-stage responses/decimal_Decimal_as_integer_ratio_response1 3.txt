@@ -1,0 +1,9 @@
+1. For any finite `Decimal` input, the output is a pair `(n, d)` where both `n` and `d` are integers.
+
+2. For any finite `Decimal` input, the denominator `d` is strictly positive.
+
+3. For any finite `Decimal` input, the fraction is exact: `Decimal(n) / Decimal(d)` represents the same numeric value as the original `Decimal`.
+
+4. For any finite `Decimal` input, the fraction is in lowest terms: `gcd(abs(n), d) == 1`.
+
+5. For special values, the function raises the documented exception: `OverflowError` for infinities and `ValueError` for NaNs.

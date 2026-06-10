@@ -1,0 +1,9 @@
+1. The output has the broadcasted shape of `x1` and `x2`; if both inputs are scalars, the output is a scalar.
+
+2. For every output position, the value equals the sum of the corresponding broadcasted values from `x1` and `x2`.
+
+3. The result is equivalent to using the `+` operator on the same inputs, assuming the inputs support normal NumPy addition.
+
+4. When `out` is provided, the returned object is the same array as `out`, and computed values are stored into it.
+
+5. When `where` is provided, positions where `where` is `True` contain the computed sum, while positions where `where` is `False` retain their previous `out` value if `out` was supplied.

@@ -1,0 +1,11 @@
+Here are five properties of `numpy.cumsum` suitable for property-based testing:
+
+1. **Output size preservation**: The output array always has the same total number of elements (size) as the input array `a`, regardless of the `axis` argument.
+
+2. **Last element equals total sum (for integers)**: For integer-typed inputs, the last element of `np.cumsum(a)` (computed over the flattened array) equals `np.sum(a)`, since modular arithmetic is consistent between the two operations.
+
+3. **First element equals first input element**: When computing the cumulative sum over the flattened array (or along a 1-d array), the first element of the output equals the first element of the (flattened) input `a`.
+
+4. **Successive differences recover the input**: Taking the discrete difference (`np.diff`) along the cumulative axis of the output, when prepended with the first cumulative value, reconstructs the original elements along that axis (i.e., `cumsum` and elementwise `diff` are inverse operations along the chosen axis).
+
+5. **Output dtype matches specification**: When a `dtype` argument is provided, the output array has exactly that dtype; when omitted, the output dtype is the dtype of `a` (or at least the default platform integer if `a` is a lower-precision integer type).

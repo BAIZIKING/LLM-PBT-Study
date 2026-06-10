@@ -1,0 +1,9 @@
+1. The output has the same number of elements as the input; if `axis` is specified, it has the same shape as the input, and if `axis=None`, it is the cumulative sum over the flattened input.
+
+2. Each output element equals the sum of all input elements up to and including that position along the chosen axis, using the specified accumulator dtype.
+
+3. Along the cumulative-sum axis, the first output element equals the corresponding first input element, and each later output element equals the previous output element plus the current input element.
+
+4. The output dtype is `dtype` when explicitly provided; otherwise it follows NumPy’s default cumsum dtype rules, including promotion of small integer dtypes to the platform default integer type.
+
+5. If `out` is provided, the returned object is the same array as `out`, and the cumulative-sum values are written into it, cast to `out`’s dtype if necessary.

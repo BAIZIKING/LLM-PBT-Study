@@ -1,0 +1,92 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+from networkx import degree as networkx_degree
+
+# Summary: Generate random Graph/DiGraph/MultiGraph/MultiDiGraph instances with
+# small node sets, isolated nodes, self-loops, repeated edges, directed edges,
+# weighted and unweighted edges, missing weight attributes, negative/zero weights,
+# and different nbunch forms: omitted, None, a single existing node, or an iterable.
+# Properties checked: when nbunch is omitted or None, degree returns all node
+# degrees; when nbunch is a single node, it returns that node's degree; when
+# nbunch is an iterable, it returns degrees for the existing nodes in that bunch.
+# The expected degree is computed independently: each edge contributes 1, or the
+# selected edge attribute if present, and self-loops contribute twice.
+@given(st.data())
+def test_networkx_degree(data):
+    graph_cls = data.draw(
+        st.sampled_from([nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph])
+    )
+    G = graph_cls()
+
+    nodes = data.draw(
+        st.lists(st.integers(min_value=-5, max_value=5), unique=True, max_size=6)
+    )
+    G.add_nodes_from(nodes)
+
+    if nodes:
+        edge_count = data.draw(st.integers(min_value=0, max_value=20))
+        for _ in range(edge_count):
+            u = data.draw(st.sampled_from(nodes))
+            v = data.draw(st.sampled_from(nodes))
+
+            attrs = {}
+            if data.draw(st.booleans()):
+                attrs["w"] = data.draw(st.integers(min_value=-10, max_value=10))
+            if data.draw(st.booleans()):
+                attrs["other"] = data.draw(st.integers(min_value=-10, max_value=10))
+
+            G.add_edge(u, v, **attrs)
+
+    weight = data.draw(st.one_of(st.none(), st.sampled_from(["w", "other", "missing"])))
+
+    expected = {node: 0 for node in G.nodes}
+    for u, v, attrs in G.edges(data=True):
+        edge_value = 1 if weight is None else attrs.get(weight, 1)
+        if u == v:
+            expected[u] += 2 * edge_value
+        else:
+            expected[u] += edge_value
+            expected[v] += edge_value
+
+    nbunch_modes = ["omitted", "none", "iterable"]
+    if nodes:
+        nbunch_modes.append("single")
+    nbunch_mode = data.draw(st.sampled_from(nbunch_modes))
+
+    if nbunch_mode == "omitted":
+        result = networkx_degree(G, weight=weight)
+        assert dict(result) == expected
+
+    elif nbunch_mode == "none":
+        result = networkx_degree(G, nbunch=None, weight=weight)
+        assert dict(result) == expected
+
+    elif nbunch_mode == "single":
+        node = data.draw(st.sampled_from(nodes))
+        result = networkx_degree(G, nbunch=node, weight=weight)
+        assert result == expected[node]
+
+    else:
+        missing_nodes = list(range(100, 106))
+        pool = nodes + missing_nodes
+
+        bunch_list = data.draw(
+            st.lists(st.sampled_from(pool), min_size=0, max_size=10)
+        )
+        container_type = data.draw(st.sampled_from(["list", "tuple", "set"]))
+
+        if container_type == "tuple":
+            nbunch = tuple(bunch_list)
+        elif container_type == "set":
+            nbunch = set(bunch_list)
+        else:
+            nbunch = list(bunch_list)
+
+        result = networkx_degree(G, nbunch=nbunch, weight=weight)
+        expected_for_bunch = {
+            node: expected[node]
+            for node in nbunch
+            if node in expected
+        }
+        assert dict(result) == expected_for_bunch
+# End program

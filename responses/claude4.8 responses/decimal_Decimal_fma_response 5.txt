@@ -1,0 +1,74 @@
+# Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.fma(other, third)`, I'll use Hypothesis's `st.decimals()` strategy. To exercise the core mathematical property (that `fma` performs an *exact* intermediate product before adding), I want to avoid the noise of NaNs, infinities, and rounding overflows. Therefore:
+
+- I generate finite, non-NaN decimals using `allow_nan=False` and `allow_infinity=False`.
+- I bound the magnitude (`min_value`/`max_value`) and limit `places` so that the exact product `self*other` and the final sum stay well within the default context precision (28 significant digits). This ensures `fma` and the naive `self*other + third` agree, making the property deterministic and meaningful.
+- Using three independent draws (`self`, `other`, `third`) covers combinations including zeros, negatives, small fractions, and large magnitudes within the safe range.
+
+# Properties to Check
+
+Based on the documentation, `fma(other, third)` returns `self*other + third` with **no rounding of the intermediate product**. The key property:
+
+- The result of `self.fma(other, third)` must equal `self * other + third` when computed exactly. Since the naive `self * other + third` rounds the intermediate product, I compute the reference using a high-precision local context where the intermediate product is exact. Within that context, `fma` and the manual computation must produce identical results.
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate three finite, bounded, low-precision decimals so the exact
+# product self*other and the sum stay within precision; verify fma equals the
+# manually computed self*other+third (done exactly via high precision).
+@given(st.data())
+def test_decimal_Decimal_fma():
+    finite_decimals = st.decimals(
+        min_value=Decimal("-1e10"),
+        max_value=Decimal("1e10"),
+        allow_nan=False,
+        allow_infinity=False,
+        places=6,
+    )
+    data = st.data()
+
+    self_val = data.example() if False else None  # placeholder unused
+
+# End program
+```
+
+Let me correct the format — the test must use the injected `data` from `@given(st.data())`:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate three finite, bounded, low-precision decimals (no NaN/Inf) so
+# that the exact product self*other and the final sum stay within the default
+# precision. Verify that self.fma(other, third) equals self*other+third computed
+# exactly in a high-precision context (where the intermediate product is exact).
+@given(st.data())
+def test_decimal_Decimal_fma(data):
+    finite_decimals = st.decimals(
+        min_value=Decimal("-1e10"),
+        max_value=Decimal("1e10"),
+        allow_nan=False,
+        allow_infinity=False,
+        places=6,
+    )
+    self_val = data.draw(finite_decimals)
+    other = data.draw(finite_decimals)
+    third = data.draw(finite_decimals)
+
+    fma_result = self_val.fma(other, third)
+
+    # Compute the reference exactly: high precision makes the intermediate
+    # product self_val*other exact, mirroring fma's "no rounding" semantics.
+    with localcontext() as ctx:
+        ctx.prec = 80
+        expected = self_val * other + third
+
+    assert fma_result == expected, (
+        f"fma({self_val}, {other}, {third}) = {fma_result}, "
+        f"expected {expected}"
+    )
+# End program
+```

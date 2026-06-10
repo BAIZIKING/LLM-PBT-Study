@@ -1,0 +1,9 @@
+1. The returned token is a `bytes` object.
+
+2. The returned token is URL-safe base64-encoded and can be successfully base64-decoded.
+
+3. Decrypting the returned token with the same `Fernet` key yields exactly the original input `data`.
+
+4. Any alteration to the returned token should invalidate its authentication, so the modified token cannot be successfully decrypted with the same key.
+
+5. The returned token contains a visible creation timestamp corresponding to the time at which encryption occurred.

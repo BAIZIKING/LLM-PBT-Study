@@ -1,0 +1,114 @@
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate both valid compressed streams and arbitrary byte strings.
+# Valid streams cover zlib, raw deflate, and gzip formats, varied payloads,
+# compression levels, window sizes, and small/large bufsize values. Arbitrary
+# byte strings are paired with all documented wbits ranges to exercise malformed
+# input and edge cases.
+#
+# Properties:
+# 1. For data compressed with a compatible documented format/window, decompress
+#    returns exactly the original payload.
+# 2. gzip/zlib auto-detection modes accept the appropriate valid streams.
+# 3. bufsize only affects allocation strategy, not decompressed output.
+# 4. For arbitrary bytes with documented wbits values, decompress either returns
+#    bytes or raises zlib.error as documented.
+@given(st.data())
+def test_zlib_decompress(data):
+    mode = data.draw(st.sampled_from(["valid_stream", "arbitrary_bytes"]))
+
+    bufsize = data.draw(
+        st.one_of(
+            st.just(1),
+            st.integers(min_value=2, max_value=64),
+            st.integers(min_value=65, max_value=4096),
+        )
+    )
+
+    if mode == "valid_stream":
+        payload = data.draw(st.binary(min_size=0, max_size=5000))
+        fmt = data.draw(st.sampled_from(["zlib", "raw", "gzip"]))
+        window_bits = data.draw(st.integers(min_value=9, max_value=15))
+        level = data.draw(st.integers(min_value=0, max_value=9))
+
+        if fmt == "zlib":
+            compress_wbits = window_bits
+            decompress_wbits_choices = [
+                window_bits,
+                15,
+                0,
+                32 + window_bits,
+                47,
+            ]
+        elif fmt == "raw":
+            compress_wbits = -window_bits
+            decompress_wbits_choices = [
+                -window_bits,
+                -15,
+            ]
+        else:
+            compress_wbits = 16 + window_bits
+            decompress_wbits_choices = [
+                16 + window_bits,
+                31,
+                32 + window_bits,
+                47,
+            ]
+
+        compressor = zlib.compressobj(
+            level=level,
+            method=zlib.DEFLATED,
+            wbits=compress_wbits,
+        )
+        compressed = compressor.compress(payload) + compressor.flush()
+
+        decompress_wbits = data.draw(st.sampled_from(decompress_wbits_choices))
+
+        result = zlib.decompress(
+            compressed,
+            wbits=decompress_wbits,
+            bufsize=bufsize,
+        )
+
+        assert result == payload
+
+        other_bufsize = data.draw(
+            st.one_of(
+                st.just(1),
+                st.integers(min_value=2, max_value=4096),
+            )
+        )
+
+        assert zlib.decompress(
+            compressed,
+            wbits=decompress_wbits,
+            bufsize=other_bufsize,
+        ) == result
+
+    else:
+        arbitrary = data.draw(st.binary(min_size=0, max_size=2000))
+        documented_wbits = data.draw(
+            st.one_of(
+                st.integers(min_value=8, max_value=15),
+                st.just(0),
+                st.integers(min_value=-15, max_value=-8),
+                st.integers(min_value=24, max_value=31),
+                st.integers(min_value=40, max_value=47),
+            )
+        )
+
+        try:
+            result = zlib.decompress(
+                arbitrary,
+                wbits=documented_wbits,
+                bufsize=bufsize,
+            )
+        except zlib.error:
+            return
+
+        assert isinstance(result, bytes)
+
+# End program
+```

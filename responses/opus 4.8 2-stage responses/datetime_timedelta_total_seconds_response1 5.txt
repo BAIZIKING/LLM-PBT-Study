@@ -1,0 +1,9 @@
+1. The output is always a float (regardless of the input timedelta's components).
+
+2. The output equals the timedelta divided by `timedelta(seconds=1)`, i.e., `td.total_seconds() == td / timedelta(seconds=1)`.
+
+3. The sign of the output matches the sign of the duration: positive timedeltas yield positive values, negative timedeltas yield negative values, and a zero timedelta yields 0.0.
+
+4. The output is consistent with the component breakdown: for durations within the accurate range, `total_seconds()` equals `days * 86400 + seconds + microseconds / 1_000_000`.
+
+5. The function is additive/linear: for two timedeltas `a` and `b`, `(a + b).total_seconds()` is approximately equal to `a.total_seconds() + b.total_seconds()`, and `(k * a).total_seconds()` is approximately `k * a.total_seconds()` for an integer `k`.

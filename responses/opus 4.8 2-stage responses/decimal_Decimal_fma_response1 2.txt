@@ -1,0 +1,9 @@
+1. The result equals self*other+third computed with no rounding of the intermediate product, so it should match the exact mathematical value of self*other+third rounded only once according to the context's precision.
+
+2. When third is zero, the result equals self*other (i.e., fma behaves like ordinary multiplication followed by adding zero).
+
+3. When self is zero or other is zero, the result equals third (since the product is zero, adding third yields third).
+
+4. The result is commutative in the multiplication arguments: self.fma(other, third) equals other.fma(self, third) for the same third.
+
+5. The fma result may differ from the separately-rounded computation (self*other)+third, but it never has a larger rounding error than the two-step computation, since the intermediate product is not rounded.

@@ -1,0 +1,9 @@
+1. The returned value is always a `bytes` object for valid `data`, `level`, and `wbits` arguments.
+
+2. The compressed output can be decompressed with the corresponding `wbits` setting to exactly recover the original input `data`.
+
+3. For the same `data`, `level`, and `wbits`, the compressed output is deterministic: repeated calls produce identical bytes.
+
+4. The output format matches the `wbits` range: positive `wbits` produces a zlib-wrapped stream, negative `wbits` produces a raw deflate stream, and `wbits` from `25` to `31` produces a gzip-wrapped stream.
+
+5. For the same `data` and `wbits`, using `level=-1` produces output equivalent to using the default compression level, currently `level=6`.

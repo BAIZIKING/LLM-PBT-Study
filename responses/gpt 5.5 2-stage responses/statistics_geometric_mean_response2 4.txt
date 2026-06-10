@@ -1,0 +1,94 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+positive_floats = st.floats(
+    min_value=1e-100,
+    max_value=1e100,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+moderate_positive_floats = st.floats(
+    min_value=1e-50,
+    max_value=1e50,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(st.data())
+def test_statistics_geometric_mean_returns_positive_float(data):
+    values = data.draw(st.lists(positive_floats, min_size=1, max_size=100))
+
+    result = statistics.geometric_mean(values)
+
+    assert isinstance(result, float)
+    assert math.isfinite(result)
+    assert result > 0.0
+
+
+@given(st.data())
+def test_statistics_geometric_mean_lies_between_minimum_and_maximum(data):
+    values = data.draw(st.lists(positive_floats, min_size=1, max_size=100))
+
+    result = statistics.geometric_mean(values)
+
+    minimum = min(values)
+    maximum = max(values)
+
+    assert result >= minimum or math.isclose(result, minimum, rel_tol=1e-12)
+    assert result <= maximum or math.isclose(result, maximum, rel_tol=1e-12)
+
+
+@given(st.data())
+def test_statistics_geometric_mean_log_equals_mean_log(data):
+    values = data.draw(st.lists(positive_floats, min_size=1, max_size=100))
+
+    result = statistics.geometric_mean(values)
+
+    expected_log = math.fsum(math.log(x) for x in values) / len(values)
+
+    assert math.isclose(
+        math.log(result),
+        expected_log,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+
+
+@given(st.data())
+def test_statistics_geometric_mean_is_order_independent(data):
+    values = data.draw(st.lists(positive_floats, min_size=1, max_size=30))
+    permuted_values = data.draw(st.permutations(values))
+
+    result = statistics.geometric_mean(values)
+    permuted_result = statistics.geometric_mean(permuted_values)
+
+    assert math.isclose(
+        result,
+        permuted_result,
+        rel_tol=1e-12,
+        abs_tol=0.0,
+    )
+
+
+@given(st.data())
+def test_statistics_geometric_mean_scales_with_positive_constant(data):
+    values = data.draw(st.lists(moderate_positive_floats, min_size=1, max_size=100))
+    scale = data.draw(moderate_positive_floats)
+
+    result = statistics.geometric_mean(values)
+    scaled_result = statistics.geometric_mean([x * scale for x in values])
+
+    assert math.isclose(
+        scaled_result,
+        result * scale,
+        rel_tol=1e-10,
+        abs_tol=0.0,
+    )
+
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. For two 1-D inputs of the same length, the output is a scalar equal to the sum of pairwise products, with no complex conjugation applied.
+
+2. For two 2-D inputs with shapes `(m, n)` and `(n, p)`, the output has shape `(m, p)` and each element equals the matrix product sum over the shared dimension.
+
+3. If either input is 0-D/scalar, the output is equivalent to elementwise multiplication of the scalar with the other input.
+
+4. For an N-D input `a` and a 1-D input `b`, where `a.shape[-1] == b.shape[0]`, the output shape is `a.shape[:-1]`, and each output element is the sum product over the last axis of `a`.
+
+5. For an N-D input `a` and an M-D input `b` with `M >= 2`, where `a.shape[-1] == b.shape[-2]`, the output shape is `a.shape[:-1] + b.shape[:-2] + b.shape[-1:]`, and values are sum products over `a`’s last axis and `b`’s second-to-last axis.

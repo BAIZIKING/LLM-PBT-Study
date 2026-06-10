@@ -1,0 +1,9 @@
+1. The output is a named tuple with exactly three components named `year`, `week`, and `weekday`.
+
+2. The `week` component is always an integer between 1 and 53 (inclusive).
+
+3. The `weekday` component is always an integer between 1 and 7 (inclusive), where 1 represents Monday and 7 represents Sunday.
+
+4. The `year` component is within 1 of the date's Gregorian year (it can equal the Gregorian year, or be one less near the start of January, or one more near the end of December).
+
+5. The `weekday` component is consistent with the date's actual day of the week (i.e., it equals the Gregorian weekday + 1, matching `date.weekday() + 1` or equivalently `date.isoweekday()`).

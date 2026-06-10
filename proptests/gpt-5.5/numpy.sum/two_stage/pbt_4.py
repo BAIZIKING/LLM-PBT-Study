@@ -1,0 +1,184 @@
+from hypothesis import given, strategies as st
+import numpy
+
+@given(st.data())
+def test_numpy_sum_output_shape_property(data):
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+    matrix = data.draw(
+        st.lists(
+            st.lists(st.integers(min_value=-100, max_value=100), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+    axis = data.draw(st.sampled_from([None, 0, 1, -1, (0, 1), (-2, -1)]))
+    keepdims = data.draw(st.booleans())
+
+    arr = numpy.array(matrix, dtype=numpy.int64)
+    result = numpy.sum(arr, axis=axis, keepdims=keepdims)
+
+    if axis is None:
+        expected_shape = (1, 1) if keepdims else ()
+    elif axis in (0,):
+        expected_shape = (1, cols) if keepdims else (cols,)
+    elif axis in (1, -1):
+        expected_shape = (rows, 1) if keepdims else (rows,)
+    else:
+        expected_shape = (1, 1) if keepdims else ()
+
+    assert result.shape == expected_shape
+
+
+@given(st.data())
+def test_numpy_sum_value_property(data):
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+    matrix = data.draw(
+        st.lists(
+            st.lists(st.integers(min_value=-100, max_value=100), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+    axis = data.draw(st.sampled_from([None, 0, 1, (0, 1)]))
+    initial = data.draw(st.integers(min_value=-100, max_value=100))
+
+    arr = numpy.array(matrix, dtype=numpy.int64)
+    result = numpy.sum(arr, axis=axis, initial=initial)
+
+    if axis is None or axis == (0, 1):
+        expected = initial + sum(sum(row) for row in matrix)
+    elif axis == 0:
+        expected = numpy.array(
+            [initial + sum(matrix[row][col] for row in range(rows)) for col in range(cols)],
+            dtype=numpy.int64,
+        )
+    else:
+        expected = numpy.array(
+            [initial + sum(matrix[row][col] for col in range(cols)) for row in range(rows)],
+            dtype=numpy.int64,
+        )
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_sum_where_excludes_values_property(data):
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+    values = data.draw(
+        st.lists(
+            st.lists(
+                st.floats(
+                    min_value=-100.0,
+                    max_value=100.0,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=cols,
+                max_size=cols,
+            ),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+    mask = data.draw(
+        st.lists(
+            st.lists(st.booleans(), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+
+    arr = numpy.array(values, dtype=numpy.float64)
+    where = numpy.array(mask, dtype=bool)
+
+    arr_with_excluded_nans = arr.copy()
+    arr_with_excluded_nans[~where] = numpy.nan
+
+    result = numpy.sum(arr_with_excluded_nans, axis=1, where=where)
+    expected = numpy.array(
+        [
+            sum(values[row][col] for col in range(cols) if mask[row][col])
+            for row in range(rows)
+        ],
+        dtype=numpy.float64,
+    )
+
+    assert numpy.allclose(result, expected, equal_nan=True)
+
+
+@given(st.data())
+def test_numpy_sum_empty_or_all_excluded_identity_property(data):
+    assert numpy.sum([]) == 0.0
+
+    empty_initial = data.draw(st.integers(min_value=-100, max_value=100))
+    assert numpy.sum([], initial=empty_initial) == empty_initial
+
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+    matrix = data.draw(
+        st.lists(
+            st.lists(st.integers(min_value=-100, max_value=100), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+    axis = data.draw(st.sampled_from([None, 0, 1]))
+    use_initial = data.draw(st.booleans())
+    initial = data.draw(st.integers(min_value=-100, max_value=100))
+
+    arr = numpy.array(matrix, dtype=numpy.int64)
+    where = numpy.zeros(arr.shape, dtype=bool)
+
+    if use_initial:
+        result = numpy.sum(arr, axis=axis, where=where, initial=initial)
+        identity = initial
+    else:
+        result = numpy.sum(arr, axis=axis, where=where)
+        identity = 0
+
+    if axis is None:
+        expected = identity
+    elif axis == 0:
+        expected = numpy.full((cols,), identity, dtype=numpy.int64)
+    else:
+        expected = numpy.full((rows,), identity, dtype=numpy.int64)
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_sum_out_parameter_property(data):
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+    matrix = data.draw(
+        st.lists(
+            st.lists(st.integers(min_value=-50, max_value=50), min_size=cols, max_size=cols),
+            min_size=rows,
+            max_size=rows,
+        )
+    )
+    axis = data.draw(st.sampled_from([None, 0, 1]))
+    out_dtype = data.draw(st.sampled_from([numpy.int16, numpy.int64, numpy.float32, numpy.float64]))
+
+    arr = numpy.array(matrix, dtype=numpy.int64)
+
+    if axis is None:
+        out_shape = ()
+    elif axis == 0:
+        out_shape = (cols,)
+    else:
+        out_shape = (rows,)
+
+    out = numpy.empty(out_shape, dtype=out_dtype)
+    returned = numpy.sum(arr, axis=axis, out=out)
+
+    expected = numpy.asarray(numpy.sum(arr, axis=axis), dtype=out_dtype)
+
+    assert returned is out
+    assert returned.shape == expected.shape
+    assert returned.dtype == numpy.dtype(out_dtype)
+    assert numpy.array_equal(returned, expected)
+# End program

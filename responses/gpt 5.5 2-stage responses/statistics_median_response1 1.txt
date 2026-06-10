@@ -1,0 +1,9 @@
+1. For empty data, the function raises `StatisticsError` rather than returning a value.
+
+2. The median is invariant under input order: any permutation of the same non-empty data has the same median.
+
+3. For an odd number of data points, the result is exactly the middle element of the sorted data.
+
+4. For an even number of data points, the result is the arithmetic mean of the two middle elements of the sorted data.
+
+5. For non-empty numeric data, the median lies between the minimum and maximum values of the input data, inclusive.

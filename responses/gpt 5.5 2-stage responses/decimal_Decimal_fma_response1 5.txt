@@ -1,0 +1,9 @@
+1. For finite operands, the result is the correctly rounded value of the exact mathematical expression `self * other + third`, using the supplied context or the current context if none is supplied.
+
+2. The intermediate product `self * other` is not rounded before adding `third`; only the final result is rounded.
+
+3. For finite operands, `self.fma(other, third)` produces the same numeric result as `other.fma(self, third)`, because multiplication is commutative.
+
+4. If `third` is zero, the result is the context-rounded exact product `self * other`.
+
+5. If `other` is one, the result is the context-rounded exact sum `self + third`.

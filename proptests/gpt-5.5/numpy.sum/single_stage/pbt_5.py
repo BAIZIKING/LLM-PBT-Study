@@ -1,0 +1,159 @@
+from hypothesis import given, strategies as st
+import itertools
+import numpy as np
+
+# Summary: Generate small 0-D to 3-D NumPy arrays, including scalar arrays and arrays
+# with empty dimensions. Use bool, signed integer, and floating dtypes; floating arrays
+# may contain NaN. Generate valid axis values including None, negative axes, and tuples
+# of axes. Also generate keepdims, dtype, initial, where masks, and optional out arrays.
+# Properties checked: result shape matches the documented axis/keepdims behavior; out is
+# returned by reference when supplied; explicit dtype is respected when out is absent;
+# values match an independent Python implementation of masked summation with identity 0
+# and optional initial.
+@given(st.data())
+def test_numpy_sum(data):
+    ndim = data.draw(st.integers(min_value=0, max_value=3))
+    shape = tuple(data.draw(st.integers(min_value=0, max_value=4)) for _ in range(ndim))
+    size = int(np.prod(shape)) if shape else 1
+
+    kind = data.draw(st.sampled_from(["bool", "int", "float"]))
+
+    if kind == "bool":
+        arr_dtype = np.bool_
+        flat = data.draw(st.lists(st.booleans(), min_size=size, max_size=size))
+        dtype = data.draw(st.sampled_from([None, np.int64, np.float64]))
+    elif kind == "int":
+        arr_dtype = data.draw(st.sampled_from([np.int8, np.int16, np.int64]))
+        flat = data.draw(
+            st.lists(st.integers(min_value=-20, max_value=20), min_size=size, max_size=size)
+        )
+        dtype = data.draw(st.sampled_from([None, np.int64, np.float64]))
+    else:
+        arr_dtype = data.draw(st.sampled_from([np.float32, np.float64]))
+        float_values = st.one_of(
+            st.integers(min_value=-100, max_value=100).map(float),
+            st.just(float("nan")),
+        )
+        flat = data.draw(st.lists(float_values, min_size=size, max_size=size))
+        dtype = data.draw(st.sampled_from([None, np.float64]))
+
+    a = np.array(flat, dtype=arr_dtype).reshape(shape)
+
+    if ndim == 0:
+        axis = None
+        reduced_axes = tuple()
+    else:
+        axis_style = data.draw(st.sampled_from(["none", "single", "tuple"]))
+
+        if axis_style == "none":
+            axis = None
+            reduced_axes = tuple(range(ndim))
+        elif axis_style == "single":
+            axis = data.draw(st.integers(min_value=-ndim, max_value=ndim - 1))
+            reduced_axes = (axis % ndim,)
+        else:
+            axes = data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=ndim - 1),
+                    min_size=1,
+                    max_size=ndim,
+                    unique=True,
+                )
+            )
+            axis_items = []
+            for ax in axes:
+                use_negative = data.draw(st.booleans())
+                axis_items.append(ax - ndim if use_negative else ax)
+            axis = tuple(axis_items)
+            reduced_axes = tuple(ax % ndim for ax in axis)
+
+    keepdims = data.draw(st.booleans())
+
+    if axis is None:
+        expected_shape = tuple(1 for _ in shape) if keepdims else tuple()
+    else:
+        reduced_set = set(reduced_axes)
+        if keepdims:
+            expected_shape = tuple(1 if i in reduced_set else shape[i] for i in range(ndim))
+        else:
+            expected_shape = tuple(shape[i] for i in range(ndim) if i not in reduced_set)
+
+    where_choice = data.draw(st.sampled_from(["all_true", "all_false", "random"]))
+    if where_choice == "all_true":
+        where_flat = [True] * size
+    elif where_choice == "all_false":
+        where_flat = [False] * size
+    else:
+        where_flat = data.draw(st.lists(st.booleans(), min_size=size, max_size=size))
+    where = np.array(where_flat, dtype=bool).reshape(shape)
+
+    has_initial = data.draw(st.booleans())
+    initial = data.draw(st.integers(min_value=-10, max_value=10)) if has_initial else None
+
+    use_out = data.draw(st.booleans())
+    out = np.full(expected_shape, 12345.0, dtype=np.float64) if use_out else None
+
+    kwargs = {
+        "axis": axis,
+        "keepdims": keepdims,
+        "where": where,
+    }
+    if dtype is not None:
+        kwargs["dtype"] = dtype
+    if has_initial:
+        kwargs["initial"] = initial
+    if out is not None:
+        kwargs["out"] = out
+
+    result = np.sum(a, **kwargs)
+
+    assert np.shape(result) == expected_shape
+
+    if out is not None:
+        assert result is out
+    elif dtype is not None:
+        assert np.asarray(result).dtype == np.dtype(dtype)
+
+    expected = np.empty(expected_shape, dtype=object)
+    out_indices = [()] if expected_shape == tuple() else np.ndindex(expected_shape)
+
+    reduced_set = set(reduced_axes)
+    ranges = [range(shape[ax]) for ax in reduced_axes]
+
+    for out_index in out_indices:
+        base_index = [0] * ndim
+
+        if axis is not None:
+            if keepdims:
+                for ax in range(ndim):
+                    if ax not in reduced_set:
+                        base_index[ax] = out_index[ax]
+            else:
+                j = 0
+                for ax in range(ndim):
+                    if ax not in reduced_set:
+                        base_index[ax] = out_index[j]
+                        j += 1
+
+        acc = initial if has_initial else 0
+        if dtype is not None:
+            acc = np.dtype(dtype).type(acc)
+
+        for reduced_values in itertools.product(*ranges):
+            full_index = list(base_index)
+            for ax, value in zip(reduced_axes, reduced_values):
+                full_index[ax] = value
+            full_index = tuple(full_index)
+
+            if where[full_index]:
+                value = a[full_index]
+                if dtype is not None:
+                    value = np.dtype(dtype).type(value)
+                acc = acc + value
+
+        expected[out_index] = acc
+
+    expected = expected.astype(np.asarray(result).dtype, copy=False)
+    np.testing.assert_allclose(result, expected, rtol=1e-7, atol=1e-7, equal_nan=True)
+
+# End program

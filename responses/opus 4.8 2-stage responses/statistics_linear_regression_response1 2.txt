@@ -1,0 +1,9 @@
+1. The function returns a result with two components, `slope` and `intercept`, where both are finite real numbers.
+
+2. When `proportional=True`, the returned `intercept` is always exactly 0.0, regardless of the input data.
+
+3. For any input point pair, the fitted line should pass through the centroid (mean of x, mean of y) of the data when `proportional=False`; that is, `slope * mean(x) + intercept` equals `mean(y)`.
+
+4. If the dependent variable y is generated exactly from a linear relationship y = a*x + b (with no noise), then the returned slope equals a and the returned intercept equals b (and b should be 0 when proportional=True and the data truly passes through the origin).
+
+5. The function raises a StatisticsError when the inputs have different lengths, when the inputs have fewer than two elements, or when the independent variable x is constant.

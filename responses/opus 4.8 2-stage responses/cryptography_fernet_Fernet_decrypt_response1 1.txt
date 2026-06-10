@@ -1,0 +1,11 @@
+Here are five properties of the output of `Fernet.decrypt` suitable for property-based testing:
+
+1. **Round-trip correctness:** For any bytes `data`, calling `decrypt(encrypt(data))` returns exactly the original `data` (the output equals the plaintext that was encrypted).
+
+2. **Output type:** When decryption succeeds, the returned value is always of type `bytes`, regardless of whether the token was provided as `bytes` or `str`.
+
+3. **Token format equivalence:** Decrypting a token passed as a `str` yields the same plaintext output as decrypting the equivalent token passed as `bytes`.
+
+4. **TTL expiration behavior:** When a token is decrypted with a `ttl` such that the token's age exceeds `ttl` seconds, an `InvalidToken` exception is raised; when the token's age is within `ttl` (or `ttl` is `None`), the original plaintext is returned successfully.
+
+5. **Tamper/invalidity detection:** Decrypting a token that has been modified, is malformed, was created with a different key, or has an invalid signature raises an `InvalidToken` exception (it never returns altered or incorrect plaintext silently).

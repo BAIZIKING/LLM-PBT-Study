@@ -1,0 +1,11 @@
+Here are five properties of the output of `networkx_degree(G, nbunch, weight)`:
+
+1. **Sum of degrees equals twice the number of edges (unweighted, all nodes):** When `nbunch=None` and `weight=None`, the sum of all returned degree values equals twice the number of edges in the graph (each edge contributes to the degree of both its endpoints).
+
+2. **Degree values are non-negative:** Every degree value returned (whether weighted or unweighted) is non-negative, given that edge weights are non-negative; for unweighted graphs, all degree values are non-negative integers.
+
+3. **Consistency with node set / nbunch:** When `nbunch` is a subset of nodes, the returned view contains exactly those nodes (and only valid nodes from the graph); when `nbunch=None`, the returned view contains exactly all nodes of the graph, with the count of returned entries equal to the number of nodes.
+
+4. **Single node returns a scalar matching the view:** When `nbunch` is a single node, the returned value is a scalar integer/number that equals the degree value for that same node when computed over the full degree view (i.e., `degree(G, n) == degree(G)[n]`).
+
+5. **Weighted degree relationship:** For a given node, the weighted degree (`weight` set to an edge attribute) equals the sum of the corresponding edge weights of its incident edges; if all edge weights equal 1, the weighted degree equals the unweighted degree.

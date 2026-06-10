@@ -1,0 +1,9 @@
+1. The output shape is the input shape with the reduced axis or axes removed; if `keepdims=True`, reduced axes remain with size 1; if `axis=None` or the input is 0-dimensional, the output is a scalar.
+
+2. The output value equals the sum of all included elements along the specified axis or axes, plus `initial` if provided.
+
+3. Elements excluded by `where=False` do not affect the output, including excluded `NaN` values.
+
+4. Summing an empty input, or summing with all elements excluded by `where`, returns the additive identity `0` unless `initial` is provided, in which case it returns `initial`.
+
+5. If `out` is provided, the function returns the same `out` object, with result values cast into `out`’s dtype if necessary.

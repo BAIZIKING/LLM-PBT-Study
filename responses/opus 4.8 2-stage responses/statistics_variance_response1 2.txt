@@ -1,0 +1,9 @@
+1. The variance is always non-negative (output ≥ 0) for any valid input data.
+
+2. The variance equals zero if and only if all data values are identical (constant data).
+
+3. The variance is invariant under translation (shifting all data points by a constant c yields the same variance).
+
+4. Scaling all data points by a constant factor k multiplies the variance by k² (so variance(k·data) == k² · variance(data)).
+
+5. Passing the correct mean as the optional `xbar` argument produces the same result as omitting it (variance(data, mean(data)) == variance(data)).

@@ -1,0 +1,5 @@
+1. For any valid ordinal, the result is a `datetime` instance with `tzinfo` equal to `None`.
+2. For any valid ordinal, the result has `hour == 0`, `minute == 0`, `second == 0`, and `microsecond == 0`.
+3. For any valid ordinal `n`, `result.toordinal()` equals `n`.
+4. For any valid ordinal `n`, the date portion of the result corresponds to the proleptic Gregorian date for ordinal `n`.
+5. For any two valid ordinals `a` and `b`, the difference between their results is exactly `b - a` days.

@@ -1,0 +1,9 @@
+1. For each join-key tuple, the number of output rows follows join multiplicity: inner gives `count_left(key) * count_right(key)` for common keys; left/right preserve all rows from that side, adding unmatched rows with missing values; outer includes the union of keys. Null join keys are treated as matching other null join keys.
+
+2. Every matched output row combines values from a left row and a right row with equal join-key values; unmatched rows may appear only for `left`, `right`, or `outer` joins, with missing values on the absent side.
+
+3. The output columns contain the expected schema: join key columns, non-key columns from both inputs, suffixed overlapping column names according to `suffixes`, and an indicator column only when `indicator` is provided.
+
+4. The output row ordering respects `how`: `left` and `inner` preserve left-key order, `right` preserves right-key order, `outer` sorts keys lexicographically, and `cross` preserves left order while pairing each left row with each right row.
+
+5. For `how='cross'`, the output has exactly `len(left) * len(right)` rows, and every left row appears paired with every right row exactly once.

@@ -1,0 +1,9 @@
+1. The output contains no duplicate rows with respect to `subset` (or with respect to all columns when `subset=None`), unless duplicates are retained according to `keep`.
+
+2. Every row in the output corresponds to a row from the input DataFrame; `drop_duplicates` never creates new row values.
+
+3. When `keep='first'`, the output keeps the first occurrence of each duplicate group and preserves the relative order of the kept rows from the input.
+
+4. When `keep='last'`, the output keeps the last occurrence of each duplicate group and preserves the relative order of the kept rows from the input.
+
+5. When `ignore_index=True`, the output index is reset to consecutive integers starting at `0`; when `ignore_index=False`, the output preserves the original index labels of the kept rows.

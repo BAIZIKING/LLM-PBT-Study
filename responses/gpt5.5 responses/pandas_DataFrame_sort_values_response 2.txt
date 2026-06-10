@@ -1,0 +1,203 @@
+```python
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+
+# Summary: Generate small numeric DataFrames containing duplicates, NaN, +/-inf,
+# signed zero, and ordinary floats. Add a unique row-id column and column-id row
+# so the original row/column permutation can still be recovered when
+# ignore_index=True. Randomize axis, by as either a string or list of strings,
+# ascending as bool or matching bool list, inplace, kind, na_position,
+# ignore_index, and key as None/identity/abs/negation. Properties checked:
+# correct inplace return behavior, unchanged shape, preservation/reset of the
+# sorted axis as documented, preservation of the opposite axis, permutation of
+# rows/columns, and adjacent sorted order according to by/ascending/na_position/key.
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    n_rows = data.draw(st.integers(min_value=1, max_value=6), label="n_rows")
+    n_cols = data.draw(st.integers(min_value=1, max_value=6), label="n_cols")
+
+    cell_values = st.one_of(
+        st.integers(min_value=-3, max_value=3).map(float),
+        st.sampled_from([np.nan, np.inf, -np.inf, 0.0, -0.0]),
+        st.floats(
+            min_value=-1_000_000,
+            max_value=1_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+    matrix = data.draw(
+        st.lists(
+            st.lists(cell_values, min_size=n_cols, max_size=n_cols),
+            min_size=n_rows,
+            max_size=n_rows,
+        ),
+        label="matrix",
+    )
+
+    data_index = [f"r{i}" for i in range(n_rows)]
+    data_cols = [f"c{i}" for i in range(n_cols)]
+
+    df = pd.DataFrame(matrix, index=data_index, columns=data_cols, dtype=float)
+
+    # Markers let the test recover the original row/column identities even if
+    # sort_values(..., ignore_index=True) resets the sorted axis labels.
+    df["__rowid__"] = list(range(n_rows))
+    df.loc["__colid__", data_cols] = list(range(n_cols))
+    df.loc["__colid__", "__rowid__"] = -1
+
+    original = df.copy(deep=True)
+
+    axis = data.draw(st.sampled_from([0, "index", 1, "columns"]), label="axis")
+    sort_axis = 0 if axis in (0, "index") else 1
+
+    available_by = data_cols if sort_axis == 0 else data_index
+    n_by = data.draw(st.integers(min_value=1, max_value=len(available_by)), label="n_by")
+    by_labels = data.draw(
+        st.lists(
+            st.sampled_from(available_by),
+            min_size=n_by,
+            max_size=n_by,
+            unique=True,
+        ),
+        label="by_labels",
+    )
+
+    if len(by_labels) == 1:
+        by = data.draw(st.sampled_from([by_labels[0], list(by_labels)]), label="by")
+    else:
+        by = list(by_labels)
+
+    if isinstance(by, list) and data.draw(st.booleans(), label="ascending_as_list"):
+        ascending_values = data.draw(
+            st.lists(
+                st.booleans(),
+                min_size=len(by_labels),
+                max_size=len(by_labels),
+            ),
+            label="ascending_values",
+        )
+        ascending = ascending_values
+    else:
+        ascending_bool = data.draw(st.booleans(), label="ascending_bool")
+        ascending = ascending_bool
+        ascending_values = [ascending_bool] * len(by_labels)
+
+    inplace = data.draw(st.booleans(), label="inplace")
+    kind = data.draw(
+        st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]),
+        label="kind",
+    )
+    na_position = data.draw(st.sampled_from(["first", "last"]), label="na_position")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    key_name = data.draw(st.sampled_from([None, "identity", "abs", "neg"]), label="key")
+
+    if key_name is None:
+        key = None
+    elif key_name == "identity":
+        key = lambda col: col
+    elif key_name == "abs":
+        key = lambda col: col.abs()
+    else:
+        key = lambda col: -col
+
+    working = original.copy(deep=True)
+    returned = working.sort_values(
+        by=by,
+        axis=axis,
+        ascending=ascending,
+        inplace=inplace,
+        kind=kind,
+        na_position=na_position,
+        ignore_index=ignore_index,
+        key=key,
+    )
+
+    if inplace:
+        assert returned is None
+        result = working
+    else:
+        assert isinstance(returned, pd.DataFrame)
+        assert working.equals(original)
+        result = returned
+
+    assert result.shape == original.shape
+
+    def transformed(value):
+        if pd.isna(value):
+            return value
+        if key_name == "abs":
+            return abs(value)
+        if key_name == "neg":
+            return -value
+        return value
+
+    def compare_scalar(left, right, asc):
+        left_missing = bool(pd.isna(left))
+        right_missing = bool(pd.isna(right))
+
+        if left_missing and right_missing:
+            return 0
+        if left_missing:
+            return -1 if na_position == "first" else 1
+        if right_missing:
+            return 1 if na_position == "first" else -1
+
+        if left < right:
+            return -1 if asc else 1
+        if left > right:
+            return 1 if asc else -1
+        return 0
+
+    if sort_axis == 0:
+        assert list(result.columns) == list(original.columns)
+
+        row_ids = [int(x) for x in result["__rowid__"].to_numpy()]
+        assert sorted(row_ids) == [-1] + list(range(n_rows))
+
+        row_id_to_label = {-1: "__colid__", **{i: f"r{i}" for i in range(n_rows)}}
+
+        if ignore_index:
+            assert list(result.index) == list(range(len(result)))
+        else:
+            assert [row_id_to_label[i] for i in row_ids] == list(result.index)
+
+        def item_values(row_id):
+            row_label = row_id_to_label[row_id]
+            return [transformed(original.loc[row_label, col]) for col in by_labels]
+
+    else:
+        assert list(result.index) == list(original.index)
+
+        col_ids = [int(x) for x in result.loc["__colid__"].to_numpy()]
+        assert sorted(col_ids) == [-1] + list(range(n_cols))
+
+        col_id_to_label = {-1: "__rowid__", **{i: f"c{i}" for i in range(n_cols)}}
+
+        if ignore_index:
+            assert list(result.columns) == list(range(result.shape[1]))
+        else:
+            assert [col_id_to_label[i] for i in col_ids] == list(result.columns)
+
+        row_ids = col_ids
+
+        def item_values(col_id):
+            col_label = col_id_to_label[col_id]
+            return [transformed(original.loc[row, col_label]) for row in by_labels]
+
+    def compare_items(left_id, right_id):
+        for left, right, asc in zip(item_values(left_id), item_values(right_id), ascending_values):
+            cmp_result = compare_scalar(left, right, asc)
+            if cmp_result != 0:
+                return cmp_result
+        return 0
+
+    for left_id, right_id in zip(row_ids, row_ids[1:]):
+        assert compare_items(left_id, right_id) <= 0
+
+# End program
+```

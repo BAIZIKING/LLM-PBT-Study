@@ -1,0 +1,65 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.compare`, I'll use the following approach:
+
+1. **Use `st.decimals()`**: Hypothesis has a built-in strategy for generating `Decimal` instances. I'll configure it to allow special values like `NaN` and `Infinity` (via `allow_nan=True` and `allow_infinity=True`), which are critical edge cases mentioned in the documentation.
+
+2. **Cover edge cases**: By enabling NaN and infinity, plus the default generation of regular numbers (including zeros, negatives, very large/small values, and fractional values), we cover:
+   - Regular comparisons (`<`, `==`, `>`)
+   - NaN handling (both operands and individual operands)
+   - Infinity comparisons
+   - Equal values with different representations (e.g., `Decimal('1.0')` vs `Decimal('1.00')`)
+
+3. **Generate two operands**: I'll generate two separate Decimal values (`a` and `b`) so I can compare them against each other.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify:
+
+1. **Return type**: The result is always a `Decimal` instance.
+2. **NaN propagation**: If either `a` or `b` is a NaN, the result must be `Decimal('NaN')`.
+3. **Correct comparison results** (when no NaN):
+   - `a < b` ⟹ result is `Decimal('-1')`
+   - `a == b` ⟹ result is `Decimal('0')`
+   - `a > b` ⟹ result is `Decimal('1')`
+4. **Valid output domain**: When no NaN, the result must be exactly one of `-1`, `0`, or `1`.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+
+# Summary: Generate two Decimal values using st.decimals(), enabling NaN and
+# infinity to cover special-value edge cases as well as regular numbers, zeros,
+# negatives, and varied fractional/large values. Verify the return type, NaN
+# propagation, and correct -1/0/1 comparison results per the documentation.
+@given(st.data())
+def test_decimal_Decimal_compare(data):
+    decimal_strategy = st.decimals(allow_nan=True, allow_infinity=True)
+    a = data.draw(decimal_strategy, label="a")
+    b = data.draw(decimal_strategy, label="b")
+
+    result = a.compare(b)
+
+    # Property 1: result is always a Decimal instance
+    assert isinstance(result, Decimal)
+
+    # Property 2: if either operand is NaN, result is NaN
+    if a.is_nan() or b.is_nan():
+        assert result.is_nan()
+    else:
+        # Property 4: when no NaN, result must be exactly -1, 0, or 1
+        assert result in (Decimal('-1'), Decimal('0'), Decimal('1'))
+
+        # Property 3: correct comparison results
+        if a < b:
+            assert result == Decimal('-1')
+        elif a == b:
+            assert result == Decimal('0')
+        else:  # a > b
+            assert result == Decimal('1')
+# End program
+```

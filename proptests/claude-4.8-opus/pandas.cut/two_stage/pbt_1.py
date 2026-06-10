@@ -1,0 +1,208 @@
+from hypothesis import given, strategies as st, assume, settings
+import hypothesis.strategies as st
+import pandas as pd
+import numpy as np
+import math
+
+
+# Strategy for finite, well-bounded floats to avoid overflow issues
+finite_floats = st.floats(
+    min_value=-1e9, max_value=1e9,
+    allow_nan=False, allow_infinity=False, width=64
+)
+
+# Strategy for input arrays (allowing some NaN values)
+input_value = st.one_of(finite_floats, st.just(float("nan")))
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_cut_output_length_matches_input(data):
+    """Property 1: Output length matches input length for ndarray/Categorical/Series."""
+    x = data.draw(
+        st.lists(input_value, min_size=1, max_size=50),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+    nbins = data.draw(st.integers(min_value=1, max_value=10), label="nbins")
+    labels_false = data.draw(st.booleans(), label="labels_false")
+
+    # Need at least two distinct finite values to form bins
+    finite_vals = x[~np.isnan(x)]
+    assume(len(finite_vals) >= 1)
+    assume(np.ptp(finite_vals) > 0 or len(np.unique(finite_vals)) >= 1)
+
+    try:
+        result = pd.cut(x, nbins, labels=False if labels_false else None)
+    except ValueError:
+        assume(False)
+        return
+
+    assert len(result) == len(x)
+# End program
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_cut_na_values_preserved(data):
+    """Property 2: NaN/out-of-bounds inputs map to NA; in-bounds values are non-NA."""
+    x = data.draw(
+        st.lists(finite_floats, min_size=2, max_size=50),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+    assume(np.ptp(x) > 0)
+
+    # Insert some explicit NaNs
+    n_nan = data.draw(st.integers(min_value=0, max_value=len(x)), label="n_nan")
+    nan_positions = data.draw(
+        st.lists(
+            st.integers(min_value=0, max_value=len(x) - 1),
+            min_size=n_nan, max_size=n_nan, unique=True,
+        ),
+        label="nan_positions",
+    )
+    for p in nan_positions:
+        x[p] = np.nan
+
+    finite_vals = x[~np.isnan(x)]
+    assume(len(finite_vals) >= 1)
+    assume(np.ptp(finite_vals) > 0)
+
+    try:
+        result = pd.cut(x, 4)
+    except ValueError:
+        assume(False)
+        return
+
+    # Positions that were NaN in input must be NA in output
+    for i in range(len(x)):
+        if np.isnan(x[i]):
+            assert pd.isna(result[i]), f"Input NaN at {i} should be NA in output"
+# End program
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_cut_number_of_categories(data):
+    """Property 3: integer bins -> n categories; sequence of k edges -> k-1 categories."""
+    x = data.draw(
+        st.lists(finite_floats, min_size=2, max_size=50),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+    assume(np.ptp(x) > 0)
+
+    use_int_bins = data.draw(st.booleans(), label="use_int_bins")
+
+    if use_int_bins:
+        nbins = data.draw(st.integers(min_value=1, max_value=10), label="nbins")
+        try:
+            result = pd.cut(x, nbins)
+        except ValueError:
+            assume(False)
+            return
+        assert len(result.categories) == nbins
+    else:
+        # Build a sorted, unique sequence of bin edges spanning the data
+        lo = float(np.min(x))
+        hi = float(np.max(x))
+        k = data.draw(st.integers(min_value=2, max_value=8), label="k")
+        # Generate k unique edges covering [lo, hi] (with margins)
+        edges = sorted(set(
+            np.linspace(lo - 1.0, hi + 1.0, k).tolist()
+        ))
+        assume(len(edges) >= 2)
+        edges = np.array(edges, dtype=float)
+        try:
+            result = pd.cut(x, edges)
+        except ValueError:
+            assume(False)
+            return
+        assert len(result.categories) == len(edges) - 1
+# End program
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_cut_value_in_assigned_interval(data):
+    """Property 4: each non-NA value lies within its assigned interval per right/include_lowest rules."""
+    x = data.draw(
+        st.lists(finite_floats, min_size=2, max_size=50),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+    assume(np.ptp(x) > 0)
+
+    nbins = data.draw(st.integers(min_value=1, max_value=8), label="nbins")
+    right = data.draw(st.booleans(), label="right")
+    include_lowest = data.draw(st.booleans(), label="include_lowest")
+
+    try:
+        result = pd.cut(x, nbins, right=right, include_lowest=include_lowest)
+    except ValueError:
+        assume(False)
+        return
+
+    for i in range(len(x)):
+        interval = result[i]
+        if pd.isna(interval):
+            continue
+        val = x[i]
+        # Check val is contained respecting closed side
+        assert interval.left <= val <= interval.right, (
+            f"Value {val} not within bounds of interval {interval}"
+        )
+        if right:
+            # closed on right: (left, right]
+            assert val > interval.left or math.isclose(val, interval.left), \
+                f"Value {val} below left edge {interval.left}"
+            assert val <= interval.right or math.isclose(val, interval.right), \
+                f"Value {val} above right edge {interval.right}"
+        else:
+            # closed on left: [left, right)
+            assert val >= interval.left or math.isclose(val, interval.left), \
+                f"Value {val} below left edge {interval.left}"
+            assert val < interval.right or math.isclose(val, interval.right), \
+                f"Value {val} above right edge {interval.right}"
+# End program
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_pandas_cut_ordered_categories_monotonic(data):
+    """Property 5: with ordered=True, categories are monotonically increasing and assignment respects order."""
+    x = data.draw(
+        st.lists(finite_floats, min_size=2, max_size=50),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+    assume(np.ptp(x) > 0)
+
+    nbins = data.draw(st.integers(min_value=1, max_value=8), label="nbins")
+
+    try:
+        result = pd.cut(x, nbins, ordered=True)
+    except ValueError:
+        assume(False)
+        return
+
+    assert result.ordered is True
+
+    # Categories (intervals) must be in increasing order
+    cats = list(result.categories)
+    for j in range(len(cats) - 1):
+        assert cats[j].left <= cats[j + 1].left, "Categories not ordered by left edge"
+        assert cats[j].right <= cats[j + 1].right, "Categories not ordered by right edge"
+
+    # Assignment consistency: smaller input -> category code at or before larger input
+    codes = result.codes
+    for i in range(len(x)):
+        for j in range(len(x)):
+            if codes[i] == -1 or codes[j] == -1:
+                continue
+            if x[i] < x[j]:
+                assert codes[i] <= codes[j], (
+                    f"Smaller value {x[i]} got later category than {x[j]}"
+                )
+# End program

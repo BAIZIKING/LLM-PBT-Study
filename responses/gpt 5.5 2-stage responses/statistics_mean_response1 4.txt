@@ -1,0 +1,9 @@
+1. For any non-empty data set, the mean is between the minimum and maximum values of the data, inclusive.
+
+2. For a single-element data set, the mean is exactly that element.
+
+3. For a data set where all values are equal to the same value, the mean is that value.
+
+4. Adding a constant to every data point increases the mean by that same constant.
+
+5. Multiplying every data point by a constant multiplies the mean by that same constant.

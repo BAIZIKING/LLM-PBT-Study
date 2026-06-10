@@ -1,0 +1,60 @@
+from hypothesis import given, strategies as st
+import zlib
+
+UINT32_MIN = 0
+UINT32_MAX = 2**32 - 1
+
+
+@given(st.data())
+def test_zlib_adler32_result_is_unsigned_32_bit_integer(data):
+    payload = data.draw(st.binary(max_size=4096))
+    value = data.draw(st.integers(min_value=UINT32_MIN, max_value=UINT32_MAX))
+
+    result = zlib.adler32(payload, value)
+
+    assert isinstance(result, int)
+    assert UINT32_MIN <= result <= UINT32_MAX
+
+
+@given(st.data())
+def test_zlib_adler32_is_deterministic(data):
+    payload = data.draw(st.binary(max_size=4096))
+    value = data.draw(st.integers(min_value=UINT32_MIN, max_value=UINT32_MAX))
+
+    result_1 = zlib.adler32(payload, value)
+    result_2 = zlib.adler32(payload, value)
+
+    assert result_1 == result_2
+
+
+@given(st.data())
+def test_zlib_adler32_default_starting_value_is_one(data):
+    payload = data.draw(st.binary(max_size=4096))
+
+    result_with_default = zlib.adler32(payload)
+    result_with_explicit_one = zlib.adler32(payload, 1)
+
+    assert result_with_default == result_with_explicit_one
+
+
+@given(st.data())
+def test_zlib_adler32_supports_incremental_checksumming(data):
+    first = data.draw(st.binary(max_size=2048))
+    second = data.draw(st.binary(max_size=2048))
+    value = data.draw(st.integers(min_value=UINT32_MIN, max_value=UINT32_MAX))
+
+    checksum_whole = zlib.adler32(first + second, value)
+    checksum_incremental = zlib.adler32(second, zlib.adler32(first, value))
+
+    assert checksum_whole == checksum_incremental
+
+
+@given(st.data())
+def test_zlib_adler32_empty_input_returns_starting_value(data):
+    value = data.draw(st.integers(min_value=UINT32_MIN, max_value=UINT32_MAX))
+
+    assert zlib.adler32(b"", value) == value
+    assert zlib.adler32(b"") == 1
+
+
+# End program

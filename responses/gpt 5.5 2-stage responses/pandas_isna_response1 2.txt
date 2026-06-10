@@ -1,0 +1,9 @@
+1. For any scalar input, `pandas.isna(obj)` returns a single boolean value.
+
+2. For any array-like input, the output has the same shape as the input, with one boolean result per input element.
+
+3. For `Series` and `DataFrame` inputs, the output preserves the input type, index, columns, and shape, but contains boolean values.
+
+4. Values considered missing, such as `None`, `np.nan`, `pd.NA`, and `pd.NaT`, are marked `True`; non-missing values such as ordinary numbers, strings, and valid datetimes are marked `False`.
+
+5. For any valid input, `pandas.isna(obj)` is the elementwise boolean inverse of `pandas.notna(obj)`.

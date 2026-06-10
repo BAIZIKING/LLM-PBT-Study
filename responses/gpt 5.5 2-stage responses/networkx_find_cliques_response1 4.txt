@@ -1,0 +1,9 @@
+1. Every returned clique is a list of distinct nodes from `G`.
+
+2. Every returned clique is complete: for every pair of distinct nodes in the clique, an edge exists between them in `G`.
+
+3. Every returned clique is maximal in `G`: no node outside the clique can be added while preserving completeness.
+
+4. No maximal clique is returned more than once, ignoring the order of nodes within each clique and the order of cliques yielded.
+
+5. If `nodes` is provided, every returned clique contains all nodes in `nodes`; conversely, only maximal cliques containing all of those nodes are returned.

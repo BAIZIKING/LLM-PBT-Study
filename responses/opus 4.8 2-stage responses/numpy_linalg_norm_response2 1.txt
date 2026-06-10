@@ -1,0 +1,184 @@
+```python
+from hypothesis import given, strategies as st, assume, settings
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# Strategy for finite floats with bounded magnitude to avoid overflow
+def safe_floats(min_value=-1e6, max_value=1e6):
+    return st.floats(
+        min_value=min_value,
+        max_value=max_value,
+        allow_nan=False,
+        allow_infinity=False,
+        width=64,
+    )
+
+# Strategy for 1-D vectors (real valued, bounded)
+def vector_strategy(min_size=1, max_size=20):
+    return hnp.arrays(
+        dtype=np.float64,
+        shape=st.integers(min_value=min_size, max_value=max_size),
+        elements=safe_floats(-1e3, 1e3),
+    )
+
+# Strategy for 2-D matrices (real valued, bounded)
+def matrix_strategy(min_dim=1, max_dim=8):
+    return hnp.arrays(
+        dtype=np.float64,
+        shape=st.tuples(
+            st.integers(min_value=min_dim, max_value=max_dim),
+            st.integers(min_value=min_dim, max_value=max_dim),
+        ),
+        elements=safe_floats(-1e3, 1e3),
+    )
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_linalg_norm_property():
+    # ------------------------------------------------------------------
+    # Property 1: Non-negativity
+    # For genuine norms on real input, the result is always >= 0.
+    # ------------------------------------------------------------------
+    data = st.data().example  # placeholder; real draws happen below
+
+    # Use the passed-in data object instead.
+    pass
+
+
+@given(st.data())
+@settings(max_examples=300)
+def test_non_negativity():
+    # Property 1: Non-negativity for genuine norms.
+    @given(st.nothing())
+    def _inner():
+        pass
+    # implemented below using the data fixture
+    pass
+```
+
+Let me rewrite this properly as a single cohesive test following the required format:
+
+```python
+from hypothesis import given, strategies as st, assume, settings
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+
+@given(st.data())
+@settings(max_examples=300, deadline=None)
+def test_numpy_linalg_norm_property(data):
+    # -------------------- Strategy helpers --------------------
+    def safe_floats(lo=-1e3, hi=1e3):
+        return st.floats(min_value=lo, max_value=hi,
+                         allow_nan=False, allow_infinity=False, width=64)
+
+    vector = hnp.arrays(
+        dtype=np.float64,
+        shape=st.integers(min_value=1, max_value=20),
+        elements=safe_floats(),
+    )
+    matrix = hnp.arrays(
+        dtype=np.float64,
+        shape=st.tuples(st.integers(1, 8), st.integers(1, 8)),
+        elements=safe_floats(),
+    )
+
+    # "Genuine norm" orders that satisfy non-negativity / homogeneity / triangle ineq.
+    vector_norm_ords = st.sampled_from([None, 1, 2, np.inf])
+    matrix_norm_ords = st.sampled_from([None, 'fro', 'nuc', 1, 2, np.inf])
+
+    # ============================================================
+    # Property 1: Non-negativity
+    # ============================================================
+    x = data.draw(st.one_of(vector, matrix), label="x_nonneg")
+    if x.ndim == 1:
+        ordv = data.draw(vector_norm_ords, label="ord_nonneg")
+    else:
+        ordv = data.draw(matrix_norm_ords, label="ord_nonneg")
+    n = np.linalg.norm(x, ord=ordv)
+    assert n >= 0.0, f"norm should be non-negative, got {n}"
+
+    # ============================================================
+    # Property 2: Zero input gives zero norm; nonzero gives positive
+    # ============================================================
+    zero_shape = data.draw(
+        st.one_of(
+            st.integers(1, 20),
+            st.tuples(st.integers(1, 8), st.integers(1, 8)),
+        ),
+        label="zero_shape",
+    )
+    z = np.zeros(zero_shape, dtype=np.float64)
+    if z.ndim == 1:
+        ordz = data.draw(vector_norm_ords, label="ord_zero")
+    else:
+        ordz = data.draw(matrix_norm_ords, label="ord_zero")
+    assert np.linalg.norm(z, ord=ordz) == 0.0
+
+    # Nonzero -> strictly positive
+    if x.size > 0 and np.any(x != 0):
+        assert np.linalg.norm(x, ord=ordv) > 0.0
+
+    # ============================================================
+    # Property 3: Absolute homogeneity:  norm(c*x) == |c| * norm(x)
+    # ============================================================
+    xh = data.draw(st.one_of(vector, matrix), label="x_homog")
+    c = data.draw(safe_floats(-100.0, 100.0), label="scalar_c")
+    if xh.ndim == 1:
+        ordh = data.draw(vector_norm_ords, label="ord_homog")
+    else:
+        ordh = data.draw(matrix_norm_ords, label="ord_homog")
+    lhs = np.linalg.norm(c * xh, ord=ordh)
+    rhs = abs(c) * np.linalg.norm(xh, ord=ordh)
+    assert np.allclose(lhs, rhs, rtol=1e-6, atol=1e-6), \
+        f"homogeneity failed: {lhs} vs {rhs}"
+
+    # ============================================================
+    # Property 4: Triangle inequality:  norm(x+y) <= norm(x)+norm(y)
+    # ============================================================
+    is_vec = data.draw(st.booleans(), label="tri_is_vec")
+    if is_vec:
+        size = data.draw(st.integers(1, 20), label="tri_size")
+        shp = (size,)
+        ordt = data.draw(vector_norm_ords, label="ord_tri")
+    else:
+        r = data.draw(st.integers(1, 8), label="tri_r")
+        col = data.draw(st.integers(1, 8), label="tri_c")
+        shp = (r, col)
+        ordt = data.draw(matrix_norm_ords, label="ord_tri")
+    xt = data.draw(hnp.arrays(np.float64, shp, elements=safe_floats()),
+                   label="xt")
+    yt = data.draw(hnp.arrays(np.float64, shp, elements=safe_floats()),
+                   label="yt")
+    n_sum = np.linalg.norm(xt + yt, ord=ordt)
+    n_parts = np.linalg.norm(xt, ord=ordt) + np.linalg.norm(yt, ord=ordt)
+    assert n_sum <= n_parts + 1e-6 * (1 + n_parts), \
+        f"triangle inequality failed: {n_sum} > {n_parts}"
+
+    # ============================================================
+    # Property 5: Default == 2-norm of ravel; keepdims shape & value
+    # ============================================================
+    xk = data.draw(st.one_of(vector, matrix), label="x_keep")
+
+    # default (ord=None, axis=None) equals 2-norm of raveled array
+    default_norm = np.linalg.norm(xk)
+    ravel_norm = np.linalg.norm(xk.ravel())
+    assert np.allclose(default_norm, ravel_norm, rtol=1e-9, atol=1e-9)
+
+    # keepdims: shape has normed axes reduced to size 1, values match
+    if xk.ndim == 1:
+        axis = 0
+    else:
+        axis = data.draw(st.sampled_from([0, 1]), label="keep_axis")
+    res_keep = np.linalg.norm(xk, axis=axis, keepdims=True)
+    res_nokeep = np.linalg.norm(xk, axis=axis, keepdims=False)
+
+    expected_shape = list(xk.shape)
+    expected_shape[axis] = 1
+    assert res_keep.shape == tuple(expected_shape), \
+        f"keepdims shape {res_keep.shape} != {tuple(expected_shape)}"
+    assert np.allclose(np.squeeze(res_keep, axis=axis), res_nokeep,
+                       rtol=1e-9, atol=1e-9)
+# End program
+```

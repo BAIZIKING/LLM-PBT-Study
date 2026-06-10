@@ -1,0 +1,123 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate small random Graph/DiGraph/MultiGraph/MultiDiGraph instances with
+# isolated nodes, self-loops, parallel edges, missing/present numeric edge weights,
+# weight=None or a named edge attribute, and nbunch=None/single-node/iterable forms.
+# Properties: degree(G, nbunch, weight) should report exactly the independently
+# computed weighted or unweighted degree; nbunch=None covers all nodes, a single
+# node returns one number, and iterable nbunch returns degrees only for nodes in G.
+@given(st.data())
+def test_networkx_degree(data):
+    node_strategy = st.one_of(
+        st.integers(min_value=-3, max_value=3),
+        st.text(min_size=0, max_size=3),
+    )
+    attr_names = ["w", "capacity", "other"]
+    edge_attr_strategy = st.dictionaries(
+        keys=st.sampled_from(attr_names),
+        values=st.integers(min_value=-10, max_value=10),
+        max_size=len(attr_names),
+    )
+
+    graph_cls = data.draw(
+        st.sampled_from([nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]),
+        label="graph_cls",
+    )
+    nodes = data.draw(
+        st.lists(node_strategy, unique=True, max_size=7),
+        label="nodes",
+    )
+
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+
+    if nodes:
+        edges = data.draw(
+            st.lists(
+                st.tuples(
+                    st.sampled_from(nodes),
+                    st.sampled_from(nodes),
+                    edge_attr_strategy,
+                ),
+                max_size=15,
+            ),
+            label="edges",
+        )
+        for u, v, attrs in edges:
+            G.add_edge(u, v, **attrs)
+
+    weight = data.draw(
+        st.one_of(st.none(), st.sampled_from(attr_names + ["missing_weight"])),
+        label="weight",
+    )
+
+    nbunch_mode = data.draw(
+        st.sampled_from(["none", "iterable"] + (["single"] if nodes else [])),
+        label="nbunch_mode",
+    )
+
+    if nbunch_mode == "none":
+        nbunch = None
+    elif nbunch_mode == "single":
+        nbunch = data.draw(st.sampled_from(nodes), label="single_nbunch")
+    else:
+        chosen_nodes = (
+            data.draw(
+                st.lists(st.sampled_from(nodes), unique=True, max_size=len(nodes)),
+                label="iterable_existing_nodes",
+            )
+            if nodes
+            else []
+        )
+        absent_nodes = data.draw(
+            st.lists(
+                st.tuples(st.just("__absent_node__"), st.integers(0, 3)),
+                unique=True,
+                max_size=2,
+            ),
+            label="iterable_absent_nodes",
+        )
+        iterable_nodes = chosen_nodes + absent_nodes
+        container = data.draw(st.sampled_from(["list", "tuple", "set"]), label="container")
+        if container == "list":
+            nbunch = list(iterable_nodes)
+        elif container == "tuple":
+            nbunch = tuple(iterable_nodes)
+        else:
+            nbunch = set(iterable_nodes)
+
+    def manual_degree(node):
+        total = 0
+
+        if G.is_multigraph():
+            edge_iter = ((u, v, attrs) for u, v, _key, attrs in G.edges(keys=True, data=True))
+        else:
+            edge_iter = G.edges(data=True)
+
+        for u, v, attrs in edge_iter:
+            value = 1 if weight is None else attrs.get(weight, 1)
+
+            if G.is_directed():
+                if u == node:
+                    total += value
+                if v == node:
+                    total += value
+            else:
+                if u == node and v == node:
+                    total += 2 * value
+                elif u == node or v == node:
+                    total += value
+
+        return total
+
+    result = nx.degree(G, nbunch=nbunch, weight=weight)
+
+    if nbunch_mode == "single":
+        assert result == manual_degree(nbunch)
+    else:
+        actual = dict(result)
+        expected_nodes = list(G.nodes) if nbunch is None else [n for n in nbunch if n in G]
+        expected = {n: manual_degree(n) for n in expected_nodes}
+        assert actual == expected
+# End program

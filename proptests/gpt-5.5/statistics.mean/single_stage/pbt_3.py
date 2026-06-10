@@ -1,0 +1,91 @@
+from hypothesis import given, strategies as st
+import math
+import statistics
+from decimal import Decimal as D
+from fractions import Fraction as F
+
+# Summary: Generate homogeneous int, float, Fraction, or Decimal iterables, including empty inputs, singleton inputs, repeated values, negative values, and different iterable shapes: list, tuple, and iterator.
+@given(st.data())
+def test_statistics_mean(data):
+    family = data.draw(st.sampled_from(["int", "float", "fraction", "decimal"]))
+    container = data.draw(st.sampled_from(["list", "tuple", "iterator"]))
+
+    if family == "int":
+        values = data.draw(st.lists(st.integers(min_value=-10**6, max_value=10**6), max_size=20))
+    elif family == "float":
+        values = data.draw(
+            st.lists(
+                st.floats(
+                    min_value=-10**6,
+                    max_value=10**6,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=32,
+                ),
+                max_size=20,
+            )
+        )
+    elif family == "fraction":
+        values = data.draw(
+            st.lists(
+                st.fractions(
+                    min_value=F(-10**6, 1),
+                    max_value=F(10**6, 1),
+                    max_denominator=1000,
+                ),
+                max_size=20,
+            )
+        )
+    else:
+        values = data.draw(
+            st.lists(
+                st.decimals(
+                    min_value=D("-1000000"),
+                    max_value=D("1000000"),
+                    places=3,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                max_size=20,
+            )
+        )
+
+    if container == "list":
+        input_data = list(values)
+    elif container == "tuple":
+        input_data = tuple(values)
+    else:
+        input_data = iter(values)
+
+    # Property 1: empty data raises StatisticsError.
+    if not values:
+        try:
+            statistics.mean(input_data)
+        except statistics.StatisticsError:
+            return
+        assert False, "statistics.mean() should raise StatisticsError for empty data"
+
+    result = statistics.mean(input_data)
+
+    # Property 2: for non-empty data, mean is the arithmetic sum divided by count.
+    if family == "int":
+        expected = sum(values) / len(values)
+        assert result == expected
+    elif family == "float":
+        expected = math.fsum(values) / len(values)
+        assert math.isclose(result, expected, rel_tol=1e-12, abs_tol=1e-12)
+    elif family == "fraction":
+        expected = sum(values, F(0, 1)) / len(values)
+        assert result == expected
+    else:
+        expected = sum(values, D(0)) / D(len(values))
+        assert result == expected
+
+    # Property 3: as a measure of central location, the mean lies between min and max.
+    assert min(values) <= result <= max(values)
+
+    # Property 4: a singleton input has that single value as its mean.
+    if len(values) == 1:
+        assert result == values[0]
+
+# End program

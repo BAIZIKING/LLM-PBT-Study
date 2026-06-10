@@ -1,0 +1,9 @@
+1. For any valid input, the returned norm is always non-negative.
+
+2. For vector norms with `ord >= 1`, scaling the input by a scalar `c` scales the result by `abs(c)`: `norm(c * x, ord) == abs(c) * norm(x, ord)`.
+
+3. For vector norms with `ord >= 1`, the triangle inequality holds: `norm(x + y, ord) <= norm(x, ord) + norm(y, ord)` for compatible inputs.
+
+4. When `ord=None` and `axis=None`, the result equals the Euclidean norm of `x.ravel()`: `sqrt(sum(abs(x) ** 2))`.
+
+5. When `keepdims=True`, the axes reduced by `axis` remain in the output with size one, so the output is broadcast-compatible with the original input.

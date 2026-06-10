@@ -1,0 +1,63 @@
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta
+import math
+
+# Summary: Generate finite POSIX timestamps including epoch-adjacent values, fractional seconds, negative values, and 32-bit boundary cases; generate tz as either None or fixed-offset tzinfo instances. Check that successful calls return naive datetimes when tz is None, aware datetimes in the requested timezone otherwise, and round-trip back to the same POSIX timestamp within microsecond precision; documented platform range failures may raise OverflowError or OSError.
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp_strategy = st.one_of(
+        st.sampled_from([
+            0,
+            0.0,
+            -0.0,
+            1,
+            -1,
+            1.5,
+            -1.5,
+            999999.999999,
+            2_147_483_647,
+            2_147_483_647.999999,
+            2_147_483_648,
+            -2_147_483_648,
+        ]),
+        st.integers(min_value=-2_147_483_648, max_value=2_147_483_648),
+        st.floats(
+            min_value=-2_147_483_648,
+            max_value=2_147_483_648,
+            allow_nan=False,
+            allow_infinity=False,
+            width=64,
+        ),
+    )
+
+    tz_strategy = st.one_of(
+        st.none(),
+        st.builds(
+            lambda minutes: timezone(timedelta(minutes=minutes)),
+            st.integers(min_value=-(23 * 60 + 59), max_value=23 * 60 + 59),
+        ),
+    )
+
+    timestamp = data.draw(timestamp_strategy, label="timestamp")
+    tz = data.draw(tz_strategy, label="tz")
+
+    try:
+        result = datetime.fromtimestamp(timestamp, tz=tz)
+    except (OverflowError, OSError):
+        return
+
+    assert isinstance(result, datetime)
+
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is tz
+
+    assert result.fold in (0, 1)
+    assert math.isclose(
+        result.timestamp(),
+        float(timestamp),
+        rel_tol=0.0,
+        abs_tol=1e-6,
+    )
+# End program

@@ -1,0 +1,9 @@
+1. The result is ordered lexicographically by the values in `by`, respecting `axis`, `ascending`, and any vectorized `key` transformation.
+
+2. Missing values in the sort keys appear only at the beginning when `na_position="first"` and only at the end when `na_position="last"`.
+
+3. Sorting does not add, remove, or alter data values: the result is a permutation of the original rows when `axis=0`, or a permutation of the original columns when `axis=1`.
+
+4. When `ignore_index=True`, the sorted axis is relabeled as `0, 1, ..., n-1`; when `ignore_index=False`, the original labels are preserved and permuted with the data.
+
+5. If `inplace=True`, the function returns `None` and the original DataFrame is modified to match the result that would have been returned with `inplace=False`.

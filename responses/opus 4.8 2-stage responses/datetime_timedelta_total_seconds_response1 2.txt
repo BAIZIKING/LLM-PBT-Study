@@ -1,0 +1,11 @@
+Here are five properties of the output of `timedelta.total_seconds()` suitable for property-based testing:
+
+1. **Type consistency**: The output is always a `float`, regardless of the input timedelta.
+
+2. **Equivalence to division**: The output equals `td / timedelta(seconds=1)`, meaning it is mathematically consistent with dividing the duration by a one-second timedelta.
+
+3. **Sign correspondence**: The sign of the output matches the sign of the timedelta — a positive duration yields a positive value, a negative duration yields a negative value, and a zero duration yields `0.0`.
+
+4. **Component reconstruction**: The output equals the sum of the timedelta's components converted to seconds, i.e. `days * 86400 + seconds + microseconds / 1_000_000`.
+
+5. **Negation symmetry**: Negating the timedelta negates the output, i.e. `(-td).total_seconds() == -td.total_seconds()`.

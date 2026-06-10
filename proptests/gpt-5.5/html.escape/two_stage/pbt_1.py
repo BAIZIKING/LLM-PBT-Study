@@ -1,0 +1,79 @@
+from hypothesis import given, strategies as st
+import html
+
+TEXT = st.text(max_size=1000)
+
+
+@given(st.data())
+def test_html_escape_returns_string(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    result = html.escape(s, quote=quote)
+
+    assert isinstance(result, str)
+
+
+@given(st.data())
+def test_html_escape_removes_unsafe_literal_characters(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    result = html.escape(s, quote=quote)
+
+    assert "<" not in result
+    assert ">" not in result
+    if quote:
+        assert '"' not in result
+        assert "'" not in result
+
+
+@given(st.data())
+def test_html_escape_replaces_each_escapable_character_with_expected_entity(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    replacements = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+    }
+    if quote:
+        replacements.update({
+            '"': "&quot;",
+            "'": "&#x27;",
+        })
+
+    expected = "".join(replacements.get(ch, ch) for ch in s)
+
+    assert html.escape(s, quote=quote) == expected
+
+
+@given(st.data())
+def test_html_escape_output_length_matches_expected_expansion(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    expected_length = len(s)
+    expected_length += s.count("&") * 4
+    expected_length += s.count("<") * 3
+    expected_length += s.count(">") * 3
+    if quote:
+        expected_length += s.count('"') * 5
+        expected_length += s.count("'") * 4
+
+    assert len(html.escape(s, quote=quote)) == expected_length
+
+
+@given(st.data())
+def test_html_escape_is_compositional_over_concatenation(data):
+    left = data.draw(TEXT)
+    right = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    assert html.escape(left + right, quote=quote) == (
+        html.escape(left, quote=quote) + html.escape(right, quote=quote)
+    )
+
+
+# End program

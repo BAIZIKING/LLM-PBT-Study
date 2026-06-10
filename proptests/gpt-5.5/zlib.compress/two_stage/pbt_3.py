@@ -1,0 +1,88 @@
+from hypothesis import given, strategies as st
+import zlib
+
+valid_wbits = st.one_of(
+    st.integers(min_value=9, max_value=15),
+    st.integers(min_value=-15, max_value=-9),
+    st.integers(min_value=25, max_value=31),
+)
+
+levels = st.integers(min_value=-1, max_value=9)
+payloads = st.binary(max_size=10000)
+
+
+@given(st.data())
+def test_zlib_compress_returns_bytes(data):
+    payload = data.draw(payloads)
+    level = data.draw(levels)
+    wbits = data.draw(valid_wbits)
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert isinstance(compressed, bytes)
+
+
+@given(st.data())
+def test_zlib_compress_is_deterministic(data):
+    payload = data.draw(payloads)
+    level = data.draw(levels)
+    wbits = data.draw(valid_wbits)
+
+    compressed_once = zlib.compress(payload, level=level, wbits=wbits)
+    compressed_twice = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert compressed_once == compressed_twice
+
+
+@given(st.data())
+def test_zlib_compress_round_trips_with_matching_wbits(data):
+    payload = data.draw(payloads)
+    level = data.draw(levels)
+    wbits = data.draw(valid_wbits)
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+    decompressed = zlib.decompress(compressed, wbits=wbits)
+
+    assert decompressed == payload
+
+
+@given(st.data())
+def test_zlib_compress_positive_wbits_produces_valid_zlib_wrapper(data):
+    payload = data.draw(payloads)
+    level = data.draw(levels)
+    wbits = data.draw(st.integers(min_value=9, max_value=15))
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert len(compressed) >= 6
+    cmf = compressed[0]
+    flg = compressed[1]
+    assert cmf & 0x0F == 8
+    assert ((cmf >> 4) + 8) <= wbits
+    assert (cmf * 256 + flg) % 31 == 0
+    assert flg & 0x20 == 0
+
+    expected_adler32 = zlib.adler32(payload) & 0xFFFFFFFF
+    actual_adler32 = int.from_bytes(compressed[-4:], byteorder="big")
+    assert actual_adler32 == expected_adler32
+
+
+@given(st.data())
+def test_zlib_compress_gzip_wbits_produces_valid_gzip_wrapper(data):
+    payload = data.draw(payloads)
+    level = data.draw(levels)
+    wbits = data.draw(st.integers(min_value=25, max_value=31))
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert len(compressed) >= 18
+    assert compressed[:3] == b"\x1f\x8b\x08"
+
+    expected_crc32 = zlib.crc32(payload) & 0xFFFFFFFF
+    actual_crc32 = int.from_bytes(compressed[-8:-4], byteorder="little")
+    assert actual_crc32 == expected_crc32
+
+    expected_isize = len(payload) & 0xFFFFFFFF
+    actual_isize = int.from_bytes(compressed[-4:], byteorder="little")
+    assert actual_isize == expected_isize
+# End program

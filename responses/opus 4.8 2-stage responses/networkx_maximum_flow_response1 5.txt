@@ -1,0 +1,9 @@
+1. The flow_value returned equals the net outflow from the source node, i.e., the sum of flows on edges leaving the source minus the sum of flows on edges entering the source (as computed from flow_dict).
+
+2. The flow_value returned equals the net inflow into the sink node, i.e., the total flow arriving at the sink, computed from flow_dict.
+
+3. Flow conservation holds at every node other than the source and sink: the total flow into the node equals the total flow out of the node according to flow_dict.
+
+4. For every edge in the graph, the flow value in flow_dict does not exceed the edge's capacity (and is non-negative for directed graphs), respecting the capacity constraints.
+
+5. The flow_value and flow_dict are independent of the choice of flow_func: running maximum_flow with different valid flow algorithms yields the same maximum flow value (and equally valid, capacity-respecting flow dictionaries).

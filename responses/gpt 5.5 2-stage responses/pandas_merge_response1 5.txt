@@ -1,0 +1,9 @@
+1. For each join-key value tuple, the number of output rows matches the join semantics: matched keys produce the Cartesian product of matching left and right rows, while unmatched keys appear only for `left`, `right`, or `outer` joins as appropriate.
+
+2. The set of join keys in the output matches `how`: intersection for `inner`, left keys for `left`, right keys for `right`, union for `outer`, and all left/right row combinations for `cross`.
+
+3. Non-key columns from the left and right inputs are preserved unchanged in matched output rows, with overlapping non-key column names disambiguated according to `suffixes`.
+
+4. For `how="cross"`, the output has exactly `len(left) * len(right)` rows and contains every possible pairing of one left row with one right row.
+
+5. If `indicator=True` or a string name is provided, the indicator column correctly labels each output row as `"left_only"`, `"right_only"`, or `"both"` according to whether its merge key came from the left input, right input, or both.

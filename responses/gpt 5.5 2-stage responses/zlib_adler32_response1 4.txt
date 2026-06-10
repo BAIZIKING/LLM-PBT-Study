@@ -1,0 +1,9 @@
+1. The returned checksum is always an unsigned 32-bit integer, i.e. in the range `0` to `2**32 - 1`.
+
+2. The function is deterministic: calling `zlib.adler32(data, value)` multiple times with the same `data` and `value` always returns the same integer.
+
+3. Omitting `value` is equivalent to using the default starting value `1`: `zlib.adler32(data)` has the same output as `zlib.adler32(data, 1)`.
+
+4. The checksum can be computed incrementally: for any byte sequences `a` and `b`, `zlib.adler32(a + b, value)` equals `zlib.adler32(b, zlib.adler32(a, value))`.
+
+5. For empty input, the output is the starting value interpreted as an unsigned 32-bit checksum: `zlib.adler32(b"", value)` equals `value & 0xffffffff`.

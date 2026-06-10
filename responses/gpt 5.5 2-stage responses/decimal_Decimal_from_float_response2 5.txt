@@ -1,0 +1,73 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+
+@given(st.data())
+def test_decimal_Decimal_from_float_returns_decimal_property(data):
+    value = data.draw(
+        st.one_of(
+            st.integers(min_value=-(10**100), max_value=10**100),
+            st.floats(allow_nan=True, allow_infinity=True, width=64),
+        )
+    )
+
+    result = decimal.Decimal.from_float(value)
+
+    assert isinstance(result, decimal.Decimal)
+
+
+@given(st.data())
+def test_decimal_Decimal_from_float_integer_exact_property(data):
+    value = data.draw(st.integers(min_value=-(10**100), max_value=10**100))
+
+    result = decimal.Decimal.from_float(value)
+
+    assert result == decimal.Decimal(value)
+
+
+@given(st.data())
+def test_decimal_Decimal_from_float_finite_float_exact_property(data):
+    value = data.draw(
+        st.floats(allow_nan=False, allow_infinity=False, width=64)
+    )
+
+    result = decimal.Decimal.from_float(value)
+    numerator, denominator = value.as_integer_ratio()
+
+    with decimal.localcontext() as context:
+        context.prec = 2000
+        expected = decimal.Decimal(numerator) / decimal.Decimal(denominator)
+
+    assert result == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_from_float_sign_preserved_property(data):
+    value = data.draw(
+        st.floats(allow_nan=False, allow_infinity=False, width=64)
+    )
+
+    result = decimal.Decimal.from_float(value)
+
+    expected_sign = 1 if value.hex().startswith("-") else 0
+    assert result.as_tuple().sign == expected_sign
+
+
+@given(st.data())
+def test_decimal_Decimal_from_float_special_values_property(data):
+    value = data.draw(
+        st.sampled_from([float("nan"), float("inf"), float("-inf")])
+    )
+
+    result = decimal.Decimal.from_float(value)
+
+    if value != value:
+        assert result.is_nan()
+    elif value == float("inf"):
+        assert result == decimal.Decimal("Infinity")
+    else:
+        assert result == decimal.Decimal("-Infinity")
+
+
+# End program
+```

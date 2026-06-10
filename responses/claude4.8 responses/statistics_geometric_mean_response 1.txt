@@ -1,0 +1,82 @@
+# Generation Strategy
+
+To exercise `statistics.geometric_mean` thoroughly, I want to cover both the valid path and the error paths:
+
+1. **Valid inputs**: Lists of positive floats/ints. I'll use `st.floats` with `min_value` set to a small positive number (e.g., `1e-6`) and `max_value` bounded (e.g., `1e6`) to avoid overflow/precision issues, excluding NaN and infinity. I'll require at least one element (`min_size=1`).
+
+2. **Edge cases that trigger `StatisticsError`**:
+   - Empty data.
+   - Data containing a zero.
+   - Data containing a negative value.
+
+I'll generate one valid dataset and separately generate the three error-triggering datasets, so the single test can assert on all relevant behaviors.
+
+# Properties to Check
+
+Based on the documentation:
+
+1. **Valid positive data** → returns a float, and that float lies between the minimum and maximum of the inputs (a fundamental property of any mean / central tendency measure: `min(data) <= geometric_mean(data) <= max(data)`).
+2. **Known example** consistency: the geometric mean of a single value `x` should equal `x` (geometric mean of one element).
+3. **Empty data** → raises `StatisticsError`.
+4. **Data containing a zero** → raises `StatisticsError`.
+5. **Data containing a negative value** → raises `StatisticsError`.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+import math
+import pytest
+import statistics
+from statistics import StatisticsError
+
+# Summary: Generate lists of bounded positive finite floats for the valid path
+# (checking the result is a float bounded by min/max of inputs, and that a
+# single-element list returns that element). Separately generate error-path
+# datasets: empty lists, lists containing a zero, and lists containing a
+# negative value, asserting StatisticsError is raised in each case.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    positive = st.floats(
+        min_value=1e-6,
+        max_value=1e6,
+        allow_nan=False,
+        allow_infinity=False,
+    )
+
+    # --- Valid path: positive finite values ---
+    valid_data = data.draw(st.lists(positive, min_size=1))
+    result = statistics.geometric_mean(valid_data)
+    assert isinstance(result, float)
+    assert math.isfinite(result)
+    # The geometric mean is a measure of central tendency:
+    # it must lie between the min and max of the inputs (with tolerance).
+    lo, hi = min(valid_data), max(valid_data)
+    assert lo - 1e-6 <= result <= hi + 1e-6
+    # Geometric mean of a single value equals that value.
+    if len(valid_data) == 1:
+        assert math.isclose(result, valid_data[0], rel_tol=1e-9, abs_tol=1e-9)
+
+    # --- Error path: empty data ---
+    with pytest.raises(StatisticsError):
+        statistics.geometric_mean([])
+
+    # --- Error path: contains a zero ---
+    zero_data = data.draw(st.lists(positive, min_size=0, max_size=5))
+    zero_idx = data.draw(st.integers(min_value=0, max_value=len(zero_data)))
+    zero_data.insert(zero_idx, 0.0)
+    with pytest.raises(StatisticsError):
+        statistics.geometric_mean(zero_data)
+
+    # --- Error path: contains a negative value ---
+    neg_data = data.draw(st.lists(positive, min_size=0, max_size=5))
+    neg_value = data.draw(
+        st.floats(min_value=-1e6, max_value=-1e-6,
+                  allow_nan=False, allow_infinity=False)
+    )
+    neg_idx = data.draw(st.integers(min_value=0, max_value=len(neg_data)))
+    neg_data.insert(neg_idx, neg_value)
+    with pytest.raises(StatisticsError):
+        statistics.geometric_mean(neg_data)
+# End program
+```

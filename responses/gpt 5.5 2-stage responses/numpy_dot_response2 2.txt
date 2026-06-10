@@ -1,0 +1,172 @@
+```python
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _prod(shape):
+    total = 1
+    for size in shape:
+        total *= size
+    return total
+
+
+def _draw_int_array(data, shape, min_value=-20, max_value=20):
+    size = _prod(shape)
+    values = data.draw(
+        st.lists(
+            st.integers(min_value=min_value, max_value=max_value),
+            min_size=size,
+            max_size=size,
+        )
+    )
+    return numpy.array(values, dtype=numpy.int64).reshape(shape)
+
+
+def _small_complex():
+    return st.builds(
+        complex,
+        st.integers(min_value=-10, max_value=10),
+        st.integers(min_value=-10, max_value=10),
+    )
+
+
+@given(st.data())
+def test_numpy_dot_1d_inner_product_without_complex_conjugation(data):
+    length = data.draw(st.integers(min_value=1, max_value=8))
+    a = data.draw(st.lists(_small_complex(), min_size=length, max_size=length))
+    b = data.draw(st.lists(_small_complex(), min_size=length, max_size=length))
+
+    result = numpy.dot(a, b)
+    expected = sum(a[i] * b[i] for i in range(length))
+
+    assert numpy.isscalar(result)
+    assert result == expected
+
+
+@given(st.data())
+def test_numpy_dot_2d_is_matrix_multiplication(data):
+    rows = data.draw(st.integers(min_value=1, max_value=5))
+    shared = data.draw(st.integers(min_value=1, max_value=5))
+    cols = data.draw(st.integers(min_value=1, max_value=5))
+
+    a = _draw_int_array(data, (rows, shared), min_value=-10, max_value=10)
+    b = _draw_int_array(data, (shared, cols), min_value=-10, max_value=10)
+
+    result = numpy.dot(a, b)
+    expected = numpy.array(
+        [
+            [
+                sum(a[row, k] * b[k, col] for k in range(shared))
+                for col in range(cols)
+            ]
+            for row in range(rows)
+        ],
+        dtype=numpy.int64,
+    )
+
+    assert result.shape == (rows, cols)
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_dot_with_scalar_is_equivalent_to_multiply(data):
+    rank = data.draw(st.integers(min_value=0, max_value=2))
+    shape = tuple(
+        data.draw(
+            st.lists(
+                st.integers(min_value=1, max_value=5),
+                min_size=rank,
+                max_size=rank,
+            )
+        )
+    )
+
+    array = _draw_int_array(data, shape, min_value=-20, max_value=20)
+    scalar = numpy.array(data.draw(st.integers(min_value=-20, max_value=20)))
+
+    scalar_first = data.draw(st.booleans())
+    if scalar_first:
+        result = numpy.dot(scalar, array)
+        expected = numpy.multiply(scalar, array)
+    else:
+        result = numpy.dot(array, scalar)
+        expected = numpy.multiply(array, scalar)
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_dot_nd_sums_last_axis_of_a_and_second_to_last_axis_of_b(data):
+    i = data.draw(st.integers(min_value=1, max_value=4))
+    j = data.draw(st.integers(min_value=1, max_value=4))
+    k = data.draw(st.integers(min_value=1, max_value=4))
+    m = data.draw(st.integers(min_value=1, max_value=4))
+    shared = data.draw(st.integers(min_value=1, max_value=4))
+
+    a = _draw_int_array(data, (i, j, shared), min_value=-10, max_value=10)
+    b = _draw_int_array(data, (k, shared, m), min_value=-10, max_value=10)
+
+    result = numpy.dot(a, b)
+
+    ai = data.draw(st.integers(min_value=0, max_value=i - 1))
+    aj = data.draw(st.integers(min_value=0, max_value=j - 1))
+    bk = data.draw(st.integers(min_value=0, max_value=k - 1))
+    bm = data.draw(st.integers(min_value=0, max_value=m - 1))
+
+    expected_value = sum(a[ai, aj, s] * b[bk, s, bm] for s in range(shared))
+
+    assert result.shape == (i, j, k, m)
+    assert result[ai, aj, bk, bm] == expected_value
+
+
+@given(st.data())
+def test_numpy_dot_output_shape_and_valid_out_parameter(data):
+    rank_a = data.draw(st.integers(min_value=2, max_value=3))
+    rank_b = data.draw(st.integers(min_value=1, max_value=3))
+
+    a_prefix = tuple(
+        data.draw(
+            st.lists(
+                st.integers(min_value=1, max_value=4),
+                min_size=rank_a - 1,
+                max_size=rank_a - 1,
+            )
+        )
+    )
+    shared = data.draw(st.integers(min_value=1, max_value=4))
+    a_shape = a_prefix + (shared,)
+
+    if rank_b == 1:
+        b_shape = (shared,)
+        expected_shape = a_prefix
+    else:
+        b_prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=1, max_value=4),
+                    min_size=rank_b - 2,
+                    max_size=rank_b - 2,
+                )
+            )
+        )
+        b_last = data.draw(st.integers(min_value=1, max_value=4))
+        b_shape = b_prefix + (shared, b_last)
+        expected_shape = a_prefix + b_prefix + (b_last,)
+
+    a = _draw_int_array(data, a_shape, min_value=-10, max_value=10)
+    b = _draw_int_array(data, b_shape, min_value=-10, max_value=10)
+
+    expected = numpy.dot(a, b)
+    out = numpy.empty(expected_shape, dtype=expected.dtype, order="C")
+
+    returned = numpy.dot(a, b, out=out)
+
+    assert expected.shape == expected_shape
+    assert returned is out
+    assert out.flags.c_contiguous
+    assert out.dtype == expected.dtype
+    assert numpy.array_equal(out, expected)
+
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. The output never contains a raw `&` character that is not part of a valid HTML entity sequence (every `&` in the output begins a recognized escape like `&amp;`, `&lt;`, `&gt;`, `&quot;`, or `&#x27;`).
+
+2. The output never contains the raw characters `<` or `>`, regardless of the value of `quote`.
+
+3. When `quote` is True, the output never contains the raw characters `"` or `'`; when `quote` is False, the output may contain these characters unchanged (they are not escaped).
+
+4. If the input string contains none of the special characters (`&`, `<`, `>`, and—when `quote` is True—`"` and `'`), the output is identical to the input.
+
+5. The length of the output is always greater than or equal to the length of the input, since each escaped character is replaced by a longer entity sequence and all other characters are preserved.

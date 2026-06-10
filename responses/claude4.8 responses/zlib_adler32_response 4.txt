@@ -1,0 +1,95 @@
+# Strategy Explanation
+
+## Input Generation Strategy
+
+The `zlib.adler32` function takes two parameters:
+1. **`data`** (required): a bytes-like object
+2. **`value`** (optional): an integer starting value
+
+To generate a wide variety of inputs and edge cases:
+
+- **For `data`**: Use `st.binary()` to generate random byte sequences. I'll allow `min_size=0` to include the empty bytes edge case, and a reasonable `max_size` to include both small and larger inputs. This covers empty data, single bytes, and longer sequences with arbitrary byte values (0-255).
+
+- **For `value`**: Use `st.integers()` over the full unsigned 32-bit range (`0` to `2**32 - 1`) to cover edge cases like `0`, `1` (the default), and the maximum value. Since `adler32` accepts an unsigned 32-bit integer as the starting value, this range exercises boundary conditions.
+
+## Properties to Check
+
+Based on the API documentation, I can verify these properties:
+
+1. **Unsigned 32-bit result**: The result is "always unsigned" and a "32-bit integer", so the output must satisfy `0 <= result <= 2**32 - 1` and be of type `int`.
+
+2. **Determinism**: Computing the checksum on the same `data` (and same `value`) twice must yield identical results.
+
+3. **Running checksum / concatenation property**: "Passing in value allows computing a running checksum over the concatenation of several inputs." This means splitting `data` into two parts and feeding the checksum of the first part as the starting `value` for the second part must equal computing the checksum over the whole `data` in one pass.
+
+4. **Default value**: When `value` is omitted, the default starting value is `1`, so `adler32(data)` must equal `adler32(data, 1)`.
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random byte sequences (including empty) via st.binary() and
+# random unsigned 32-bit starting values via st.integers(0, 2**32 - 1). Use a
+# split point to test the running-checksum/concatenation property. We verify the
+# result is an unsigned 32-bit int, determinism, the default value of 1, and that
+# a running checksum over concatenated parts equals the checksum over the whole.
+@given(st.data())
+def test_zlib_adler32():
+    data = st.data().example() if False else None  # placeholder to satisfy format
+
+# End program
+```
+
+Let me provide the correct, properly structured test:
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random byte sequences (including empty) with st.binary() and
+# random unsigned 32-bit starting values with st.integers(0, 2**32 - 1). Draw a
+# split index to test the running-checksum/concatenation property. Verify: result
+# is an unsigned 32-bit int, determinism, the default starting value equals 1, and
+# that a running checksum over two concatenated parts matches the whole.
+@given(st.data())
+def test_zlib_adler32():
+    data = st.data().draw  # not used; real draws below
+
+# End program
+```
+
+I apologize for the confusion. Here is the final clean version following the format exactly:
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random byte sequences (including empty) with st.binary() and
+# random unsigned 32-bit starting values with st.integers(0, 2**32 - 1). Draw a
+# split index to test the running-checksum/concatenation property. Verify: result
+# is an unsigned 32-bit int, determinism, the default starting value equals 1, and
+# that a running checksum over two concatenated parts matches the whole.
+@given(st.data())
+def test_zlib_adler32(data):
+    payload = data.draw(st.binary(min_size=0, max_size=1024))
+    value = data.draw(st.integers(min_value=0, max_value=2**32 - 1))
+
+    result = zlib.adler32(payload, value)
+
+    # Property 1: result is an unsigned 32-bit integer
+    assert isinstance(result, int)
+    assert 0 <= result <= 2**32 - 1
+
+    # Property 2: determinism
+    assert zlib.adler32(payload, value) == result
+
+    # Property 3: default starting value is 1
+    assert zlib.adler32(payload) == zlib.adler32(payload, 1)
+
+    # Property 4: running checksum over concatenated inputs
+    split = data.draw(st.integers(min_value=0, max_value=len(payload)))
+    part1, part2 = payload[:split], payload[split:]
+    running = zlib.adler32(part2, zlib.adler32(part1, value))
+    assert running == result
+# End program
+```

@@ -1,0 +1,9 @@
+1. Each clique returned is a complete subgraph of G, meaning every pair of distinct nodes within a returned clique is connected by an edge in G.
+
+2. Each returned clique is maximal, meaning no node outside the clique can be added while keeping it a complete subgraph (no returned clique is a proper subset of another complete subgraph).
+
+3. Every node in each returned clique is a valid node of G, and (ignoring self-loops and parallel edges) every node of G appears in at least one returned clique.
+
+4. When a `nodes` argument is provided and forms a valid clique, every returned clique contains all of the nodes in `nodes`; if `nodes` is not itself a clique, a ValueError is raised.
+
+5. The collection of returned cliques contains no duplicates (each maximal clique appears exactly once, regardless of node ordering within cliques).

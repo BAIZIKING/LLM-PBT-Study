@@ -1,0 +1,9 @@
+1. The exponent of the result is always equal to the exponent of the second operand (`exp`), provided no error condition (e.g., InvalidOperation) is raised.
+
+2. The result is numerically equal to the first operand rounded to the precision implied by `exp`'s exponent; in particular, if the first operand already has an exponent greater than or equal to `exp`'s exponent and fits within precision, the result equals the first operand in value.
+
+3. The absolute difference between the result and the original first operand is at most one unit in the last place of `exp` (i.e., bounded by the magnitude of `exp`'s exponent), reflecting that only rounding up to the target exponent occurs.
+
+4. An InvalidOperation is signaled whenever the coefficient length of the quantized result would exceed the context's precision, or whenever the resulting exponent would be greater than Emax or less than Etiny().
+
+5. The operation never signals Underflow, even when the result is subnormal and inexact (i.e., quantize succeeds on subnormal results that other operations might flag).

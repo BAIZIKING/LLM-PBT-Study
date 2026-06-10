@@ -1,0 +1,193 @@
+from hypothesis import given, strategies as st
+from dateutil import parser, tz
+from datetime import date, datetime, time, timedelta
+import io
+
+# Summary: Generate valid ISO-8601 strings across calendar dates, reduced dates,
+# ISO week dates, basic/extended forms, optional times, fractional seconds using
+# "." or ",", 24:00 midnight rollover, optional timezone offsets, and either a
+# direct string or stream input. Check that parsing returns the expected datetime,
+# unspecified fields default to their lowest value, timezone offsets match, UTC
+# offsets normalize to tzutc, and stream/string inputs behave equivalently.
+@given(st.data())
+def test_dateutil_parser_isoparse(data):
+    date_kind = data.draw(
+        st.sampled_from([
+            "year",
+            "year_month_ext",
+            "year_month_basic",
+            "calendar_ext",
+            "calendar_basic",
+            "week_ext",
+            "week_basic",
+            "week_day_ext",
+            "week_day_basic",
+        ])
+    )
+
+    if date_kind == "year":
+        year = data.draw(st.integers(min_value=1, max_value=9999))
+        dt_str = f"{year:04d}"
+        expected_date = date(year, 1, 1)
+        complete_date = False
+
+    elif date_kind in {"year_month_ext", "year_month_basic"}:
+        year = data.draw(st.integers(min_value=1, max_value=9999))
+        month = data.draw(st.integers(min_value=1, max_value=12))
+        dt_str = f"{year:04d}-{month:02d}" if date_kind.endswith("ext") else f"{year:04d}{month:02d}"
+        expected_date = date(year, month, 1)
+        complete_date = False
+
+    else:
+        expected_date = data.draw(st.dates(min_value=date(1, 1, 1), max_value=date(9999, 12, 31)))
+        year, month, day = expected_date.year, expected_date.month, expected_date.day
+
+        if date_kind == "calendar_ext":
+            dt_str = f"{year:04d}-{month:02d}-{day:02d}"
+            complete_date = True
+
+        elif date_kind == "calendar_basic":
+            dt_str = f"{year:04d}{month:02d}{day:02d}"
+            complete_date = True
+
+        else:
+            iso_year, iso_week, iso_day = expected_date.isocalendar()
+
+            if date_kind == "week_ext":
+                dt_str = f"{iso_year:04d}-W{iso_week:02d}"
+                expected_date = date.fromisocalendar(iso_year, iso_week, 1)
+                complete_date = False
+
+            elif date_kind == "week_basic":
+                dt_str = f"{iso_year:04d}W{iso_week:02d}"
+                expected_date = date.fromisocalendar(iso_year, iso_week, 1)
+                complete_date = False
+
+            elif date_kind == "week_day_ext":
+                dt_str = f"{iso_year:04d}-W{iso_week:02d}-{iso_day}"
+                complete_date = True
+
+            else:
+                dt_str = f"{iso_year:04d}W{iso_week:02d}{iso_day}"
+                complete_date = True
+
+    include_time = complete_date and data.draw(st.booleans())
+
+    expected_hour = 0
+    expected_minute = 0
+    expected_second = 0
+    expected_microsecond = 0
+    expected_tz_offset = None
+
+    if include_time:
+        sep = data.draw(st.sampled_from(["T", " "]))
+
+        allow_24 = expected_date < date(9999, 12, 31)
+        hour = data.draw(st.integers(min_value=0, max_value=24 if allow_24 else 23))
+
+        if hour == 24:
+            minute = second = microsecond = 0
+            time_kind = data.draw(st.sampled_from(["hh", "hhmm_ext", "hhmm_basic", "hms_ext", "hms_basic", "frac"]))
+        else:
+            minute = data.draw(st.integers(min_value=0, max_value=59))
+            second = data.draw(st.integers(min_value=0, max_value=59))
+            microsecond = data.draw(st.integers(min_value=0, max_value=999999))
+            time_kind = data.draw(st.sampled_from(["hh", "hhmm_ext", "hhmm_basic", "hms_ext", "hms_basic", "frac"]))
+
+        if time_kind == "hh":
+            time_str = f"{hour:02d}"
+            minute = second = microsecond = 0
+
+        elif time_kind == "hhmm_ext":
+            time_str = f"{hour:02d}:{minute:02d}"
+            second = microsecond = 0
+
+        elif time_kind == "hhmm_basic":
+            time_str = f"{hour:02d}{minute:02d}"
+            second = microsecond = 0
+
+        elif time_kind == "hms_ext":
+            time_str = f"{hour:02d}:{minute:02d}:{second:02d}"
+            microsecond = 0
+
+        elif time_kind == "hms_basic":
+            time_str = f"{hour:02d}{minute:02d}{second:02d}"
+            microsecond = 0
+
+        else:
+            frac_len = data.draw(st.integers(min_value=1, max_value=6))
+            if hour == 24:
+                frac_value = 0
+            else:
+                frac_value = data.draw(st.integers(min_value=0, max_value=(10 ** frac_len) - 1))
+            frac_text = f"{frac_value:0{frac_len}d}"
+            decimal_sep = data.draw(st.sampled_from([".", ","]))
+            time_str = f"{hour:02d}:{minute:02d}:{second:02d}{decimal_sep}{frac_text}"
+            microsecond = frac_value * (10 ** (6 - frac_len))
+
+        tz_kind = data.draw(st.sampled_from(["none", "Z", "offset_h", "offset_hm_basic", "offset_hm_ext"]))
+
+        if tz_kind == "none":
+            tz_str = ""
+            expected_tz_offset = None
+
+        elif tz_kind == "Z":
+            tz_str = "Z"
+            expected_tz_offset = timedelta(0)
+
+        else:
+            sign = data.draw(st.sampled_from(["+", "-"]))
+            off_hour = data.draw(st.integers(min_value=0, max_value=23))
+            off_minute = 0 if tz_kind == "offset_h" else data.draw(st.integers(min_value=0, max_value=59))
+
+            if tz_kind == "offset_h":
+                tz_str = f"{sign}{off_hour:02d}"
+            elif tz_kind == "offset_hm_basic":
+                tz_str = f"{sign}{off_hour:02d}{off_minute:02d}"
+            else:
+                tz_str = f"{sign}{off_hour:02d}:{off_minute:02d}"
+
+            expected_tz_offset = timedelta(hours=off_hour, minutes=off_minute)
+            if sign == "-":
+                expected_tz_offset = -expected_tz_offset
+
+        dt_str = dt_str + sep + time_str + tz_str
+
+        if hour == 24:
+            expected_date = expected_date + timedelta(days=1)
+            expected_hour = 0
+        else:
+            expected_hour = hour
+
+        expected_minute = minute
+        expected_second = second
+        expected_microsecond = microsecond
+
+    expected_tzinfo = None if expected_tz_offset is None else tz.tzoffset(None, expected_tz_offset.total_seconds())
+    expected = datetime.combine(
+        expected_date,
+        time(expected_hour, expected_minute, expected_second, expected_microsecond, tzinfo=expected_tzinfo),
+    )
+
+    input_value = data.draw(st.sampled_from(["string", "stream"]))
+    input_value = dt_str if input_value == "string" else io.StringIO(dt_str)
+
+    actual = parser.isoparse(input_value)
+
+    assert actual == expected
+    assert actual.year == expected.year
+    assert actual.month == expected.month
+    assert actual.day == expected.day
+    assert actual.hour == expected.hour
+    assert actual.minute == expected.minute
+    assert actual.second == expected.second
+    assert actual.microsecond == expected.microsecond
+
+    if expected_tz_offset is None:
+        assert actual.tzinfo is None
+    else:
+        assert actual.utcoffset() == expected_tz_offset
+        if expected_tz_offset == timedelta(0):
+            assert actual.tzinfo is tz.tzutc()
+
+# End program

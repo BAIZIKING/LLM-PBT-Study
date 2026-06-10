@@ -1,0 +1,9 @@
+1. When `nbunch` is omitted, the output contains degree information for every node in `G` and no nodes outside `G`.
+
+2. For an unweighted graph, each reported degree equals the number of incident edges for that node, counting parallel edges separately and counting self-loops twice.
+
+3. When `weight` is provided, each reported degree equals the sum of the specified edge attribute over incident edges, with missing weight attributes treated as `1`, and self-loops contributing twice.
+
+4. When `nbunch` is a single node in `G`, the output is that node’s degree value; when `nbunch` is an iterable, the output includes only nodes from `nbunch` that are present in `G`.
+
+5. For the whole graph, the sum of all unweighted degrees equals twice the number of edges in `G`; for weighted degrees, the sum equals twice the total edge weight.

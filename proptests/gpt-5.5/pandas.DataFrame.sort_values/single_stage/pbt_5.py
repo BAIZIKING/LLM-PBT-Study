@@ -1,0 +1,213 @@
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+
+# Summary: Generate small numeric DataFrames with 1+ rows/columns and values including duplicates,
+# zeros, infinities, and NaNs. Randomize all documented sort_values parameters: by as a scalar
+# label or non-empty label list, axis as integer/string aliases, ascending as bool or matching
+# bool-list, inplace, kind, na_position, ignore_index, and key as None or vectorized numeric
+# transforms. Check API properties: return value respects inplace, shape/data are preserved as
+# a permutation along the sorted axis, ignore_index resets the sorted axis, the other axis is
+# unchanged, and adjacent sorted keys obey ascending/descending order with documented NaN placement.
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    n_rows = data.draw(st.integers(min_value=1, max_value=8), label="n_rows")
+    n_cols = data.draw(st.integers(min_value=1, max_value=6), label="n_cols")
+
+    value_strategy = st.one_of(
+        st.floats(allow_nan=False, allow_infinity=True, width=16),
+        st.just(np.nan),
+        st.just(0.0),
+        st.just(-0.0),
+    )
+
+    columns = [f"c{i}" for i in range(n_cols)]
+    frame_data = {
+        col: data.draw(
+            st.lists(value_strategy, min_size=n_rows, max_size=n_rows),
+            label=f"values_{col}",
+        )
+        for col in columns
+    }
+    df = pd.DataFrame(frame_data, index=pd.RangeIndex(n_rows))
+    original = df.copy(deep=True)
+
+    axis = data.draw(st.sampled_from([0, "index", 1, "columns"]), label="axis")
+    normalized_axis = 0 if axis in (0, "index") else 1
+
+    available_by_labels = columns if normalized_axis == 0 else list(df.index)
+
+    use_list_by = data.draw(st.booleans(), label="use_list_by")
+    if use_list_by:
+        by_list = data.draw(
+            st.lists(
+                st.sampled_from(available_by_labels),
+                min_size=1,
+                max_size=len(available_by_labels),
+                unique=True,
+            ),
+            label="by_list",
+        )
+        by = by_list
+    else:
+        by = data.draw(st.sampled_from(available_by_labels), label="by_scalar")
+        by_list = [by]
+
+    use_list_ascending = use_list_by and data.draw(
+        st.booleans(), label="use_list_ascending"
+    )
+    if use_list_ascending:
+        ascending = data.draw(
+            st.lists(st.booleans(), min_size=len(by_list), max_size=len(by_list)),
+            label="ascending_list",
+        )
+        ascending_flags = ascending
+    else:
+        ascending = data.draw(st.booleans(), label="ascending_scalar")
+        ascending_flags = [ascending] * len(by_list)
+
+    inplace = data.draw(st.booleans(), label="inplace")
+    kind = data.draw(
+        st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]),
+        label="kind",
+    )
+    na_position = data.draw(st.sampled_from(["first", "last"]), label="na_position")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    def identity_key(s):
+        return s
+
+    def negative_key(s):
+        return -s
+
+    def absolute_key(s):
+        return s.abs()
+
+    key = data.draw(
+        st.sampled_from([None, identity_key, negative_key, absolute_key]),
+        label="key",
+    )
+
+    target = df.copy(deep=True)
+    result_or_none = target.sort_values(
+        by=by,
+        axis=axis,
+        ascending=ascending,
+        inplace=inplace,
+        kind=kind,
+        na_position=na_position,
+        ignore_index=ignore_index,
+        key=key,
+    )
+
+    if inplace:
+        assert result_or_none is None
+        result = target
+    else:
+        assert isinstance(result_or_none, pd.DataFrame)
+        result = result_or_none
+        assert target.equals(original)
+
+    assert result.shape == original.shape
+
+    def canon_scalar(x):
+        return ("NA", None) if bool(pd.isna(x)) else ("VAL", float(x))
+
+    if normalized_axis == 0:
+        assert list(result.columns) == list(original.columns)
+
+        before_rows = sorted(
+            [
+                tuple(canon_scalar(v) for v in row)
+                for row in original.to_numpy(dtype=float)
+            ],
+            key=repr,
+        )
+        after_rows = sorted(
+            [
+                tuple(canon_scalar(v) for v in row)
+                for row in result.to_numpy(dtype=float)
+            ],
+            key=repr,
+        )
+        assert after_rows == before_rows
+
+        if ignore_index:
+            assert result.index.equals(pd.RangeIndex(n_rows))
+        else:
+            assert sorted(result.index.tolist()) == list(original.index)
+
+    else:
+        assert list(result.index) == list(original.index)
+
+        before_columns = sorted(
+            [
+                tuple(canon_scalar(v) for v in original[col].to_numpy(dtype=float))
+                for col in original.columns
+            ],
+            key=repr,
+        )
+        after_columns = sorted(
+            [
+                tuple(canon_scalar(v) for v in result[col].to_numpy(dtype=float))
+                for col in result.columns
+            ],
+            key=repr,
+        )
+        assert after_columns == before_columns
+
+        if ignore_index:
+            assert result.columns.equals(pd.RangeIndex(n_cols))
+        else:
+            assert sorted(result.columns.tolist()) == sorted(original.columns)
+
+    def compare_sorted_position(left, right, asc):
+        left_is_na = bool(pd.isna(left))
+        right_is_na = bool(pd.isna(right))
+
+        if left_is_na and right_is_na:
+            return 0
+        if left_is_na:
+            return -1 if na_position == "first" else 1
+        if right_is_na:
+            return 1 if na_position == "first" else -1
+
+        if left == right:
+            return 0
+
+        if asc:
+            return -1 if left < right else 1
+        return -1 if left > right else 1
+
+    transformed_key_values = []
+    for label in by_list:
+        if normalized_axis == 0:
+            series = result[label]
+        else:
+            series = result.loc[label]
+
+        transformed = key(series) if key is not None else series
+        transformed_key_values.append(list(transformed))
+
+    sorted_axis_length = result.shape[normalized_axis]
+    for i in range(sorted_axis_length - 1):
+        adjacent_pair_is_ordered = False
+
+        for key_values, asc in zip(transformed_key_values, ascending_flags):
+            cmp = compare_sorted_position(key_values[i], key_values[i + 1], asc)
+
+            if cmp < 0:
+                adjacent_pair_is_ordered = True
+                break
+
+            if cmp > 0:
+                raise AssertionError(
+                    "Adjacent positions violate documented sort order"
+                )
+
+        if not adjacent_pair_is_ordered:
+            assert all(
+                compare_sorted_position(key_values[i], key_values[i + 1], asc) == 0
+                for key_values, asc in zip(transformed_key_values, ascending_flags)
+            )
+# End program

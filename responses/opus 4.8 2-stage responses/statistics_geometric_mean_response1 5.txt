@@ -1,0 +1,9 @@
+1. The geometric mean of a dataset is always positive (greater than zero), since the input must contain only positive values.
+
+2. The geometric mean of a list of identical positive values equals that value (e.g., the geometric mean of [c, c, c] is c).
+
+3. The geometric mean lies between the minimum and maximum values of the input data (inclusive), i.e., min(data) ≤ geometric_mean(data) ≤ max(data).
+
+4. The geometric mean of a single-element dataset equals that element's value.
+
+5. Scaling every element of the data by a constant positive factor k scales the geometric mean by the same factor k (i.e., geometric_mean([k*x for x in data]) equals k * geometric_mean(data)).

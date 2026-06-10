@@ -1,0 +1,9 @@
+1. The mean of the data always lies between the minimum and maximum values of the data (inclusive).
+
+2. The mean of a list containing a single repeated value (or a single element) equals that value.
+
+3. Adding a constant c to every element of the data increases the mean by exactly c.
+
+4. Multiplying every element of the data by a constant c multiplies the mean by exactly c.
+
+5. The mean of the data multiplied by the number of data points equals the sum of the data.

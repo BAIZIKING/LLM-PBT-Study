@@ -1,0 +1,9 @@
+1. **Sum over all elements (axis=None):** When `axis=None`, the output is a scalar equal to the total sum of all elements in the input array, and it equals the sum computed by Python's built-in summation (within floating-point tolerance).
+
+2. **Shape reduction along axis:** When a specific `axis` (or tuple of axes) is given without `keepdims`, the output shape equals the input shape with the specified axis/axes removed; with `keepdims=True`, those axes are retained with size one (so the result broadcasts against the input).
+
+3. **Identity/empty case:** The sum of an empty array (or an all-`False` `where` mask) equals the neutral element 0 (plus the `initial` value if provided), e.g., `np.sum([])` is `0.0`.
+
+4. **Initial value additivity:** Passing `initial=k` produces a result that equals the sum computed without `initial` plus `k`, i.e., `sum(a, initial=k) == sum(a) + k`.
+
+5. **Where-mask consistency:** Summing with a boolean `where` mask yields the same result as summing only the elements where the mask is `True` (elements where the mask is `False` are excluded entirely).

@@ -1,0 +1,104 @@
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta
+from dateutil.parser import isoparse
+from dateutil import tz
+
+
+# Strategy producing valid ISO-8601 strings paired with metadata
+@st.composite
+def iso_strings(draw):
+    year = draw(st.integers(min_value=1, max_value=9999))
+    month = draw(st.integers(min_value=1, max_value=12))
+    # Use 28 as max day to avoid month-length issues
+    day = draw(st.integers(min_value=1, max_value=28))
+    hour = draw(st.integers(min_value=0, max_value=23))
+    minute = draw(st.integers(min_value=0, max_value=59))
+    second = draw(st.integers(min_value=0, max_value=59))
+    micro = draw(st.integers(min_value=0, max_value=999999))
+
+    # Decide on timezone info
+    tz_choice = draw(st.sampled_from(["none", "Z", "utc_offset", "offset"]))
+
+    s = f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}.{micro:06d}"
+
+    expected_tz_kind = "naive"
+    offset_minutes = 0
+    if tz_choice == "Z":
+        s += "Z"
+        expected_tz_kind = "utc"
+    elif tz_choice == "utc_offset":
+        s += "+00:00"
+        expected_tz_kind = "utc"
+    elif tz_choice == "offset":
+        sign = draw(st.sampled_from(["+", "-"]))
+        oh = draw(st.integers(min_value=0, max_value=23))
+        om = draw(st.integers(min_value=0, max_value=59))
+        if oh == 0 and om == 0:
+            # +00:00 maps to UTC; treat accordingly
+            expected_tz_kind = "utc"
+        else:
+            expected_tz_kind = "offset"
+        s += f"{sign}{oh:02d}:{om:02d}"
+        offset_minutes = (1 if sign == "+" else -1) * (oh * 60 + om)
+
+    return {
+        "string": s,
+        "expected_tz_kind": expected_tz_kind,
+        "offset_minutes": offset_minutes,
+        "components": (year, month, day, hour, minute, second, micro),
+    }
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_property(data):
+    info = data.draw(iso_strings())
+    s = info["string"]
+    result = isoparse(s)
+
+    # Property 1: output is always a datetime.datetime
+    assert isinstance(result, datetime)
+
+    # Property 2 & 3: tzinfo behavior
+    if info["expected_tz_kind"] == "naive":
+        assert result.tzinfo is None
+    elif info["expected_tz_kind"] == "utc":
+        assert result.tzinfo is not None
+        assert isinstance(result.tzinfo, tz.tzutc)
+        assert result.utcoffset() == timedelta(0)
+    elif info["expected_tz_kind"] == "offset":
+        assert result.tzinfo is not None
+        assert isinstance(result.tzinfo, tz.tzoffset)
+        assert result.utcoffset() == timedelta(minutes=info["offset_minutes"])
+
+    # Property 4: components default/parse correctly
+    year, month, day, hour, minute, second, micro = info["components"]
+    assert result.year == year
+    assert result.month == month
+    assert result.day == day
+    assert result.hour == hour
+    assert result.minute == minute
+    assert result.second == second
+    assert result.microsecond == micro
+
+    # Property 5: round-trip consistency
+    reparsed = isoparse(result.isoformat())
+    assert reparsed == result
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_defaults(data):
+    # Property 4 specifically: unspecified components default to lowest value
+    year = data.draw(st.integers(min_value=1, max_value=9999))
+    s = f"{year:04d}"
+    result = isoparse(s)
+
+    assert isinstance(result, datetime)
+    assert result.year == year
+    assert result.month == 1
+    assert result.day == 1
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+    assert result.tzinfo is None
+# End program

@@ -1,0 +1,111 @@
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+@given(st.data())
+def test_zlib_compress_returns_bytes(data):
+    input_data = data.draw(st.binary(max_size=8192))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),
+            st.integers(min_value=-15, max_value=-9),
+            st.integers(min_value=25, max_value=31),
+        )
+    )
+
+    compressed = zlib.compress(input_data, level=level, wbits=wbits)
+
+    assert isinstance(compressed, bytes)
+
+
+@given(st.data())
+def test_zlib_compress_round_trips_with_matching_wbits(data):
+    input_data = data.draw(st.binary(max_size=8192))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),
+            st.integers(min_value=-15, max_value=-9),
+            st.integers(min_value=25, max_value=31),
+        )
+    )
+
+    compressed = zlib.compress(input_data, level=level, wbits=wbits)
+    decompressed = zlib.decompress(compressed, wbits=wbits)
+
+    assert decompressed == input_data
+
+
+@given(st.data())
+def test_zlib_compress_is_deterministic(data):
+    input_data = data.draw(st.binary(max_size=8192))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),
+            st.integers(min_value=-15, max_value=-9),
+            st.integers(min_value=25, max_value=31),
+        )
+    )
+
+    compressed_once = zlib.compress(input_data, level=level, wbits=wbits)
+    compressed_twice = zlib.compress(input_data, level=level, wbits=wbits)
+
+    assert compressed_once == compressed_twice
+
+
+@given(st.data())
+def test_zlib_compress_output_format_matches_wbits(data):
+    input_data = data.draw(st.binary(max_size=8192))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),
+            st.integers(min_value=-15, max_value=-9),
+            st.integers(min_value=25, max_value=31),
+        )
+    )
+
+    compressed = zlib.compress(input_data, level=level, wbits=wbits)
+
+    if 9 <= wbits <= 15:
+        cmf = compressed[0]
+        flg = compressed[1]
+        trailer = compressed[-4:]
+
+        assert cmf & 0x0F == 8
+        assert ((cmf << 8) + flg) % 31 == 0
+        assert int.from_bytes(trailer, "big") == zlib.adler32(input_data) & 0xFFFFFFFF
+
+    elif -15 <= wbits <= -9:
+        zlib_wrapped = zlib.compress(input_data, level=level, wbits=abs(wbits))
+
+        assert compressed == zlib_wrapped[2:-4]
+
+    else:
+        trailer = compressed[-8:]
+
+        assert compressed[:2] == b"\x1f\x8b"
+        assert compressed[2] == 8
+        assert int.from_bytes(trailer[:4], "little") == zlib.crc32(input_data) & 0xFFFFFFFF
+        assert int.from_bytes(trailer[4:], "little") == len(input_data) & 0xFFFFFFFF
+
+
+@given(st.data())
+def test_zlib_compress_default_level_matches_level_six(data):
+    input_data = data.draw(st.binary(max_size=8192))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),
+            st.integers(min_value=-15, max_value=-9),
+            st.integers(min_value=25, max_value=31),
+        )
+    )
+
+    compressed_default = zlib.compress(input_data, level=-1, wbits=wbits)
+    compressed_level_six = zlib.compress(input_data, level=6, wbits=wbits)
+
+    assert compressed_default == compressed_level_six
+# End program
+```

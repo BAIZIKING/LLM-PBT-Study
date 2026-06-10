@@ -1,0 +1,122 @@
+```python
+from hypothesis import given, strategies as st
+import base64
+import struct
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+
+# Helper: build a MultiFernet with a primary key plus a few extra keys.
+def make_multifernet(num_extra=2):
+    keys = [Fernet(Fernet.generate_key()) for _ in range(num_extra + 1)]
+    return MultiFernet(keys), keys
+
+
+# Helper: extract the timestamp embedded in a Fernet token.
+# Fernet token layout (after url-safe base64 decode):
+#   version (1 byte) | timestamp (8 bytes, big-endian) | IV (16) | ciphertext | HMAC (32)
+def extract_timestamp(token):
+    raw = base64.urlsafe_b64decode(token)
+    return struct.unpack(">Q", raw[1:9])[0]
+
+
+# Property 1: The rotated token returned by rotate is always of type bytes.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_property():
+    data = st.data()  # placeholder; real data drawn below
+
+# End program
+```
+
+Wait — I need to provide the full suite strictly in the required single-function format. Let me rewrite properly.
+
+```python
+from hypothesis import given, strategies as st
+import base64
+import struct
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+
+def _make_multifernet(num_extra):
+    keys = [Fernet(Fernet.generate_key()) for _ in range(num_extra + 1)]
+    return MultiFernet(keys), keys
+
+
+def _extract_timestamp(token):
+    raw = base64.urlsafe_b64decode(token)
+    return struct.unpack(">Q", raw[1:9])[0]
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_property():
+    data = st.data
+
+    # --- Build a MultiFernet and an original token from a message ---
+    @given(
+        message=st.binary(min_size=0, max_size=4096),
+        num_extra=st.integers(min_value=0, max_value=4),
+    )
+    def _run(message, num_extra):
+        mf, keys = _make_multifernet(num_extra)
+        token = mf.encrypt(message)
+        rotated = mf.rotate(token)
+
+        # Property 1: rotated token is always of type bytes.
+        assert isinstance(rotated, bytes)
+
+        # Property 2: decrypting the rotated token yields the same plaintext.
+        assert mf.decrypt(rotated) == message
+
+        # Property 3: rotated token preserves the original timestamp.
+        assert _extract_timestamp(rotated) == _extract_timestamp(token)
+
+        # Property 4: rotated token is valid URL-safe base64.
+        decoded = base64.urlsafe_b64decode(rotated)
+        assert isinstance(decoded, bytes)
+        assert len(decoded) > 0
+
+    _run()
+
+    # --- Property 5a: non bytes/str input raises TypeError ---
+    @given(
+        bad=st.one_of(
+            st.integers(),
+            st.floats(allow_nan=False, allow_infinity=False),
+            st.lists(st.integers(), max_size=5),
+            st.none(),
+            st.booleans(),
+        ),
+        num_extra=st.integers(min_value=0, max_value=4),
+    )
+    def _run_typeerror(bad, num_extra):
+        mf, _ = _make_multifernet(num_extra)
+        with pytest.raises(TypeError):
+            mf.rotate(bad)
+
+    _run_typeerror()
+
+    # --- Property 5b: malformed/invalid token raises InvalidToken ---
+    @given(
+        garbage=st.binary(min_size=0, max_size=128),
+        num_extra=st.integers(min_value=0, max_value=4),
+    )
+    def _run_invalidtoken(garbage, num_extra):
+        mf, _ = _make_multifernet(num_extra)
+        # Encode garbage as url-safe base64 so it is bytes (passes type check)
+        # but is overwhelmingly unlikely to be a valid Fernet token.
+        bad_token = base64.urlsafe_b64encode(garbage)
+        try:
+            mf.rotate(bad_token)
+            # If by astronomically unlikely chance it succeeded, the result
+            # must at least be bytes.
+            # (No assertion failure here; valid rotation is acceptable.)
+        except InvalidToken:
+            pass
+        except TypeError:
+            # Should not happen for bytes input.
+            raise AssertionError("Unexpected TypeError for bytes token")
+
+    _run_invalidtoken()
+# End program
+```

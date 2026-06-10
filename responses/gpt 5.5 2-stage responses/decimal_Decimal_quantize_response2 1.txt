@@ -1,0 +1,92 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+
+ROUNDING_MODES = [
+    decimal.ROUND_CEILING,
+    decimal.ROUND_FLOOR,
+    decimal.ROUND_UP,
+    decimal.ROUND_DOWN,
+    decimal.ROUND_HALF_UP,
+    decimal.ROUND_HALF_DOWN,
+    decimal.ROUND_HALF_EVEN,
+    decimal.ROUND_05UP,
+]
+
+def _rounded_integer_for_quantize(n, source_exp, target_exp, rounding):
+    shift = source_exp - target_exp
+
+    if shift >= 0:
+        return n * (10 ** shift)
+
+    divisor = 10 ** (-shift)
+    sign = -1 if n < 0 else 1
+    quotient, remainder = divmod(abs(n), divisor)
+
+    if remainder == 0:
+        return sign * quotient
+
+    increment = False
+
+    if rounding == decimal.ROUND_DOWN:
+        increment = False
+    elif rounding == decimal.ROUND_UP:
+        increment = True
+    elif rounding == decimal.ROUND_FLOOR:
+        increment = sign < 0
+    elif rounding == decimal.ROUND_CEILING:
+        increment = sign > 0
+    elif rounding == decimal.ROUND_HALF_UP:
+        increment = 2 * remainder >= divisor
+    elif rounding == decimal.ROUND_HALF_DOWN:
+        increment = 2 * remainder > divisor
+    elif rounding == decimal.ROUND_HALF_EVEN:
+        increment = 2 * remainder > divisor or (
+            2 * remainder == divisor and quotient % 2 == 1
+        )
+    elif rounding == decimal.ROUND_05UP:
+        increment = quotient % 10 in (0, 5)
+
+    return sign * (quotient + int(increment))
+
+@given(st.data())
+def test_decimal_Decimal_quantize_property(data):
+    n = data.draw(st.integers(min_value=-(10 ** 12), max_value=10 ** 12))
+    source_exp = data.draw(st.integers(min_value=-12, max_value=12))
+    target_exp = data.draw(st.integers(min_value=-12, max_value=12))
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+
+    x = decimal.Decimal(n).scaleb(source_exp)
+    exp = decimal.Decimal(1).scaleb(target_exp)
+
+    ctx = decimal.Context(
+        prec=80,
+        rounding=rounding,
+        Emin=-50,
+        Emax=50,
+        traps=[]
+    )
+
+    result = x.quantize(exp, rounding=rounding, context=ctx)
+
+    assert result.as_tuple().exponent == exp.as_tuple().exponent
+
+    expected_int = _rounded_integer_for_quantize(
+        n,
+        source_exp,
+        target_exp,
+        rounding
+    )
+    expected = decimal.Decimal(expected_int).scaleb(target_exp)
+
+    assert result == expected
+
+    if target_exp <= source_exp:
+        assert result == x
+
+    result_using_context_rounding = x.quantize(exp, context=ctx)
+    assert result == result_using_context_rounding
+
+    assert ctx.Etiny() <= result.as_tuple().exponent <= ctx.Emax
+# End program
+```

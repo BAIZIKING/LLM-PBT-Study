@@ -1,0 +1,56 @@
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+UINT32_MAX = 2**32 - 1
+BYTES = st.binary(max_size=4096)
+CHECKSUM_VALUES = st.integers(min_value=0, max_value=UINT32_MAX)
+
+
+@given(st.data())
+def test_zlib_adler32_result_is_unsigned_32_bit_integer(data):
+    payload = data.draw(BYTES)
+    value = data.draw(CHECKSUM_VALUES)
+
+    result = zlib.adler32(payload, value)
+
+    assert isinstance(result, int)
+    assert 0 <= result <= UINT32_MAX
+
+
+@given(st.data())
+def test_zlib_adler32_default_value_is_one(data):
+    payload = data.draw(BYTES)
+
+    assert zlib.adler32(payload) == zlib.adler32(payload, 1)
+
+
+@given(st.data())
+def test_zlib_adler32_supports_running_checksum(data):
+    first = data.draw(BYTES)
+    second = data.draw(BYTES)
+    value = data.draw(CHECKSUM_VALUES)
+
+    checksum_whole = zlib.adler32(first + second, value)
+    checksum_running = zlib.adler32(second, zlib.adler32(first, value))
+
+    assert checksum_whole == checksum_running
+
+
+@given(st.data())
+def test_zlib_adler32_empty_input_preserves_starting_value(data):
+    value = data.draw(CHECKSUM_VALUES)
+
+    assert zlib.adler32(b"", value) == value
+
+
+@given(st.data())
+def test_zlib_adler32_is_deterministic(data):
+    payload = data.draw(BYTES)
+    value = data.draw(CHECKSUM_VALUES)
+
+    assert zlib.adler32(payload, value) == zlib.adler32(payload, value)
+
+
+# End program
+```

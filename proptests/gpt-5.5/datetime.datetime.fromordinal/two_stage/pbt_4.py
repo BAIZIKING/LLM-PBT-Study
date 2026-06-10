@@ -1,0 +1,24 @@
+from hypothesis import given, strategies as st
+import datetime
+
+@given(st.data())
+def test_datetime_datetime_fromordinal_property(data):
+    ordinal = data.draw(
+        st.integers(
+            min_value=1,
+            max_value=datetime.datetime.max.toordinal()
+        )
+    )
+
+    result = datetime.datetime.fromordinal(ordinal)
+
+    assert isinstance(result, datetime.datetime)
+    assert result.toordinal() == ordinal
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+    assert result.tzinfo is None
+    assert datetime.datetime(1, 1, 1) <= result <= datetime.datetime.max
+
+# End program

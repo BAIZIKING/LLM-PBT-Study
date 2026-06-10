@@ -1,0 +1,60 @@
+from hypothesis import given, strategies as st
+import datetime
+
+# Strategy for valid dates within the supported range of datetime.date
+date_strategy = st.dates(
+    min_value=datetime.date.min,
+    max_value=datetime.date.max,
+)
+
+
+@given(d=date_strategy)
+def test_isocalendar_named_tuple_structure(d):
+    # Property 1: output is a named tuple with components year, week, weekday
+    result = d.isocalendar()
+    assert hasattr(result, "year")
+    assert hasattr(result, "week")
+    assert hasattr(result, "weekday")
+    assert len(result) == 3
+    assert tuple(result) == (result.year, result.week, result.weekday)
+
+
+@given(d=date_strategy)
+def test_isocalendar_weekday_range(d):
+    # Property 2: weekday is always an integer between 1 and 7 inclusive
+    result = d.isocalendar()
+    assert isinstance(result.weekday, int)
+    assert 1 <= result.weekday <= 7
+
+
+@given(d=date_strategy)
+def test_isocalendar_week_range(d):
+    # Property 3: week is always an integer between 1 and 53 inclusive
+    result = d.isocalendar()
+    assert isinstance(result.week, int)
+    assert 1 <= result.week <= 53
+
+
+@given(d=date_strategy)
+def test_isocalendar_year_close_to_gregorian(d):
+    # Property 4: ISO year equals Gregorian year or differs by exactly one
+    result = d.isocalendar()
+    assert abs(result.year - d.year) <= 1
+
+
+@given(d=date_strategy)
+def test_isocalendar_weekday_cycle(d):
+    # Property 5: dates 7 days apart share weekday; consecutive days cycle 1..7
+    weekday = d.isocalendar().weekday
+
+    # Check date 7 days later (if within range) has same weekday
+    if d <= datetime.date.max - datetime.timedelta(days=7):
+        later = d + datetime.timedelta(days=7)
+        assert later.isocalendar().weekday == weekday
+
+    # Check next consecutive day cycles weekday (wrapping from 7 to 1)
+    if d < datetime.date.max:
+        next_day = d + datetime.timedelta(days=1)
+        expected = 1 if weekday == 7 else weekday + 1
+        assert next_day.isocalendar().weekday == expected
+# End program

@@ -1,0 +1,189 @@
+from hypothesis import given, strategies as st
+from datetime import date, datetime, timedelta
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate a mix of valid complete datetimes, date-only strings with defaults,
+# time-only strings with defaults, timezone strings with ignoretz/tzinfos, ambiguous
+# 3-integer dates using dayfirst/yearfirst, fuzzy strings, and clearly invalid dates.
+# Properties checked: successful parses return datetime objects or the documented
+# fuzzy_with_tokens tuple shape; specified fields override defaults while unspecified
+# fields come from default; ignoretz returns a naive datetime; tzinfos offsets are used;
+# dayfirst/yearfirst resolve ambiguous dates as documented; invalid dates raise ParserError.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    mode = data.draw(st.sampled_from([
+        "valid_full_datetime",
+        "date_only_uses_default_time",
+        "time_only_uses_default_date",
+        "ignoretz_returns_naive",
+        "tzinfos_offset_is_used",
+        "dayfirst_yearfirst_ambiguity",
+        "fuzzy_with_tokens_shape",
+        "invalid_date_raises",
+    ]))
+
+    if mode == "valid_full_datetime":
+        dt = data.draw(st.datetimes(
+            min_value=datetime(1000, 1, 1),
+            max_value=datetime(9999, 12, 31, 23, 59, 59),
+            timezones=st.none(),
+        ))
+        sep = data.draw(st.sampled_from([" ", "T"]))
+        timestr = (
+            f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
+            f"{sep}{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
+        )
+
+        parsed = parse(timestr)
+
+        assert isinstance(parsed, datetime)
+        assert parsed == dt.replace(microsecond=0)
+
+    elif mode == "date_only_uses_default_time":
+        parsed_date = data.draw(st.dates(
+            min_value=date(1000, 1, 1),
+            max_value=date(9999, 12, 31),
+        ))
+        default = data.draw(st.datetimes(
+            min_value=datetime(1000, 1, 1),
+            max_value=datetime(9999, 12, 31, 23, 59, 59, 999999),
+            timezones=st.none(),
+        ))
+        timestr = f"{parsed_date.year:04d}-{parsed_date.month:02d}-{parsed_date.day:02d}"
+
+        parsed = parse(timestr, default=default)
+
+        assert isinstance(parsed, datetime)
+        assert parsed.year == parsed_date.year
+        assert parsed.month == parsed_date.month
+        assert parsed.day == parsed_date.day
+        assert parsed.hour == default.hour
+        assert parsed.minute == default.minute
+        assert parsed.second == default.second
+        assert parsed.microsecond == default.microsecond
+
+    elif mode == "time_only_uses_default_date":
+        hour = data.draw(st.integers(min_value=0, max_value=23))
+        minute = data.draw(st.integers(min_value=0, max_value=59))
+        second = data.draw(st.integers(min_value=0, max_value=59))
+        default = data.draw(st.datetimes(
+            min_value=datetime(1000, 1, 1),
+            max_value=datetime(9999, 12, 31, 23, 59, 59, 999999),
+            timezones=st.none(),
+        ))
+        timestr = f"{hour:02d}:{minute:02d}:{second:02d}"
+
+        parsed = parse(timestr, default=default)
+
+        assert isinstance(parsed, datetime)
+        assert parsed.year == default.year
+        assert parsed.month == default.month
+        assert parsed.day == default.day
+        assert parsed.hour == hour
+        assert parsed.minute == minute
+        assert parsed.second == second
+        assert parsed.microsecond == default.microsecond
+
+    elif mode == "ignoretz_returns_naive":
+        sign = data.draw(st.sampled_from(["+", "-"]))
+        offset_hour = data.draw(st.integers(min_value=0, max_value=23))
+        offset_minute = data.draw(st.integers(min_value=0, max_value=59))
+        timestr = f"2020-01-02 03:04:05 {sign}{offset_hour:02d}{offset_minute:02d}"
+
+        parsed = parse(timestr, ignoretz=True)
+
+        assert isinstance(parsed, datetime)
+        assert parsed == datetime(2020, 1, 2, 3, 4, 5)
+        assert parsed.tzinfo is None
+
+    elif mode == "tzinfos_offset_is_used":
+        offset_seconds = data.draw(st.integers(
+            min_value=-(23 * 60 * 60 + 59 * 60),
+            max_value=23 * 60 * 60 + 59 * 60,
+        ))
+        tzinfos = {"TST": offset_seconds}
+
+        parsed = parse("2020-02-29 23:59:58 TST", tzinfos=tzinfos)
+
+        assert isinstance(parsed, datetime)
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timedelta(seconds=offset_seconds)
+
+    elif mode == "dayfirst_yearfirst_ambiguity":
+        year = data.draw(st.integers(min_value=1000, max_value=9999))
+        first = data.draw(st.integers(min_value=1, max_value=12))
+        second = data.draw(st.integers(min_value=1, max_value=12))
+
+        ambiguous_mdy_or_dmy = f"{first:02d}/{second:02d}/{year:04d}"
+
+        parsed_month_first = parse(
+            ambiguous_mdy_or_dmy,
+            dayfirst=False,
+            yearfirst=False,
+        )
+        parsed_day_first = parse(
+            ambiguous_mdy_or_dmy,
+            dayfirst=True,
+            yearfirst=False,
+        )
+
+        assert parsed_month_first.year == year
+        assert parsed_month_first.month == first
+        assert parsed_month_first.day == second
+
+        assert parsed_day_first.year == year
+        assert parsed_day_first.month == second
+        assert parsed_day_first.day == first
+
+        ambiguous_ymd_or_ydm = f"{year:04d}/{first:02d}/{second:02d}"
+
+        parsed_ymd = parse(
+            ambiguous_ymd_or_ydm,
+            dayfirst=False,
+            yearfirst=True,
+        )
+        parsed_ydm = parse(
+            ambiguous_ymd_or_ydm,
+            dayfirst=True,
+            yearfirst=True,
+        )
+
+        assert parsed_ymd.year == year
+        assert parsed_ymd.month == first
+        assert parsed_ymd.day == second
+
+        assert parsed_ydm.year == year
+        assert parsed_ydm.month == second
+        assert parsed_ydm.day == first
+
+    elif mode == "fuzzy_with_tokens_shape":
+        dt = data.draw(st.datetimes(
+            min_value=datetime(1000, 1, 1),
+            max_value=datetime(9999, 12, 31, 23, 59, 59),
+            timezones=st.none(),
+        ))
+        timestr = (
+            f"Today is {dt.year:04d}-{dt.month:02d}-{dt.day:02d} "
+            f"at {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d} please parse"
+        )
+
+        parsed, tokens = parse(timestr, fuzzy_with_tokens=True)
+
+        assert isinstance(parsed, datetime)
+        assert isinstance(tokens, tuple)
+        assert all(isinstance(token, str) for token in tokens)
+        assert parsed == dt.replace(microsecond=0)
+
+    else:
+        year = data.draw(st.integers(min_value=1000, max_value=9999))
+        invalid_month = data.draw(st.integers(min_value=13, max_value=99))
+        invalid_day = data.draw(st.integers(min_value=32, max_value=99))
+        timestr = f"{year:04d}-{invalid_month:02d}-{invalid_day:02d}"
+
+        try:
+            parse(timestr)
+        except ParserError:
+            pass
+        else:
+            raise AssertionError("Invalid dates should raise ParserError")
+# End program

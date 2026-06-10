@@ -1,0 +1,9 @@
+1. The output is always an instance of `datetime.datetime`.
+
+2. When the input ISO-8601 string contains no time zone offset information, the output datetime is naive (its `tzinfo` is `None`); when it does contain offset information, the output is timezone-aware (its `tzinfo` is not `None`).
+
+3. For any datetime produced by the function, re-serializing it to an ISO-8601 string (via `datetime.isoformat()`) and parsing it again with `isoparse` yields a datetime equal to the original output (round-trip stability).
+
+4. When the input includes a UTC-equivalent offset (such as `Z`, `+00:00`, or `-00:00`), the resulting `tzinfo` is a `dateutil.tz.tzutc` instance; for any other non-zero offset, the resulting `tzinfo` is a `dateutil.tz.tzoffset` whose offset equals the offset encoded in the string.
+
+5. Components not specified in the input string default to their lowest valid value (e.g., an input of only `YYYY-MM` yields day 1 and time 00:00:00 with zero microseconds), so the output's unspecified fields always equal those minimum defaults.

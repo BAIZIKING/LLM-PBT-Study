@@ -1,0 +1,9 @@
+1. The output of `zlib.decompress` is always a `bytes` object.
+
+2. For any data produced by `zlib.compress(x)`, calling `zlib.decompress` on that data returns exactly the original input `x` (round-trip property).
+
+3. When decompressing data compressed with a specific window size, using a `wbits` value whose window size is greater than or equal to the original compression window size succeeds, while using a strictly smaller window size raises the `error` exception.
+
+4. The output is independent of the `bufsize` argument: decompressing the same data with different valid `bufsize` values yields identical results.
+
+5. Decompressing zlib-formatted data with automatic format detection (`wbits=40` to `47`) or zlib-specific `wbits` (`8` to `15`) produces the same output as decompressing it with the default `wbits`, and likewise gzip-formatted data decompressed with gzip-specific `wbits` matches the auto-detect result.

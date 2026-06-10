@@ -1,0 +1,166 @@
+from hypothesis import given, strategies as st, assume, settings
+import decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN, ROUND_DOWN, ROUND_UP, ROUND_HALF_UP, ROUND_HALF_DOWN, ROUND_CEILING, ROUND_FLOOR, ROUND_05UP, localcontext
+
+
+# Strategy for generating finite, reasonably-sized Decimals.
+def finite_decimals(min_exp=-20, max_exp=20, max_digits=20):
+    sign = st.sampled_from(['', '-'])
+    digits = st.integers(min_value=0, max_value=10**max_digits - 1).map(str)
+    exponent = st.integers(min_value=min_exp, max_value=max_exp)
+
+    def build(args):
+        s, d, e = args
+        return Decimal(f"{s}{d}E{e}")
+
+    return st.tuples(sign, digits, exponent).map(build)
+
+
+rounding_modes = st.sampled_from([
+    None, ROUND_HALF_EVEN, ROUND_DOWN, ROUND_UP, ROUND_HALF_UP,
+    ROUND_HALF_DOWN, ROUND_CEILING, ROUND_FLOOR, ROUND_05UP
+])
+
+
+# Property 1: The exponent of the result equals the exponent of the second operand,
+# unless an error condition (InvalidOperation) is raised.
+@given(st.data())
+@settings(deadline=None)
+def test_decimal_Decimal_quantize_property_exponent_matches():
+    @given(
+        first=finite_decimals(),
+        exp=finite_decimals(),
+        rounding=rounding_modes,
+        prec=st.integers(min_value=1, max_value=50),
+    )
+    def inner(first, exp, rounding, prec):
+        with localcontext() as ctx:
+            ctx.prec = prec
+            try:
+                result = first.quantize(exp, rounding=rounding)
+            except (InvalidOperation, decimal.Overflow):
+                return
+            # exponent of result must equal exponent of exp operand
+            assert result.as_tuple().exponent == exp.as_tuple().exponent
+
+    inner()
+
+
+# Property 2: When no rounding is needed (exp's exponent <= first's exponent),
+# the result is numerically equal to the first operand.
+@given(st.data())
+@settings(deadline=None)
+def test_decimal_Decimal_quantize_property_equal_when_no_rounding():
+    @given(
+        first=finite_decimals(),
+        exp=finite_decimals(),
+        rounding=rounding_modes,
+        prec=st.integers(min_value=1, max_value=50),
+    )
+    def inner(first, exp, rounding, prec):
+        first_exp = first.as_tuple().exponent
+        target_exp = exp.as_tuple().exponent
+        # only consider cases with no rounding necessary
+        assume(target_exp <= first_exp)
+        with localcontext() as ctx:
+            ctx.prec = prec
+            try:
+                result = first.quantize(exp, rounding=rounding)
+            except (InvalidOperation, decimal.Overflow):
+                return
+            # numerically equal to first operand
+            assert result == first
+
+    inner()
+
+
+# Property 3: The result is numerically close to the first operand,
+# differing by at most one unit in the last place of the target exponent.
+@given(st.data())
+@settings(deadline=None)
+def test_decimal_Decimal_quantize_property_close_to_first():
+    @given(
+        first=finite_decimals(),
+        exp=finite_decimals(),
+        rounding=rounding_modes,
+        prec=st.integers(min_value=1, max_value=50),
+    )
+    def inner(first, exp, rounding, prec):
+        with localcontext() as ctx:
+            ctx.prec = prec
+            try:
+                result = first.quantize(exp, rounding=rounding)
+            except (InvalidOperation, decimal.Overflow):
+                return
+            target_exp = exp.as_tuple().exponent
+            ulp = Decimal(1).scaleb(target_exp)
+            # difference must be strictly less than one ulp
+            with localcontext() as ctx2:
+                ctx2.prec = 100
+                diff = abs(result - first)
+                assert diff < ulp
+
+    inner()
+
+
+# Property 4: The number of digits in the coefficient of the result never
+# exceeds the context's precision; otherwise InvalidOperation is signaled.
+@given(st.data())
+@settings(deadline=None)
+def test_decimal_Decimal_quantize_property_precision_bound():
+    @given(
+        first=finite_decimals(),
+        exp=finite_decimals(),
+        rounding=rounding_modes,
+        prec=st.integers(min_value=1, max_value=50),
+    )
+    def inner(first, exp, rounding, prec):
+        with localcontext() as ctx:
+            ctx.prec = prec
+            try:
+                result = first.quantize(exp, rounding=rounding)
+            except (InvalidOperation, decimal.Overflow):
+                return
+            coeff_digits = len(result.as_tuple().digits)
+            assert coeff_digits <= prec
+
+    inner()
+
+
+# Property 5: The operation raises an error whenever the resulting exponent
+# would be greater than Emax or less than Etiny(); also it never signals Underflow.
+@given(st.data())
+@settings(deadline=None)
+def test_decimal_Decimal_quantize_property_exponent_range_and_no_underflow():
+    @given(
+        first=finite_decimals(),
+        exp=finite_decimals(),
+        rounding=rounding_modes,
+        prec=st.integers(min_value=1, max_value=50),
+    )
+    def inner(first, exp, rounding, prec):
+        with localcontext() as ctx:
+            ctx.prec = prec
+            # clear traps so we can inspect flags rather than raise
+            ctx.clear_flags()
+            ctx.traps[InvalidOperation] = False
+            ctx.traps[decimal.Overflow] = False
+            ctx.traps[decimal.Underflow] = False
+
+            target_exp = exp.as_tuple().exponent
+            etiny = ctx.Etiny()
+            emax = ctx.Emax
+
+            try:
+                result = first.quantize(exp, rounding=rounding)
+            except (InvalidOperation, decimal.Overflow):
+                return
+
+            # If a finite result returned, its exponent must be in [Etiny, Emax]
+            if result.is_finite():
+                assert etiny <= result.as_tuple().exponent <= emax
+                # quantize must never signal Underflow
+                assert not ctx.flags[decimal.Underflow]
+
+    inner()
+# End program

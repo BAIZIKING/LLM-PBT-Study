@@ -1,0 +1,68 @@
+from hypothesis import given, strategies as st
+import decimal
+import math
+from fractions import Fraction
+
+
+@st.composite
+def finite_decimals(draw):
+    coefficient = draw(st.integers(min_value=-(10**100), max_value=10**100))
+    exponent = draw(st.integers(min_value=-50, max_value=50))
+
+    if coefficient == 0:
+        sign = "-" if draw(st.booleans()) else ""
+        return decimal.Decimal(f"{sign}0e{exponent}")
+
+    return decimal.Decimal(f"{coefficient}e{exponent}")
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_returns_integer_pair_property(data):
+    x = data.draw(finite_decimals())
+    n, d = x.as_integer_ratio()
+
+    assert type(n) is int
+    assert type(d) is int
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_positive_denominator_property(data):
+    x = data.draw(finite_decimals())
+    n, d = x.as_integer_ratio()
+
+    assert d > 0
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_lowest_terms_property(data):
+    x = data.draw(finite_decimals())
+    n, d = x.as_integer_ratio()
+
+    assert math.gcd(abs(n), d) == 1
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_exact_fraction_property(data):
+    x = data.draw(finite_decimals())
+    n, d = x.as_integer_ratio()
+
+    assert Fraction(n, d) == Fraction(x)
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_sign_in_numerator_property(data):
+    x = data.draw(finite_decimals())
+    n, d = x.as_integer_ratio()
+
+    if x.is_zero():
+        assert n == 0
+        assert d == 1
+    elif x.is_signed():
+        assert n < 0
+    else:
+        assert n > 0
+
+    assert d > 0
+
+
+# End program

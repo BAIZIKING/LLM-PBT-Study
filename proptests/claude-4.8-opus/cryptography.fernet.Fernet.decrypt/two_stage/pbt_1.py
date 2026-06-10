@@ -1,0 +1,99 @@
+from hypothesis import given, strategies as st, assume
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import time
+
+
+# Property 1: Round-trip correctness
+@given(st.binary())
+def test_cryptography_fernet_Fernet_decrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert f.decrypt(token) == data
+# End program
+
+
+# Property 2: Output type is always bytes
+@given(st.binary())
+def test_cryptography_fernet_Fernet_decrypt_output_type(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token_bytes = f.encrypt(data)
+    token_str = token_bytes.decode("utf-8")
+    assert isinstance(f.decrypt(token_bytes), bytes)
+    assert isinstance(f.decrypt(token_str), bytes)
+# End program
+
+
+# Property 3: Token format equivalence (bytes vs str)
+@given(st.binary())
+def test_cryptography_fernet_Fernet_decrypt_format_equivalence(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token_bytes = f.encrypt(data)
+    token_str = token_bytes.decode("utf-8")
+    assert f.decrypt(token_bytes) == f.decrypt(token_str)
+# End program
+
+
+# Property 4: TTL expiration behavior
+@given(
+    st.binary(),
+    st.integers(min_value=0, max_value=10**6),
+    st.integers(min_value=0, max_value=10**6),
+)
+def test_cryptography_fernet_Fernet_decrypt_ttl(data, created_time, age):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    # Encrypt with an explicit creation time
+    token = f.encrypt_at_time(data, created_time)
+    ttl = 100
+    current_time = created_time + age
+    if age > ttl:
+        # Token is older than ttl -> should raise InvalidToken
+        try:
+            f.decrypt_at_time(token, ttl=ttl, current_time=current_time)
+            assert False, "Expected InvalidToken for expired token"
+        except InvalidToken:
+            pass
+    else:
+        # Token within ttl -> should decrypt successfully
+        assert f.decrypt_at_time(token, ttl=ttl, current_time=current_time) == data
+# End program
+
+
+# Property 5: Tamper / invalidity detection
+@given(
+    st.binary(),
+    st.integers(min_value=0),
+)
+def test_cryptography_fernet_Fernet_decrypt_tamper(data, index):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assume(len(token) > 0)
+
+    # Case A: decrypt with a different key -> InvalidToken
+    other_key = Fernet.generate_key()
+    assume(other_key != key)
+    other_f = Fernet(other_key)
+    try:
+        other_f.decrypt(token)
+        assert False, "Expected InvalidToken for wrong key"
+    except InvalidToken:
+        pass
+
+    # Case B: tamper with a byte in the token -> InvalidToken
+    pos = index % len(token)
+    tampered = bytearray(token)
+    tampered[pos] = (tampered[pos] + 1) % 256
+    tampered = bytes(tampered)
+    assume(tampered != token)
+    try:
+        result = f.decrypt(tampered)
+        # If it somehow decrypts, it must not silently differ from original
+        assert result == data
+    except InvalidToken:
+        pass
+# End program

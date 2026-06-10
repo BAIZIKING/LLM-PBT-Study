@@ -1,0 +1,9 @@
+1. **Scalar multiplication equivalence**: When either `a` or `b` is a 0-D scalar, the output of `np.dot(a, b)` should equal element-wise multiplication `a * b` (i.e., `np.multiply(a, b)`).
+
+2. **Inner product for 1-D arrays**: When both `a` and `b` are 1-D arrays of equal length, the output should be a scalar equal to the sum of element-wise products `sum(a[i] * b[i])`, computed without complex conjugation.
+
+3. **Matrix multiplication equivalence for 2-D arrays**: When both `a` and `b` are 2-D arrays with compatible shapes, the output should equal the result of matrix multiplication `a @ b` (or `np.matmul(a, b)`).
+
+4. **Output shape correctness**: For an N-D array `a` and M-D array `b`, the resulting shape should be `a.shape[:-1] + b.shape[:-2] + (b.shape[-1],)` when M >= 2, and `a.shape[:-1]` when `b` is 1-D, reflecting the sum product over the last axis of `a` and the second-to-last axis of `b`.
+
+5. **General sum-product definition**: For higher-dimensional inputs, each element of the output should equal `sum(a[..., :] * b[..., :, ...])` over the contracted axis, i.e., `dot(a, b)[i,j,k,m] == sum(a[i,j,:] * b[k,:,m])`, consistent with the documented summation formula.

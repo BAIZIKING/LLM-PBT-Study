@@ -1,0 +1,9 @@
+1. For any accepted input (`float` or `int`), the output is a `Decimal` instance.
+
+2. For any integer input `n`, the output represents exactly the same integer value as `n`.
+
+3. For any finite float input `f`, the output represents the exact decimal value of the underlying binary floating-point number, not the shortest human-readable decimal approximation.
+
+4. For finite float inputs, the sign of the input is preserved in the output, including negative values and negative zero.
+
+5. Special float values are preserved as special `Decimal` values: `NaN` becomes a decimal NaN, positive infinity becomes `Decimal('Infinity')`, and negative infinity becomes `Decimal('-Infinity')`.

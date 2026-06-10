@@ -1,0 +1,76 @@
+from hypothesis import given, strategies as st
+import datetime
+
+_SAFE_MIN_TIMESTAMP = 1_000_000
+_SAFE_MAX_TIMESTAMP = 2_000_000_000
+
+_SAFE_TIMESTAMPS = st.one_of(
+    st.integers(min_value=_SAFE_MIN_TIMESTAMP, max_value=_SAFE_MAX_TIMESTAMP),
+    st.floats(
+        min_value=_SAFE_MIN_TIMESTAMP,
+        max_value=_SAFE_MAX_TIMESTAMP,
+        allow_nan=False,
+        allow_infinity=False,
+        width=64,
+    ),
+)
+
+_FIXED_TIMEZONES = st.integers(
+    min_value=-(23 * 60 + 59),
+    max_value=23 * 60 + 59,
+).map(lambda minutes: datetime.timezone(datetime.timedelta(minutes=minutes)))
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_returns_datetime_instance(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+    tz = data.draw(st.one_of(st.none(), _FIXED_TIMEZONES))
+
+    result = datetime.datetime.fromtimestamp(timestamp, tz)
+
+    assert isinstance(result, datetime.datetime)
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_none_timezone_is_naive(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+
+    result_with_none = datetime.datetime.fromtimestamp(timestamp, None)
+    result_omitted = datetime.datetime.fromtimestamp(timestamp)
+
+    assert result_with_none.tzinfo is None
+    assert result_omitted.tzinfo is None
+    assert result_with_none == result_omitted
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_with_timezone_is_aware(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+    tz = data.draw(_FIXED_TIMEZONES)
+
+    result = datetime.datetime.fromtimestamp(timestamp, tz)
+
+    assert result.tzinfo is tz
+    assert result.utcoffset() == tz.utcoffset(None)
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_utc_round_trips_timestamp(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+
+    result = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+
+    assert abs(result.timestamp() - timestamp) <= 1e-5
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_fold_is_valid(data):
+    timestamp = data.draw(_SAFE_TIMESTAMPS)
+    tz = data.draw(st.one_of(st.none(), _FIXED_TIMEZONES))
+
+    result = datetime.datetime.fromtimestamp(timestamp, tz)
+
+    assert result.fold in (0, 1)
+
+
+# End program

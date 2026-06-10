@@ -1,0 +1,48 @@
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate integers including important edge cases around the documented valid range
+# [1, datetime.max.toordinal()] plus very large positive/negative invalid values. For valid ordinals,
+# check that fromordinal returns a naive midnight datetime whose ordinal round-trips. For invalid
+# ordinals, check that ValueError is raised.
+@given(st.data())
+def test_datetime_datetime_fromordinal(data):
+    max_ordinal = datetime.max.toordinal()
+
+    ordinal = data.draw(
+        st.one_of(
+            st.integers(min_value=-10**100, max_value=10**100),
+            st.sampled_from([
+                -10**100,
+                -1,
+                0,
+                1,
+                2,
+                max_ordinal - 1,
+                max_ordinal,
+                max_ordinal + 1,
+                10**100,
+            ]),
+        )
+    )
+
+    if 1 <= ordinal <= max_ordinal:
+        result = datetime.fromordinal(ordinal)
+
+        assert result.toordinal() == ordinal
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+        assert result.tzinfo is None
+    else:
+        try:
+            datetime.fromordinal(ordinal)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("datetime.fromordinal() did not raise ValueError for invalid ordinal")
+
+# End program
+```

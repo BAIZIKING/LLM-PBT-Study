@@ -1,0 +1,176 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+
+def _numeric_or_nan_values(min_size=0, max_size=30):
+    return st.lists(
+        st.one_of(
+            st.floats(allow_nan=False, allow_infinity=False, width=32),
+            st.just(float("nan")),
+        ),
+        min_size=min_size,
+        max_size=max_size,
+    )
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_preserves_rows_property(data):
+    n = data.draw(st.integers(min_value=0, max_value=30))
+    sort_values = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    payload_values = data.draw(
+        st.lists(
+            st.text(min_size=0, max_size=10),
+            min_size=n,
+            max_size=n,
+        )
+    )
+
+    df = pandas.DataFrame(
+        {
+            "sort_key": sort_values,
+            "payload": payload_values,
+        }
+    )
+
+    result = df.sort_values(by="sort_key")
+
+    pandas.testing.assert_frame_equal(result.sort_index(), df)
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_lexicographic_order_property(data):
+    n = data.draw(st.integers(min_value=0, max_value=30))
+    col_a = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    col_b = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    ascending_a = data.draw(st.booleans())
+    ascending_b = data.draw(st.booleans())
+
+    df = pandas.DataFrame({"a": col_a, "b": col_b})
+    result = df.sort_values(
+        by=["a", "b"],
+        ascending=[ascending_a, ascending_b],
+    )
+
+    rows = list(result[["a", "b"]].itertuples(index=False, name=None))
+
+    for previous, current in zip(rows, rows[1:]):
+        prev_a, prev_b = previous
+        curr_a, curr_b = current
+
+        if prev_a != curr_a:
+            if ascending_a:
+                assert prev_a <= curr_a
+            else:
+                assert prev_a >= curr_a
+        else:
+            if ascending_b:
+                assert prev_b <= curr_b
+            else:
+                assert prev_b >= curr_b
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_na_position_property(data):
+    values = data.draw(_numeric_or_nan_values(min_size=0, max_size=30))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    df = pandas.DataFrame({"key": values})
+    result = df.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+    )
+
+    is_na = result["key"].isna().tolist()
+    na_count = sum(is_na)
+
+    if na_position == "first":
+        assert is_na == ([True] * na_count) + ([False] * (len(is_na) - na_count))
+    else:
+        assert is_na == ([False] * (len(is_na) - na_count)) + ([True] * na_count)
+
+    non_na_values = result["key"].dropna().tolist()
+
+    if ascending:
+        assert non_na_values == sorted(non_na_values)
+    else:
+        assert non_na_values == sorted(non_na_values, reverse=True)
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_ignore_index_property(data):
+    n = data.draw(st.integers(min_value=0, max_value=30))
+    sort_values = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    payload_values = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+
+    df = pandas.DataFrame({"sort_key": sort_values, "payload": payload_values})
+
+    result = df.sort_values(by="sort_key", ignore_index=True)
+    expected = df.sort_values(by="sort_key").reset_index(drop=True)
+
+    assert list(result.index) == list(range(len(result)))
+    pandas.testing.assert_frame_equal(result, expected)
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_inplace_property(data):
+    n = data.draw(st.integers(min_value=0, max_value=30))
+    sort_values = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    payload_values = data.draw(
+        st.lists(
+            st.text(min_size=0, max_size=10),
+            min_size=n,
+            max_size=n,
+        )
+    )
+
+    df = pandas.DataFrame({"sort_key": sort_values, "payload": payload_values})
+    df_inplace = df.copy(deep=True)
+
+    expected = df.sort_values(by="sort_key")
+    returned = df_inplace.sort_values(by="sort_key", inplace=True)
+
+    assert returned is None
+    pandas.testing.assert_frame_equal(df_inplace, expected)
+
+
+# End program
+```

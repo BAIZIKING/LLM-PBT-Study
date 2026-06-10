@@ -1,0 +1,261 @@
+from hypothesis import given, strategies as st
+from datetime import datetime, timedelta
+from dateutil.parser import parse as dateutil_parser_parse, ParserError, parserinfo
+from dateutil.tz import tzoffset
+
+# Summary: Generate date strings from several families: fully-specified valid datetimes,
+# date-only strings, time-only strings, fuzzy natural-language strings, ambiguous numeric
+# dates, invalid dates, and arbitrary text. Randomize documented kwargs: default, ignoretz,
+# tzinfos as dict/function, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens, and parserinfo.
+# Check documented properties: successful parses return datetime or fuzzy tuple shape;
+# documented failures raise ParserError/OverflowError; ignoretz returns naive datetimes;
+# tzinfos maps known zone names/offsets; specified fields replace fields from default.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    month_names = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    tzinfo_dict = {
+        "BRST": -7200,
+        "CST": tzoffset("CST", -21600),
+        "UTC": 0,
+    }
+
+    def tzinfo_func(tzname, tzoffset_seconds):
+        return tzinfo_dict.get(tzname, tzoffset_seconds)
+
+    default = data.draw(
+        st.one_of(
+            st.none(),
+            st.datetimes(
+                min_value=datetime(1900, 1, 1),
+                max_value=datetime(2099, 12, 31, 23, 59, 59, 999999),
+            ),
+        )
+    )
+    ignoretz = data.draw(st.booleans())
+    dayfirst = data.draw(st.one_of(st.none(), st.booleans()))
+    yearfirst = data.draw(st.one_of(st.none(), st.booleans()))
+    fuzzy = data.draw(st.booleans())
+    fuzzy_with_tokens = data.draw(st.booleans())
+    tzinfos = data.draw(st.one_of(st.none(), st.just(tzinfo_dict), st.just(tzinfo_func)))
+
+    if data.draw(st.booleans()):
+        pinfo = None
+    else:
+        pinfo = parserinfo(
+            dayfirst=data.draw(st.booleans()),
+            yearfirst=data.draw(st.booleans()),
+        )
+
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "full_datetime",
+                "date_only",
+                "time_only",
+                "fuzzy_datetime",
+                "ambiguous_numeric",
+                "invalid_date",
+                "random_text",
+            ]
+        )
+    )
+
+    expected_fields = {}
+    expected_tz_offset = None
+
+    tz_text, expected_tz_offset = data.draw(
+        st.sampled_from(
+            [
+                ("", None),
+                (" Z", 0),
+                (" UTC", 0),
+                (" BRST", -7200),
+                (" CST", -21600),
+                (" +0530", 19800),
+                (" -0400", -14400),
+            ]
+        )
+    )
+
+    if kind == "full_datetime":
+        dt = data.draw(
+            st.datetimes(
+                min_value=datetime(1900, 1, 1),
+                max_value=datetime(2099, 12, 31, 23, 59, 59, 999999),
+            )
+        )
+        sep = data.draw(st.sampled_from([" ", "T"]))
+        timestr = (
+            f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
+            f"{sep}{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{dt.microsecond:06d}"
+            f"{tz_text}"
+        )
+        expected_fields = {
+            "year": dt.year,
+            "month": dt.month,
+            "day": dt.day,
+            "hour": dt.hour,
+            "minute": dt.minute,
+            "second": dt.second,
+            "microsecond": dt.microsecond,
+        }
+
+    elif kind == "date_only":
+        d = data.draw(
+            st.dates(
+                min_value=datetime(1900, 1, 1).date(),
+                max_value=datetime(2099, 12, 31).date(),
+            )
+        )
+        if data.draw(st.booleans()):
+            timestr = f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+        else:
+            timestr = f"{month_names[d.month - 1]} {d.day}, {d.year}"
+        expected_fields = {
+            "year": d.year,
+            "month": d.month,
+            "day": d.day,
+        }
+        if default is not None:
+            expected_fields.update(
+                {
+                    "hour": default.hour,
+                    "minute": default.minute,
+                    "second": default.second,
+                    "microsecond": default.microsecond,
+                }
+            )
+        expected_tz_offset = None
+
+    elif kind == "time_only":
+        hour = data.draw(st.integers(min_value=0, max_value=23))
+        minute = data.draw(st.integers(min_value=0, max_value=59))
+        second = data.draw(st.integers(min_value=0, max_value=59))
+        microsecond = data.draw(st.integers(min_value=0, max_value=999999))
+        timestr = f"{hour:02d}:{minute:02d}:{second:02d}.{microsecond:06d}"
+        expected_fields = {
+            "hour": hour,
+            "minute": minute,
+            "second": second,
+            "microsecond": microsecond,
+        }
+        if default is not None:
+            expected_fields.update(
+                {
+                    "year": default.year,
+                    "month": default.month,
+                    "day": default.day,
+                }
+            )
+        expected_tz_offset = None
+
+    elif kind == "fuzzy_datetime":
+        dt = data.draw(
+            st.datetimes(
+                min_value=datetime(1900, 1, 1),
+                max_value=datetime(2099, 12, 31, 23, 59, 59, 999999),
+            )
+        )
+        timestr = (
+            f"Reminder: today is {month_names[dt.month - 1]} {dt.day}, {dt.year} "
+            f"at {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{dt.microsecond:06d}"
+            f"{tz_text} please process"
+        )
+        expected_fields = {
+            "year": dt.year,
+            "month": dt.month,
+            "day": dt.day,
+            "hour": dt.hour,
+            "minute": dt.minute,
+            "second": dt.second,
+            "microsecond": dt.microsecond,
+        }
+
+    elif kind == "ambiguous_numeric":
+        a = data.draw(st.integers(min_value=1, max_value=31))
+        b = data.draw(st.integers(min_value=1, max_value=31))
+        c = data.draw(st.one_of(st.integers(min_value=0, max_value=99), st.integers(1900, 2099)))
+        timestr = f"{a}/{b}/{c}"
+        expected_tz_offset = None
+
+    elif kind == "invalid_date":
+        timestr = data.draw(
+            st.sampled_from(
+                [
+                    "2021-02-29",
+                    "2020-13-01",
+                    "2020-00-10",
+                    "2020-01-32",
+                    "2020-01-01 25:00:00",
+                    "2020-01-01 23:61:00",
+                    "2020-01-01 23:59:61",
+                ]
+            )
+        )
+        expected_tz_offset = None
+
+    else:
+        timestr = data.draw(
+            st.text(
+                alphabet=list(
+                    "0123456789abcdefghijklmnopqrstuvwxyz"
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ -/:,.+TZ"
+                ),
+                min_size=0,
+                max_size=80,
+            )
+        )
+        expected_tz_offset = None
+
+    kwargs = {
+        "default": default,
+        "ignoretz": ignoretz,
+        "dayfirst": dayfirst,
+        "yearfirst": yearfirst,
+        "fuzzy": fuzzy,
+        "fuzzy_with_tokens": fuzzy_with_tokens,
+    }
+    if tzinfos is not None:
+        kwargs["tzinfos"] = tzinfos
+
+    should_parse = kind in {"full_datetime", "date_only", "time_only"} or (
+        kind == "fuzzy_datetime" and (fuzzy or fuzzy_with_tokens)
+    )
+
+    try:
+        result = dateutil_parser_parse(timestr, parserinfo=pinfo, **kwargs)
+    except (ParserError, OverflowError):
+        assert not should_parse
+        return
+
+    if fuzzy_with_tokens:
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        parsed_dt, ignored_tokens = result
+        assert isinstance(parsed_dt, datetime)
+        assert isinstance(ignored_tokens, tuple)
+
+        position = 0
+        for token in ignored_tokens:
+            assert isinstance(token, str)
+            found_at = timestr.find(token, position)
+            assert found_at >= position
+            position = found_at + len(token)
+    else:
+        assert isinstance(result, datetime)
+        parsed_dt = result
+
+    if ignoretz:
+        assert parsed_dt.tzinfo is None
+    elif expected_tz_offset is not None:
+        assert parsed_dt.tzinfo is not None
+        assert parsed_dt.utcoffset() == timedelta(seconds=expected_tz_offset)
+
+    for field_name, expected_value in expected_fields.items():
+        assert getattr(parsed_dt, field_name) == expected_value
+
+# End program

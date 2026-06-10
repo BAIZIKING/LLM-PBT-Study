@@ -1,0 +1,86 @@
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate empty inputs, inputs containing zero, inputs containing negative
+# values, and valid non-empty positive-only inputs. Wrap the generated values as
+# different iterable types: list, tuple, or generator. Check that documented invalid
+# cases raise StatisticsError, and that valid cases return a float matching the
+# documented geometric-mean computation using float conversion and logarithms.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    positive_value = st.one_of(
+        st.integers(min_value=1, max_value=10**6),
+        st.floats(
+            min_value=0.0,
+            max_value=1e100,
+            allow_nan=False,
+            allow_infinity=False,
+            exclude_min=True,
+        ),
+        st.sampled_from([5e-324, 1.0, sys_float_max := 1.7976931348623157e308, math.inf]),
+    )
+
+    zero_value = st.sampled_from([0, 0.0, -0.0])
+
+    negative_value = st.one_of(
+        st.integers(min_value=-(10**6), max_value=-1),
+        st.floats(
+            min_value=-1e100,
+            max_value=0.0,
+            allow_nan=False,
+            allow_infinity=False,
+            exclude_max=True,
+        ),
+        st.sampled_from([-math.inf]),
+    )
+
+    case = data.draw(st.sampled_from(["empty", "contains_zero", "contains_negative", "valid_positive"]))
+
+    if case == "empty":
+        values = []
+        should_raise = True
+
+    elif case == "contains_zero":
+        values = data.draw(st.lists(positive_value, max_size=20))
+        insert_at = data.draw(st.integers(min_value=0, max_value=len(values)))
+        values.insert(insert_at, data.draw(zero_value))
+        should_raise = True
+
+    elif case == "contains_negative":
+        filler = st.one_of(positive_value, zero_value)
+        values = data.draw(st.lists(filler, max_size=20))
+        insert_at = data.draw(st.integers(min_value=0, max_value=len(values)))
+        values.insert(insert_at, data.draw(negative_value))
+        should_raise = True
+
+    else:
+        values = data.draw(st.lists(positive_value, min_size=1, max_size=20))
+        should_raise = False
+
+    container_kind = data.draw(st.sampled_from(["list", "tuple", "generator"]))
+    if container_kind == "list":
+        input_data = list(values)
+    elif container_kind == "tuple":
+        input_data = tuple(values)
+    else:
+        input_data = (x for x in values)
+
+    if should_raise:
+        try:
+            statistics.geometric_mean(input_data)
+        except statistics.StatisticsError:
+            return
+        assert False, "geometric_mean should raise StatisticsError for empty, zero, or negative data"
+
+    actual = statistics.geometric_mean(input_data)
+    expected = math.exp(statistics.fmean(math.log(float(x)) for x in values))
+
+    assert isinstance(actual, float)
+
+    if math.isinf(expected):
+        assert actual == expected
+    else:
+        assert math.isclose(actual, expected, rel_tol=1e-12, abs_tol=0.0)
+
+# End program

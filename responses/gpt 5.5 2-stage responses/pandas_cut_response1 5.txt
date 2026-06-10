@@ -1,0 +1,9 @@
+1. The output has the same length as `x`; if `x` is a Series, the result preserves the original index.
+
+2. Missing values in `x` remain missing in the output, and values outside the provided bin range are assigned missing output values.
+
+3. Every non-missing, in-range input value is assigned to exactly one bin whose interval contains that value, respecting `right` and `include_lowest` unless `bins` is an `IntervalIndex`.
+
+4. When `labels=False`, the output contains only integer bin codes from `0` to `number_of_bins - 1`, plus missing values where applicable.
+
+5. When `retbins=True`, the returned bins match the effective bin edges used for assignment, after applying scalar-bin expansion or `duplicates='drop'` if relevant.

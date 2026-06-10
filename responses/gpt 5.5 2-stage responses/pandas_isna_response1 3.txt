@@ -1,0 +1,9 @@
+1. For any scalar input, the output is a scalar boolean indicating whether that value is missing.
+
+2. For recognized missing scalar values such as `None`, `np.nan`, `pd.NA`, and `pd.NaT`, the output is `True`; for ordinary non-missing scalar values such as numbers or strings, the output is `False`.
+
+3. For NumPy arrays or other array-like inputs, the output has the same shape as the input and contains only boolean values.
+
+4. For each element of an array-like input, the corresponding output value is equal to applying `pandas.isna` to that individual element.
+
+5. For `Series` and `DataFrame` inputs, the output preserves the same type, shape, index, and columns as the input, with all values replaced by booleans indicating missingness.

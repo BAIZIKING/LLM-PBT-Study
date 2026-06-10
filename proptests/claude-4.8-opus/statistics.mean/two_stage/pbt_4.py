@@ -1,0 +1,77 @@
+from hypothesis import given, strategies as st
+from hypothesis import assume
+import statistics
+import math
+
+# Strategy for finite floats with a bounded range to avoid overflow/precision issues
+finite_floats = st.floats(
+    min_value=-1e9,
+    max_value=1e9,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+# Non-empty lists of bounded floats
+float_lists = st.lists(finite_floats, min_size=1, max_size=100)
+
+
+@given(st.data())
+def test_statistics_mean_within_bounds():
+    # Property 1: min <= mean <= max
+    data = data_draw = None
+    data = st.data
+    # Draw the actual list
+    lst = test_within_bounds_draw()
+# placeholder to avoid confusion; real implementation below
+    pass
+
+
+@given(data=float_lists)
+def test_within_bounds(data):
+    # Property 1: The mean is between the minimum and maximum values.
+    m = statistics.mean(data)
+    lo = min(data)
+    hi = max(data)
+    # Allow a small tolerance for floating point rounding.
+    tol = 1e-6 * (abs(hi) + abs(lo) + 1.0)
+    assert lo - tol <= m <= hi + tol
+
+
+@given(value=finite_floats, n=st.integers(min_value=1, max_value=100))
+def test_single_repeated_value(value, n):
+    # Property 2: The mean of a list of one repeated value equals that value.
+    data = [value] * n
+    m = statistics.mean(data)
+    assert math.isclose(m, value, rel_tol=1e-9, abs_tol=1e-6)
+
+
+@given(data=float_lists, c=st.floats(min_value=-1e6, max_value=1e6,
+                                     allow_nan=False, allow_infinity=False))
+def test_translation_invariance(data, c):
+    # Property 3: Adding constant c to every element increases mean by c.
+    base = statistics.mean(data)
+    shifted = statistics.mean([x + c for x in data])
+    tol = 1e-6 * (abs(base) + abs(c) + 1.0)
+    assert math.isclose(shifted, base + c, rel_tol=1e-9, abs_tol=tol)
+
+
+@given(data=float_lists, k=st.floats(min_value=-1e3, max_value=1e3,
+                                     allow_nan=False, allow_infinity=False))
+def test_scaling(data, k):
+    # Property 4: Multiplying every element by k multiplies mean by k.
+    base = statistics.mean(data)
+    scaled = statistics.mean([x * k for x in data])
+    tol = 1e-6 * (abs(base * k) + 1.0)
+    assert math.isclose(scaled, base * k, rel_tol=1e-9, abs_tol=tol)
+
+
+@given(data=float_lists)
+def test_sum_equals_mean_times_count(data):
+    # Property 5: sum(data) == mean(data) * len(data).
+    m = statistics.mean(data)
+    n = len(data)
+    total = math.fsum(data)
+    tol = 1e-6 * (abs(total) + 1.0)
+    assert math.isclose(m * n, total, rel_tol=1e-9, abs_tol=tol)
+
+# End program

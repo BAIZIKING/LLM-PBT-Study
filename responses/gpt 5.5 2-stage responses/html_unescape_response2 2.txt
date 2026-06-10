@@ -1,0 +1,74 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+bounded_text = st.text(max_size=1000)
+bounded_text_without_ampersand = st.text(
+    alphabet=st.characters(blacklist_characters="&"),
+    max_size=1000,
+)
+
+
+def is_safe_html5_numeric_codepoint(cp):
+    if cp < 0x20:
+        return False
+    if 0x7F <= cp <= 0x9F:
+        return False
+    if 0xD800 <= cp <= 0xDFFF:
+        return False
+    if 0xFDD0 <= cp <= 0xFDEF:
+        return False
+    if cp & 0xFFFE == 0xFFFE:
+        return False
+    return cp <= 0x10FFFF
+
+
+safe_numeric_codepoints = st.integers(
+    min_value=0,
+    max_value=0x10FFFF,
+).filter(is_safe_html5_numeric_codepoint)
+
+
+@given(bounded_text)
+def test_html_unescape_output_is_string(s):
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+
+@given(bounded_text_without_ampersand)
+def test_html_unescape_without_ampersand_is_unchanged(s):
+    result = html.unescape(s)
+    assert result == s
+
+
+@given(bounded_text)
+def test_html_unescape_output_length_never_exceeds_input_length(s):
+    result = html.unescape(s)
+    assert len(result) <= len(s)
+
+
+@given(
+    bounded_text_without_ampersand,
+    bounded_text_without_ampersand,
+)
+def test_html_unescape_unrecognized_reference_is_preserved(left, right):
+    unrecognized_reference = "&zzzzzzzzzz;"
+    s = left + unrecognized_reference + right
+    result = html.unescape(s)
+    assert result == s
+
+
+@given(safe_numeric_codepoints)
+def test_html_unescape_decimal_and_hex_numeric_references_are_equivalent(cp):
+    decimal_reference = f"&#{cp};"
+    hexadecimal_reference = f"&#x{cp:x};"
+
+    decimal_result = html.unescape(decimal_reference)
+    hexadecimal_result = html.unescape(hexadecimal_reference)
+
+    assert decimal_result == hexadecimal_result
+    assert decimal_result == chr(cp)
+
+
+# End program
+```

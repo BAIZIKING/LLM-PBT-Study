@@ -1,0 +1,120 @@
+```python
+from hypothesis import given, strategies as st, settings, assume
+import networkx as nx
+from itertools import combinations
+
+
+# Strategy to generate a random undirected graph (small, to keep clique enumeration tractable)
+@st.composite
+def graphs(draw, max_nodes=8):
+    n = draw(st.integers(min_value=0, max_value=max_nodes))
+    G = nx.Graph()
+    G.add_nodes_from(range(n))
+    # Possible edges
+    possible_edges = list(combinations(range(n), 2))
+    if possible_edges:
+        # Decide for each edge whether to include it
+        edge_flags = draw(
+            st.lists(st.booleans(), min_size=len(possible_edges), max_size=len(possible_edges))
+        )
+        for (u, v), flag in zip(possible_edges, edge_flags):
+            if flag:
+                G.add_edge(u, v)
+    return G
+
+
+def is_clique(G, nodes):
+    """Check that all pairs of distinct nodes are connected."""
+    for u, v in combinations(nodes, 2):
+        if not G.has_edge(u, v):
+            return False
+    return True
+
+
+# Property 1: Each output clique is a genuine complete subgraph with valid nodes.
+@settings(max_examples=200)
+@given(st.data())
+def test_networkx_find_cliques_property():
+    G = data_draw = None
+    # Property 1
+    @given(graphs())
+    def _prop1(G):
+        for clique in nx.find_cliques(G):
+            # All nodes exist in G
+            for node in clique:
+                assert node in G
+            # All distinct pairs are edges
+            assert is_clique(G, clique)
+
+    # Property 2: Each clique is maximal -- no node outside can be added.
+    @given(graphs())
+    def _prop2(G):
+        for clique in nx.find_cliques(G):
+            clique_set = set(clique)
+            for node in G:
+                if node in clique_set:
+                    continue
+                # node should NOT be adjacent to all nodes in the clique
+                adjacent_to_all = all(G.has_edge(node, c) for c in clique)
+                assert not adjacent_to_all, (
+                    f"Node {node} could be added to clique {clique}, not maximal"
+                )
+
+    # Property 3: When nodes is given, every returned clique contains all those nodes;
+    # when None, every node in G appears in at least one clique.
+    @given(graphs())
+    def _prop3(G):
+        # None case: every node appears in at least one clique
+        all_cliques = list(nx.find_cliques(G))
+        covered = set()
+        for clique in all_cliques:
+            covered.update(clique)
+        assert covered == set(G.nodes())
+
+        # nodes-provided case: pick a clique subset from an existing maximal clique
+        if all_cliques:
+            # choose a clique and a non-empty subset of it (guaranteed to be a clique)
+            for clique in all_cliques:
+                if not clique:
+                    continue
+                subset = clique[: max(1, len(clique) // 2)]
+                for c in nx.find_cliques(G, nodes=subset):
+                    assert set(subset).issubset(set(c))
+                break
+
+    # Property 4: Largest clique size equals clique number; full enumeration has no
+    # duplicates and matches the set of all maximal cliques.
+    @given(graphs())
+    def _prop4(G):
+        cliques = list(nx.find_cliques(G))
+        if cliques:
+            max_size = max(len(c) for c in cliques)
+            assert max_size == nx.graph_clique_number(G)
+
+        # No duplicate maximal cliques (compare as frozensets)
+        frozen = [frozenset(c) for c in cliques]
+        assert len(frozen) == len(set(frozen))
+
+    # Property 5: If nodes does not form a clique, ValueError is raised.
+    @given(graphs())
+    def _prop5(G):
+        # Find a pair of non-adjacent nodes
+        non_edge = None
+        for u, v in combinations(G.nodes(), 2):
+            if not G.has_edge(u, v):
+                non_edge = [u, v]
+                break
+        if non_edge is not None:
+            try:
+                list(nx.find_cliques(G, nodes=non_edge))
+                assert False, "Expected ValueError for non-clique nodes"
+            except ValueError:
+                pass
+
+    _prop1()
+    _prop2()
+    _prop3()
+    _prop4()
+    _prop5()
+# End program
+```

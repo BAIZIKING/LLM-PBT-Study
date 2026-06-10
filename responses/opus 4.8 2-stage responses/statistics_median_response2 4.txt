@@ -1,0 +1,53 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+import pytest
+
+# Strategy for numeric values, bounded to avoid overflows in averaging
+numbers = st.one_of(
+    st.integers(min_value=-10**9, max_value=10**9),
+    st.floats(min_value=-1e9, max_value=1e9, allow_nan=False, allow_infinity=False),
+)
+
+# Strategy for non-empty lists of numbers
+nonempty_lists = st.lists(numbers, min_size=1)
+
+
+@given(data=nonempty_lists)
+def test_median_within_range(data):
+    result = statistics.median(data)
+    assert min(data) <= result <= max(data)
+
+
+@given(data=nonempty_lists, rng=st.randoms())
+def test_median_permutation_invariant(data, rng):
+    shuffled = data[:]
+    rng.shuffle(shuffled)
+    assert statistics.median(data) == statistics.median(shuffled)
+
+
+@given(data=nonempty_lists)
+def test_median_odd_is_element(data):
+    if len(data) % 2 == 1:
+        result = statistics.median(data)
+        assert result in data
+        sorted_data = sorted(data)
+        assert result == sorted_data[len(data) // 2]
+
+
+@given(data=nonempty_lists)
+def test_median_even_is_average_of_middle(data):
+    if len(data) % 2 == 0:
+        result = statistics.median(data)
+        sorted_data = sorted(data)
+        n = len(data)
+        expected = (sorted_data[n // 2 - 1] + sorted_data[n // 2]) / 2
+        assert result == pytest.approx(expected)
+
+
+@given(data=st.just([]))
+def test_median_empty_raises(data):
+    with pytest.raises(statistics.StatisticsError):
+        statistics.median(data)
+# End program
+```

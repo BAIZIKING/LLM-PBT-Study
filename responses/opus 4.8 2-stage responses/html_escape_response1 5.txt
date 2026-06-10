@@ -1,0 +1,9 @@
+1. The output never contains an unescaped `&`, `<`, or `>` character; every occurrence of these characters in the input is replaced by its corresponding HTML entity (`&amp;`, `&lt;`, `&gt;`) in the output.
+
+2. When `quote` is true, the output contains no unescaped `"` or `'` characters; each is replaced by `&quot;` and `&#x27;` respectively. When `quote` is false, any `"` and `'` characters from the input appear unchanged in the output.
+
+3. If the input string contains none of the special characters (`&`, `<`, `>`, and additionally `"` and `'` when quote is true), the output equals the input unchanged (identity property).
+
+4. The escaping of `&` is performed first/consistently such that the output is idempotent in the sense that escaping an already-escaped string still produces valid, well-formed entity sequences (no entity becomes corrupted, e.g., `&amp;lt;` rather than `&lt;`).
+
+5. All characters in the input that are not among the special characters are preserved verbatim and in their original order in the output, so removing all entity sequences and special-character replacements yields the original non-special characters.

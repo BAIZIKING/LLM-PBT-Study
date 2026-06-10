@@ -1,0 +1,204 @@
+from hypothesis import given, strategies as st, assume, settings
+import pandas as pd
+import numpy as np
+import math
+
+
+# Strategy for finite, reasonably-bounded floats to avoid overflow / precision issues
+reasonable_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+# Strategy for input values that may include NaN
+input_values = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=True,
+    allow_infinity=False,
+    width=64,
+)
+
+
+@given(st.data())
+@settings(max_examples=500, deadline=None)
+def test_pandas_cut_property(data):
+    # ---- Draw the input array x ----
+    x = data.draw(
+        st.lists(input_values, min_size=1, max_size=30),
+        label="x",
+    )
+    x = np.array(x, dtype=float)
+
+    # ---- Decide how to build the bins ----
+    # Either an integer number of bins, or an explicit increasing sequence.
+    bins_kind = data.draw(st.sampled_from(["int", "sequence"]), label="bins_kind")
+
+    if bins_kind == "int":
+        n_bins = data.draw(st.integers(min_value=1, max_value=10), label="n_bins")
+        bins = n_bins
+        # cut with integer bins requires at least one finite, non-constant value
+        finite = x[np.isfinite(x)]
+        # If all values are NaN or all identical, pandas may raise; skip those.
+        assume(finite.size > 0)
+        assume(not np.all(finite == finite[0]))
+    else:
+        # Build a strictly increasing sequence of bin edges.
+        edges = data.draw(
+            st.lists(reasonable_floats, min_size=2, max_size=8, unique=True),
+            label="edges",
+        )
+        edges = sorted(edges)
+        bins = np.array(edges, dtype=float)
+        n_bins = len(bins) - 1
+
+    # ---- Draw other parameters ----
+    right = data.draw(st.booleans(), label="right")
+    include_lowest = data.draw(st.booleans(), label="include_lowest")
+    use_labels_false = data.draw(st.booleans(), label="labels_false")
+
+    labels = False if use_labels_false else None
+
+    # ---- Call pandas.cut ----
+    try:
+        result = pd.cut(
+            x,
+            bins,
+            right=right,
+            labels=labels,
+            include_lowest=include_lowest,
+        )
+        if use_labels_false:
+            # labels=False -> result is an ndarray of integers (floats with NaN allowed)
+            out = result
+            computed_bins = None
+        else:
+            out = result
+            computed_bins = None
+    except ValueError:
+        # Degenerate configurations (e.g. duplicate auto-generated edges) raise; skip.
+        assume(False)
+        return
+
+    # ---------------------------------------------------------------
+    # Property 1: Output length equals input length
+    # ---------------------------------------------------------------
+    assert len(out) == len(x), (
+        f"Output length {len(out)} != input length {len(x)}"
+    )
+
+    # ---------------------------------------------------------------
+    # Property 2: With labels=False, output integers are in [0, n_bins-1]
+    # ---------------------------------------------------------------
+    if use_labels_false:
+        arr = np.asarray(out, dtype=float)
+        non_na = arr[~np.isnan(arr)]
+        for v in non_na:
+            assert float(v).is_integer(), f"Bin indicator {v} is not an integer"
+            assert 0 <= v <= n_bins - 1, (
+                f"Bin indicator {v} out of range [0, {n_bins - 1}]"
+            )
+
+    # ---------------------------------------------------------------
+    # Property 3: NA inputs and out-of-range inputs map to NA outputs
+    # ---------------------------------------------------------------
+    if use_labels_false:
+        out_arr = np.asarray(out, dtype=float)
+        out_is_na = np.isnan(out_arr)
+    else:
+        out_is_na = pd.isna(out)
+        out_is_na = np.asarray(out_is_na)
+
+    for i, val in enumerate(x):
+        if math.isnan(val):
+            assert out_is_na[i], f"NaN input at index {i} did not map to NA"
+
+    # For a sequence-defined set of bins we know the covered range explicitly.
+    if bins_kind == "sequence":
+        low, high = bins[0], bins[-1]
+        for i, val in enumerate(x):
+            if math.isnan(val):
+                continue
+            # Determine whether val is strictly outside the bin coverage.
+            if right:
+                # Coverage is (low, high], unless include_lowest makes it [low, high].
+                if include_lowest:
+                    covered = (val >= low) and (val <= high)
+                else:
+                    covered = (val > low) and (val <= high)
+            else:
+                # Coverage is [low, high)
+                covered = (val >= low) and (val < high)
+            if not covered:
+                assert out_is_na[i], (
+                    f"Out-of-range value {val} at index {i} did not map to NA "
+                    f"(bins={bins}, right={right}, include_lowest={include_lowest})"
+                )
+
+    # ---------------------------------------------------------------
+    # Property 4: Integer bins -> retbins gives n_bins+1 monotonically increasing edges
+    # ---------------------------------------------------------------
+    if bins_kind == "int":
+        try:
+            _, retbins = pd.cut(
+                x,
+                bins,
+                right=right,
+                labels=labels,
+                include_lowest=include_lowest,
+                retbins=True,
+            )
+        except ValueError:
+            retbins = None
+
+        if retbins is not None:
+            assert len(retbins) == n_bins + 1, (
+                f"retbins length {len(retbins)} != {n_bins + 1}"
+            )
+            diffs = np.diff(retbins)
+            assert np.all(diffs > 0), (
+                f"retbins not strictly increasing: {retbins}"
+            )
+
+            # Also: when not labels=False, the Categorical has exactly n_bins categories.
+            if not use_labels_false:
+                assert len(result.categories) == n_bins, (
+                    f"Number of categories {len(result.categories)} != {n_bins}"
+                )
+
+    # ---------------------------------------------------------------
+    # Property 5: Each non-NA value lies within its assigned interval,
+    #             respecting right / include_lowest semantics.
+    # ---------------------------------------------------------------
+    if not use_labels_false:
+        codes = result.codes  # -1 means NA
+        categories = result.categories  # IntervalIndex
+        for i, val in enumerate(x):
+            if math.isnan(val):
+                continue
+            code = codes[i]
+            if code == -1:
+                # NA assignment; covered by property 3 reasoning.
+                continue
+            interval = categories[code]
+            left = interval.left
+            rt = interval.right
+            closed = interval.closed  # 'left', 'right', 'both', 'neither'
+
+            if closed == "right":
+                ok = (val > left) and (val <= rt)
+            elif closed == "left":
+                ok = (val >= left) and (val < rt)
+            elif closed == "both":
+                ok = (val >= left) and (val <= rt)
+            else:  # neither
+                ok = (val > left) and (val < rt)
+
+            assert ok, (
+                f"Value {val} not contained in assigned interval {interval} "
+                f"(closed={closed})"
+            )
+# End program

@@ -1,0 +1,61 @@
+```python
+from hypothesis import given, strategies as st
+from datetime import timedelta
+
+# Summary: Generate timedeltas from explicit edge cases, full normalized ranges, and
+# unnormalized constructor arguments. Check that total_seconds() matches division by
+# one second, returns a float, and preserves microsecond accuracy for intervals within
+# a conservative 270-year bound.
+@given(st.data())
+def test_datetime_timedelta_total_seconds(data):
+    edge_cases = st.sampled_from(
+        [
+            timedelta(0),
+            timedelta.resolution,
+            -timedelta.resolution,
+            timedelta(seconds=1),
+            timedelta(seconds=-1),
+            timedelta(days=1),
+            timedelta(days=-1),
+            timedelta(days=365),
+            timedelta(weeks=40, days=84, hours=23, minutes=50, seconds=600),
+            timedelta(days=270 * 365),
+            timedelta(days=270 * 365, microseconds=1),
+            -timedelta(days=270 * 365),
+            -timedelta(days=270 * 365, microseconds=1),
+            timedelta.min,
+            timedelta.max,
+        ]
+    )
+
+    normalized_timedeltas = st.builds(
+        timedelta,
+        days=st.integers(min_value=-999_999_999, max_value=999_999_999),
+        seconds=st.integers(min_value=0, max_value=86_399),
+        microseconds=st.integers(min_value=0, max_value=999_999),
+    )
+
+    unnormalized_timedeltas = st.builds(
+        timedelta,
+        weeks=st.integers(min_value=-10_000, max_value=10_000),
+        days=st.integers(min_value=-1_000, max_value=1_000),
+        hours=st.integers(min_value=-100_000, max_value=100_000),
+        minutes=st.integers(min_value=-100_000, max_value=100_000),
+        seconds=st.integers(min_value=-100_000, max_value=100_000),
+        microseconds=st.integers(min_value=-(10**12), max_value=10**12),
+    )
+
+    td = data.draw(
+        st.one_of(edge_cases, normalized_timedeltas, unnormalized_timedeltas)
+    )
+
+    total = td.total_seconds()
+
+    assert isinstance(total, float)
+    assert total == td / timedelta(seconds=1)
+
+    microsecond_accuracy_limit = timedelta(days=270 * 365)
+    if -microsecond_accuracy_limit <= td <= microsecond_accuracy_limit:
+        assert timedelta(seconds=total) == td
+# End program
+```

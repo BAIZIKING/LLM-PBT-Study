@@ -1,0 +1,9 @@
+1. If the operation succeeds, the result’s exponent is exactly equal to the exponent of the `exp` operand.
+
+2. If the operation succeeds, the result is numerically equal to the original `Decimal` rounded to the exponent of `exp` using the selected rounding mode.
+
+3. If the operation succeeds without rounding being necessary, the result has the same numeric value as the original operand, differing only in exponent/trailing zeros if needed.
+
+4. If the coefficient length required for the quantized result would exceed the active context precision, the operation signals `InvalidOperation` rather than returning a result.
+
+5. The operation never signals `Underflow`, even when the returned result is both subnormal and inexact.

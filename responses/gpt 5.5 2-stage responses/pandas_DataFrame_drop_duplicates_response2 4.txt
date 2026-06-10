@@ -1,0 +1,188 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+
+_CELL_VALUES = st.one_of(
+    st.integers(min_value=-10, max_value=10),
+    st.text(alphabet=st.characters(min_codepoint=97, max_codepoint=122), min_size=0, max_size=3),
+)
+
+
+def _draw_dataframe(data, *, max_rows=20, max_cols=5, custom_index=False):
+    n_rows = data.draw(st.integers(min_value=0, max_value=max_rows), label="n_rows")
+    n_cols = data.draw(st.integers(min_value=1, max_value=max_cols), label="n_cols")
+    columns = [f"c{i}" for i in range(n_cols)]
+
+    values = {
+        col: data.draw(
+            st.lists(_CELL_VALUES, min_size=n_rows, max_size=n_rows),
+            label=f"values_{col}",
+        )
+        for col in columns
+    }
+
+    df = pandas.DataFrame(values, columns=columns)
+
+    if custom_index:
+        index = data.draw(
+            st.lists(
+                st.one_of(
+                    st.integers(min_value=-5, max_value=5),
+                    st.text(
+                        alphabet=st.characters(min_codepoint=97, max_codepoint=122),
+                        min_size=0,
+                        max_size=3,
+                    ),
+                ),
+                min_size=n_rows,
+                max_size=n_rows,
+            ),
+            label="index",
+        )
+        df.index = pandas.Index(index)
+
+    return df, columns
+
+
+def _draw_subset(data, columns):
+    mode = data.draw(st.sampled_from(["none", "single", "list"]), label="subset_mode")
+
+    if mode == "none":
+        return None, list(columns)
+
+    if mode == "single":
+        col = data.draw(st.sampled_from(columns), label="single_subset_col")
+        return col, [col]
+
+    subset_cols = data.draw(
+        st.lists(
+            st.sampled_from(columns),
+            min_size=1,
+            max_size=len(columns),
+            unique=True,
+        ),
+        label="subset_cols",
+    )
+    return subset_cols, list(subset_cols)
+
+
+def _key_for_position(df, pos, subset_cols):
+    row = df.iloc[pos]
+    return tuple(row[col] for col in subset_cols)
+
+
+def _deduplicated_positions(df, subset_cols, keep):
+    keys = [_key_for_position(df, pos, subset_cols) for pos in range(len(df))]
+
+    if keep == "first":
+        seen = set()
+        positions = []
+        for pos, key in enumerate(keys):
+            if key not in seen:
+                seen.add(key)
+                positions.append(pos)
+        return positions
+
+    if keep == "last":
+        last_position = {}
+        for pos, key in enumerate(keys):
+            last_position[key] = pos
+        return [pos for pos, key in enumerate(keys) if last_position[key] == pos]
+
+    counts = {}
+    for key in keys:
+        counts[key] = counts.get(key, 0) + 1
+    return [pos for pos, key in enumerate(keys) if counts[key] == 1]
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_output_has_no_duplicate_keys(data):
+    df, columns = _draw_dataframe(data)
+    subset_arg, subset_cols = _draw_subset(data, columns)
+    keep = data.draw(st.sampled_from(["first", "last", False]), label="keep")
+
+    result = df.drop_duplicates(subset=subset_arg, keep=keep)
+
+    seen = set()
+    for pos in range(len(result)):
+        key = _key_for_position(result, pos, subset_cols)
+        assert key not in seen
+        seen.add(key)
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_output_rows_come_from_input(data):
+    df, columns = _draw_dataframe(data)
+    subset_arg, _ = _draw_subset(data, columns)
+    keep = data.draw(st.sampled_from(["first", "last", False]), label="keep")
+
+    result = df.drop_duplicates(subset=subset_arg, keep=keep)
+
+    input_rows = {
+        tuple(df.iloc[pos][col] for col in columns)
+        for pos in range(len(df))
+    }
+
+    for pos in range(len(result)):
+        output_row = tuple(result.iloc[pos][col] for col in columns)
+        assert output_row in input_rows
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_keep_first_keeps_first_occurrences_in_order(data):
+    df, columns = _draw_dataframe(data)
+    subset_arg, subset_cols = _draw_subset(data, columns)
+
+    result = df.drop_duplicates(subset=subset_arg, keep="first")
+
+    expected_positions = _deduplicated_positions(df, subset_cols, keep="first")
+    expected = df.iloc[expected_positions]
+
+    pandas.testing.assert_frame_equal(result, expected)
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_keep_last_keeps_last_occurrences_in_order(data):
+    df, columns = _draw_dataframe(data)
+    subset_arg, subset_cols = _draw_subset(data, columns)
+
+    result = df.drop_duplicates(subset=subset_arg, keep="last")
+
+    expected_positions = _deduplicated_positions(df, subset_cols, keep="last")
+    expected = df.iloc[expected_positions]
+
+    pandas.testing.assert_frame_equal(result, expected)
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_ignore_index_and_preserve_index_behavior(data):
+    df, columns = _draw_dataframe(data, custom_index=True)
+    subset_arg, subset_cols = _draw_subset(data, columns)
+    keep = data.draw(st.sampled_from(["first", "last", False]), label="keep")
+
+    result_preserve_index = df.drop_duplicates(
+        subset=subset_arg,
+        keep=keep,
+        ignore_index=False,
+    )
+    result_ignore_index = df.drop_duplicates(
+        subset=subset_arg,
+        keep=keep,
+        ignore_index=True,
+    )
+
+    expected_positions = _deduplicated_positions(df, subset_cols, keep=keep)
+    expected_index = list(df.index[expected_positions])
+
+    assert list(result_preserve_index.index) == expected_index
+    assert list(result_ignore_index.index) == list(range(len(result_ignore_index)))
+
+    pandas.testing.assert_frame_equal(
+        result_ignore_index,
+        result_preserve_index.reset_index(drop=True),
+    )
+
+
+# End program
+```

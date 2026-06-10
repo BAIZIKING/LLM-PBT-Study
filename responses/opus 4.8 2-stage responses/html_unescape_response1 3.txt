@@ -1,0 +1,11 @@
+Here is a list of five properties on the output of `html.unescape(s)` suitable for property-based testing:
+
+1. **Output is always a string**: For any input string `s`, the result of `html.unescape(s)` is of type `str`.
+
+2. **Idempotence on character-reference-free output**: If the output contains no character references (e.g., for inputs that produce plain text with no `&...;` patterns), applying `html.unescape` again yields the same result. More generally, unescaping a string that contains no ampersands returns the string unchanged.
+
+3. **Known reference mappings**: Specific named, decimal, and hexadecimal character references map to their defined Unicode characters — for example, `&gt;`, `&#62;`, and `&#x3e;` all produce the single character `>`, and `&amp;` produces `&`.
+
+4. **Output length is no greater than input length**: Since each character reference (which is multiple characters long) is replaced by one or a few Unicode characters, and non-reference characters are left unchanged, the length of `html.unescape(s)` is less than or equal to the length of `s`.
+
+5. **Text without ampersands is invariant**: If the input string `s` contains no `&` character, then `html.unescape(s)` returns `s` exactly (the function only modifies substrings beginning with `&`).

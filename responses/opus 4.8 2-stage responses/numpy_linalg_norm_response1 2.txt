@@ -1,0 +1,9 @@
+1. **Non-negativity for standard norms**: For any input `x` and any `ord` that defines a true norm (e.g., `None`, `'fro'`, `'nuc'`, positive `ord` values, `inf`), the returned norm value is always non-negative (≥ 0).
+
+2. **Absolute homogeneity (scaling)**: For a scalar multiplier `s`, the norm of `s * x` equals `abs(s)` times the norm of `x`, i.e., `norm(s*x, ord) == abs(s) * norm(x, ord)`, for any valid `ord`.
+
+3. **Zero vector/matrix gives zero norm**: When `x` is an array of all zeros, the computed norm is exactly 0.0 for any valid `ord` (and the result of `ord=0` on zeros equals 0 since `sum(x != 0)` is 0).
+
+4. **Consistency between default and explicit Frobenius/2-norm**: For a 1-D input, `norm(x)` (default) equals `norm(x, 2)` and equals `sqrt(sum(abs(x)**2))`; for a 2-D input, `norm(x)` (default) equals `norm(x, 'fro')` and equals `norm(x.ravel())`.
+
+5. **Output shape with axis and keepdims**: When `axis` is specified, the reduced axes are removed from the output shape (so the output dimensionality matches `x.ndim` minus the number of axes reduced), and when `keepdims=True`, those reduced axes remain in the output as dimensions of size one, allowing the result to broadcast against the original `x`.

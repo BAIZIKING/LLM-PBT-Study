@@ -1,0 +1,11 @@
+Here are five properties of the output of `timedelta.total_seconds()` suitable for property-based testing:
+
+1. The output is always a `float`, regardless of the input timedelta.
+
+2. The output equals the result of dividing the timedelta by `timedelta(seconds=1)` (i.e., `td.total_seconds() == td / timedelta(seconds=1)`).
+
+3. The output equals the sum computed from the timedelta's normalized components, specifically `td.days * 86400 + td.seconds + td.microseconds / 1_000_000`.
+
+4. The sign of the output matches the sign of the duration: it is positive for positive durations, negative for negative durations, and exactly `0.0` for a zero timedelta.
+
+5. The function is additive: for two timedeltas `td1` and `td2`, `(td1 + td2).total_seconds()` is (approximately, allowing for floating-point error) equal to `td1.total_seconds() + td2.total_seconds()`.

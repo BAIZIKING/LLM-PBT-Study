@@ -1,0 +1,207 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate empty, small, large, repetitive, and arbitrary byte payloads; compress them as zlib, raw deflate, or gzip streams with varied window sizes; vary bufsize across edge values such as 0, 1, the default, and larger sizes; also generate malformed streams, wrapper mismatches, random bytes, invalid wbits, and negative bufsize values. Check that compatible streams round-trip exactly, auto zlib/gzip modes work where documented, bufsize does not affect decompression results, malformed streams raise zlib.error, and invalid parameters raise documented parameter/data errors.
+@given(st.data())
+def test_zlib_decompress(data):
+    payload = data.draw(
+        st.one_of(
+            st.binary(min_size=0, max_size=4096),
+            st.binary(min_size=1, max_size=64).flatmap(
+                lambda chunk: st.integers(min_value=0, max_value=2048).map(
+                    lambda n: chunk * n
+                )
+            ),
+            st.just(b""),
+            st.just(b"\x00" * 32768),
+            st.just(b"a" * 65536),
+        )
+    )
+
+    bufsize = data.draw(
+        st.one_of(
+            st.just(0),
+            st.just(1),
+            st.just(zlib.DEF_BUF_SIZE),
+            st.integers(min_value=2, max_value=65536),
+        )
+    )
+
+    def compress_with(wbits):
+        compressor = zlib.compressobj(level=6, wbits=wbits)
+        return compressor.compress(payload) + compressor.flush()
+
+    def supports_wbits_zero():
+        try:
+            zlib.decompress(zlib.compress(b""), wbits=0)
+            return True
+        except zlib.error:
+            return False
+
+    mode = data.draw(
+        st.sampled_from(
+            [
+                "valid_zlib",
+                "valid_raw",
+                "valid_gzip",
+                "truncated",
+                "wrong_wrapper",
+                "random_bytes",
+                "invalid_wbits",
+                "negative_bufsize",
+            ]
+        )
+    )
+
+    if mode == "valid_zlib":
+        compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+        decompress_window = data.draw(
+            st.integers(min_value=compress_wbits, max_value=15)
+        )
+
+        candidates = [decompress_window, 32 + decompress_window]
+        if supports_wbits_zero():
+            candidates.append(0)
+
+        decompress_wbits = data.draw(st.sampled_from(candidates))
+        compressed = compress_with(compress_wbits)
+
+        result = zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=bufsize
+        )
+
+        assert result == payload
+        assert zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=0
+        ) == payload
+
+    elif mode == "valid_raw":
+        compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+        decompress_window = data.draw(
+            st.integers(min_value=compress_wbits, max_value=15)
+        )
+
+        compressed = compress_with(-compress_wbits)
+        decompress_wbits = -decompress_window
+
+        result = zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=bufsize
+        )
+
+        assert result == payload
+        assert zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=0
+        ) == payload
+
+    elif mode == "valid_gzip":
+        compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+        decompress_window = data.draw(
+            st.integers(min_value=compress_wbits, max_value=15)
+        )
+
+        compressed = compress_with(16 + compress_wbits)
+        decompress_wbits = data.draw(
+            st.sampled_from([16 + decompress_window, 32 + decompress_window])
+        )
+
+        result = zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=bufsize
+        )
+
+        assert result == payload
+        assert zlib.decompress(
+            compressed, wbits=decompress_wbits, bufsize=0
+        ) == payload
+
+    elif mode == "truncated":
+        wrapper = data.draw(st.sampled_from(["zlib", "raw", "gzip"]))
+        compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+
+        if wrapper == "zlib":
+            compressed = compress_with(compress_wbits)
+            decompress_wbits = compress_wbits
+        elif wrapper == "raw":
+            compressed = compress_with(-compress_wbits)
+            decompress_wbits = -compress_wbits
+        else:
+            compressed = compress_with(16 + compress_wbits)
+            decompress_wbits = 16 + compress_wbits
+
+        cut = data.draw(st.integers(min_value=0, max_value=len(compressed) - 1))
+        truncated = compressed[:cut]
+
+        try:
+            zlib.decompress(truncated, wbits=decompress_wbits, bufsize=bufsize)
+        except zlib.error:
+            pass
+        else:
+            assert False, "truncated compressed data should raise zlib.error"
+
+    elif mode == "wrong_wrapper":
+        compress_wbits = data.draw(st.integers(min_value=9, max_value=15))
+        mismatch = data.draw(st.sampled_from(["zlib_as_gzip", "gzip_as_zlib"]))
+
+        if mismatch == "zlib_as_gzip":
+            compressed = compress_with(compress_wbits)
+            decompress_wbits = 16 + compress_wbits
+        else:
+            compressed = compress_with(16 + compress_wbits)
+            decompress_wbits = compress_wbits
+
+        try:
+            zlib.decompress(compressed, wbits=decompress_wbits, bufsize=bufsize)
+        except zlib.error:
+            pass
+        else:
+            assert False, "using the wrong wrapper format should raise zlib.error"
+
+    elif mode == "random_bytes":
+        random_data = data.draw(st.binary(min_size=0, max_size=256))
+        valid_wbits = data.draw(
+            st.one_of(
+                st.integers(min_value=-15, max_value=-8),
+                st.just(0),
+                st.integers(min_value=8, max_value=15),
+                st.integers(min_value=24, max_value=31),
+                st.integers(min_value=40, max_value=47),
+            )
+        )
+
+        try:
+            result = zlib.decompress(random_data, wbits=valid_wbits, bufsize=bufsize)
+        except zlib.error:
+            pass
+        else:
+            assert isinstance(result, bytes)
+
+    elif mode == "invalid_wbits":
+        compressed = compress_with(15)
+        invalid_wbits = data.draw(
+            st.one_of(
+                st.integers(min_value=-100, max_value=-16),
+                st.integers(min_value=-7, max_value=-1),
+                st.integers(min_value=1, max_value=7),
+                st.integers(min_value=16, max_value=23),
+                st.integers(min_value=32, max_value=39),
+                st.integers(min_value=48, max_value=100),
+            )
+        )
+
+        try:
+            zlib.decompress(compressed, wbits=invalid_wbits, bufsize=bufsize)
+        except (zlib.error, ValueError):
+            pass
+        else:
+            assert False, "invalid wbits should raise an error"
+
+    else:
+        compressed = compress_with(15)
+        negative_bufsize = data.draw(st.integers(min_value=-1000, max_value=-1))
+
+        try:
+            zlib.decompress(compressed, wbits=15, bufsize=negative_bufsize)
+        except ValueError:
+            pass
+        else:
+            assert False, "negative bufsize should raise ValueError"
+# End program

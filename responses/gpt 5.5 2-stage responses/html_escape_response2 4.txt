@@ -1,0 +1,74 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+MAX_SIZE = 1000
+TEXT = st.text(max_size=MAX_SIZE)
+
+
+def expected_html_escape(s, quote=True):
+    replacements = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+    }
+    if quote:
+        replacements.update({
+            '"': "&quot;",
+            "'": "&#x27;",
+        })
+    return "".join(replacements.get(ch, ch) for ch in s)
+
+
+@given(st.data())
+def test_html_escape_outputs_no_literal_angle_brackets(data):
+    s = data.draw(TEXT)
+    result = html.escape(s)
+
+    assert "<" not in result
+    assert ">" not in result
+
+
+@given(st.data())
+def test_html_escape_escapes_ampersands_even_inside_entities(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    result = html.escape(s, quote=quote)
+    expected = expected_html_escape(s, quote=quote)
+
+    assert result == expected
+
+
+@given(st.data())
+def test_html_escape_quote_true_outputs_no_literal_quotes(data):
+    s = data.draw(TEXT)
+
+    result = html.escape(s, quote=True)
+
+    assert '"' not in result
+    assert "'" not in result
+
+
+@given(st.data())
+def test_html_escape_quote_false_preserves_literal_quotes(data):
+    s = data.draw(TEXT)
+
+    result = html.escape(s, quote=False)
+
+    assert result.count('"') == s.count('"')
+    assert result.count("'") == s.count("'")
+
+
+@given(st.data())
+def test_html_escape_only_applies_documented_replacements(data):
+    s = data.draw(TEXT)
+    quote = data.draw(st.booleans())
+
+    result = html.escape(s, quote=quote)
+    expected = expected_html_escape(s, quote=quote)
+
+    assert result == expected
+
+# End program
+```

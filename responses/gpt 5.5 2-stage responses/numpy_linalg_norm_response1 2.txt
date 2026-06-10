@@ -1,0 +1,9 @@
+1. The returned norm is always non-negative.
+
+2. When both `ord` and `axis` are `None`, the result equals the Euclidean norm of the flattened input: `sqrt(sum(abs(x.ravel())**2))`.
+
+3. For supported homogeneous norm orders, scaling the input by a scalar scales the output by the scalar’s absolute value: `norm(c * x) == abs(c) * norm(x)`.
+
+4. When computing vector norms, `ord=np.inf` returns the maximum absolute value along the normed axis, `ord=-np.inf` returns the minimum absolute value, and `ord=0` returns the count of nonzero elements.
+
+5. When `keepdims=True`, every axis reduced by the norm remains in the output shape with size `1`, so the result is broadcast-compatible with the original input.

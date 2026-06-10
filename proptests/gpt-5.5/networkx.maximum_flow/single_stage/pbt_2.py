@@ -1,0 +1,158 @@
+from hypothesis import given, strategies as st
+import math
+import networkx as nx
+from networkx.algorithms.flow import edmonds_karp, preflow_push, shortest_augmenting_path
+
+# Summary: Generate small directed NetworkX graphs with 2-8 nodes, distinct source/sink,
+# random edge orientations, random capacity attribute names, finite nonnegative integer/float
+# capacities including zero, and missing capacity attributes representing infinite capacity.
+# Also sometimes generate unsupported MultiDiGraph inputs. Check documented properties:
+# MultiDiGraph raises NetworkXError; infinite-capacity s-t paths raise NetworkXUnbounded;
+# otherwise returned flows are nonnegative, respect finite capacities, conserve flow at
+# intermediate nodes, match net source/sink flow, and agree with maximum_flow_value and
+# minimum_cut_value.
+@given(st.data())
+def test_networkx_maximum_flow(data):
+    n = data.draw(st.integers(min_value=2, max_value=8), label="node_count")
+    nodes = list(range(n))
+
+    source = data.draw(st.sampled_from(nodes), label="source")
+    sink = data.draw(st.sampled_from([v for v in nodes if v != source]), label="sink")
+
+    graph_cls = data.draw(st.sampled_from([nx.DiGraph, nx.MultiDiGraph]), label="graph_cls")
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+
+    capacity_key = data.draw(
+        st.sampled_from(["capacity", "cap", "weight", "bandwidth"]),
+        label="capacity_key",
+    )
+
+    finite_capacity = st.one_of(
+        st.integers(min_value=0, max_value=50),
+        st.floats(
+            min_value=0,
+            max_value=50,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            # Avoid antiparallel edges in DiGraph cases so edge-flow interpretation is direct.
+            direction = data.draw(
+                st.integers(min_value=0, max_value=2),
+                label=f"edge_direction_{i}_{j}",
+            )
+            if direction == 0:
+                continue
+
+            u, v = (i, j) if direction == 1 else (j, i)
+
+            has_finite_capacity = data.draw(
+                st.booleans(),
+                label=f"has_finite_capacity_{u}_{v}",
+            )
+            if has_finite_capacity:
+                cap = data.draw(finite_capacity, label=f"capacity_{u}_{v}")
+                G.add_edge(u, v, **{capacity_key: cap})
+            else:
+                # Missing capacity attribute means infinite capacity.
+                G.add_edge(u, v)
+
+    flow_func = data.draw(
+        st.sampled_from([None, edmonds_karp, preflow_push, shortest_augmenting_path]),
+        label="flow_func",
+    )
+
+    if G.is_multigraph():
+        try:
+            nx.maximum_flow(
+                G,
+                source,
+                sink,
+                capacity=capacity_key,
+                flow_func=flow_func,
+            )
+        except nx.NetworkXError:
+            return
+        assert False, "maximum_flow should reject MultiGraph/MultiDiGraph inputs"
+
+    try:
+        flow_value, flow_dict = nx.maximum_flow(
+            G,
+            source,
+            sink,
+            capacity=capacity_key,
+            flow_func=flow_func,
+        )
+    except nx.NetworkXUnbounded:
+        infinite_edge_graph = nx.DiGraph()
+        infinite_edge_graph.add_nodes_from(G.nodes)
+        infinite_edge_graph.add_edges_from(
+            (u, v)
+            for u, v, attrs in G.edges(data=True)
+            if capacity_key not in attrs
+        )
+        assert nx.has_path(infinite_edge_graph, source, sink)
+        return
+
+    total_reported_flow = sum(
+        abs(float(flow))
+        for u in flow_dict
+        for flow in flow_dict[u].values()
+    )
+    tolerance = 1e-6 * (1 + abs(float(flow_value)) + total_reported_flow)
+
+    def assert_close(a, b):
+        assert math.isclose(
+            float(a),
+            float(b),
+            rel_tol=1e-6,
+            abs_tol=tolerance,
+        )
+
+    def outflow(u):
+        return sum(flow_dict.get(u, {}).values())
+
+    def inflow(u):
+        return sum(flow_dict.get(v, {}).get(u, 0) for v in G.predecessors(u))
+
+    for u, v, attrs in G.edges(data=True):
+        edge_flow = flow_dict[u][v]
+        assert edge_flow >= -tolerance
+
+        if capacity_key in attrs:
+            assert edge_flow <= attrs[capacity_key] + tolerance
+
+    assert_close(outflow(source) - inflow(source), flow_value)
+    assert_close(inflow(sink) - outflow(sink), flow_value)
+
+    for node in G.nodes:
+        if node not in {source, sink}:
+            assert_close(outflow(node) - inflow(node), 0)
+
+    assert_close(
+        nx.maximum_flow_value(
+            G,
+            source,
+            sink,
+            capacity=capacity_key,
+            flow_func=flow_func,
+        ),
+        flow_value,
+    )
+
+    assert_close(
+        nx.minimum_cut_value(
+            G,
+            source,
+            sink,
+            capacity=capacity_key,
+            flow_func=flow_func,
+        ),
+        flow_value,
+    )
+# End program

@@ -1,0 +1,9 @@
+1. If the operation completes without error, the result’s exponent is exactly equal to the exponent of the `exp` operand.
+
+2. If rounding is required, the result is equal to the first operand rounded to the exponent of `exp` using the explicitly supplied `rounding` mode, or otherwise the applicable context’s rounding mode.
+
+3. If the coefficient length of the quantized result would exceed the active context precision, the operation signals `InvalidOperation` rather than returning such a result.
+
+4. The operation never signals `Underflow`, even when the quantized result is both subnormal and inexact.
+
+5. The operation signals an error if the resulting exponent would be greater than `Emax` or less than `Etiny()` for the active context.

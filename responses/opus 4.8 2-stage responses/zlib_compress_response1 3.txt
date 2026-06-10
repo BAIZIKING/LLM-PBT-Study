@@ -1,0 +1,9 @@
+1. The output is always a bytes object.
+
+2. Decompressing the output (with the appropriate decompression settings matching the wbits value used) returns the original input data exactly (round-trip property).
+
+3. When wbits is in the range +9 to +15, the output begins with a valid zlib header (the first byte's low 4 bits equal 8 for the deflate method, and the two-byte header is a multiple of 31 as a checksum).
+
+4. When wbits is in the range +25 to +31, the output begins with the gzip magic header bytes (0x1f, 0x8b).
+
+5. Compressing the same input with a higher compression level (e.g., 9) produces output that is less than or equal in size to the output produced with a lower level (e.g., 1), for sufficiently compressible inputs.

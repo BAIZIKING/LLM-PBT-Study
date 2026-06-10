@@ -1,0 +1,54 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromordinal(ordinal)`:
+
+1. **Valid range coverage**: The documentation states valid ordinals are `1 <= ordinal <= datetime.max.toordinal()`. I'll use `st.integers()` with these explicit bounds to cover the full valid range.
+
+2. **Edge cases**: Hypothesis automatically biases toward boundary values when given bounded integer strategies, so it will frequently test `1` (minimum), `datetime.max.toordinal()` (maximum), and values near these boundaries. This naturally exercises the January 1 of year 1 edge case and the maximum date.
+
+3. **Wide distribution**: Integers across the whole range will produce datetimes spanning thousands of years.
+
+## Properties to Check
+
+Based on the API documentation, the returned datetime must satisfy:
+
+1. **Hour, minute, second, microsecond are all 0** — explicitly stated.
+2. **tzinfo is None** — explicitly stated.
+3. **Round-trip consistency**: `result.toordinal()` should equal the input ordinal, since `fromordinal` is the inverse of `toordinal` (January 1 of year 1 has ordinal 1, establishing the correspondence).
+4. **Return type**: The result must be a `datetime` instance.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate integers across the full valid ordinal range
+# [1, datetime.max.toordinal()], letting Hypothesis bias toward the
+# boundary edge cases (min=1 for year 1, and the maximum ordinal).
+@given(st.data())
+def test_datetime_datetime_fromordinal():
+    max_ordinal = datetime.max.toordinal()
+    ordinal = st.integers(min_value=1, max_value=max_ordinal)
+    o = data_draw = None  # placeholder removed below
+    o = st.integers(min_value=1, max_value=max_ordinal)
+    n = test_datetime_datetime_fromordinal  # no-op reference
+    # Draw the input ordinal
+    value = None
+    @given(o)
+    def inner(ord_val):
+        result = datetime.fromordinal(ord_val)
+        # Property 4: result is a datetime instance
+        assert isinstance(result, datetime)
+        # Property 1: time components are all zero
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+        # Property 2: tzinfo is None
+        assert result.tzinfo is None
+        # Property 3: round-trip consistency
+        assert result.toordinal() == ord_val
+    inner()
+# End program
+```

@@ -1,0 +1,9 @@
+1. **Output length matches input length**: When `labels=False` or `labels=None` (returning ndarray/Categorical/Series), the number of elements in the output equals the number of elements in the input array `x`.
+
+2. **NA values are preserved**: Any NaN or out-of-bounds values in the input `x` result in NaN/NA at the corresponding positions in the output, and values within bin coverage are non-NA.
+
+3. **Correct number of bins/categories**: When `bins` is an integer `n` and `duplicates='raise'`, the resulting Categorical has exactly `n` categories; when `bins` is a sequence of `k` edges, the result has `k-1` categories (after accounting for dropped duplicates if `duplicates='drop'`).
+
+4. **Each value falls in its assigned interval**: For each non-NA element, the original value of `x` lies within the interval it is binned into, respecting the `right` and `include_lowest` boundary rules (e.g., for `right=True`, value is in `(low, high]`).
+
+5. **Categories are ordered when `ordered=True`**: When `ordered=True`, the resulting Categorical's categories are in monotonically increasing order, and bin assignments are consistent with that ordering (larger input values map to intervals at or after those of smaller values).

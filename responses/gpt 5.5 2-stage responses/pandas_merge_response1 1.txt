@@ -1,0 +1,9 @@
+1. For non-cross merges, every output row corresponds to a matching key tuple from the left and/or right inputs: matched rows combine left and right rows with equal join keys, while unmatched rows appear only for `left`, `right`, or `outer` joins with missing values filled on the absent side.
+
+2. For each join key tuple, including null key values which pandas treats as matching, the output row multiplicity is correct: matched groups produce `left_count * right_count` rows; left-only groups appear in `left`/`outer`; right-only groups appear in `right`/`outer`.
+
+3. For `how='cross'`, the output contains exactly the Cartesian product of the two inputs, with `len(left) * len(right)` rows, and no join-key columns may be required to determine the result.
+
+4. The output columns are the expected combination of left and right columns: join keys are represented according to the merge specification, non-key columns from both inputs are preserved, and overlapping non-key column names are disambiguated using `suffixes`.
+
+5. If `indicator` is enabled, the output contains the indicator column with only `left_only`, `right_only`, and `both` values, and each value accurately describes whether that output row came from only the left input, only the right input, or a match in both.

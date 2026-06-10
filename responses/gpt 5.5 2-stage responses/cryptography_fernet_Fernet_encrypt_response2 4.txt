@@ -1,0 +1,75 @@
+```python
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import base64
+import time
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_returns_bytes_property(data):
+    message = data.draw(st.binary(max_size=4096))
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(message)
+
+    assert isinstance(token, bytes)
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_returns_urlsafe_base64_property(data):
+    message = data.draw(st.binary(max_size=4096))
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(message)
+    decoded = base64.urlsafe_b64decode(token)
+
+    assert isinstance(decoded, bytes)
+    assert len(decoded) > 0
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_decrypt_round_trip_property(data):
+    message = data.draw(st.binary(max_size=4096))
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(message)
+
+    assert fernet.decrypt(token) == message
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_modified_token_rejected_property(data):
+    message = data.draw(st.binary(max_size=4096))
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(message)
+    modified_token = b"h" + token[1:] if token[:1] != b"h" else b"g" + token[1:]
+
+    try:
+        fernet.decrypt(modified_token)
+    except InvalidToken:
+        pass
+    else:
+        assert False
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_timestamp_visible_property(data):
+    message = data.draw(st.binary(max_size=4096))
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    before = int(time.time())
+    token = fernet.encrypt(message)
+    after = int(time.time())
+
+    timestamp = fernet.extract_timestamp(token)
+
+    assert before <= timestamp <= after
+# End program
+```

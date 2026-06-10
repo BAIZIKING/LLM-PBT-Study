@@ -1,0 +1,75 @@
+from hypothesis import given, strategies as st
+import html
+
+_TEXT = st.text(max_size=1000)
+
+
+@given(st.data())
+def test_html_escape_no_literal_angle_brackets(data):
+    s = data.draw(_TEXT)
+    quote = data.draw(st.booleans())
+
+    escaped = html.escape(s, quote=quote)
+
+    assert "<" not in escaped
+    assert ">" not in escaped
+    assert escaped.count("&lt;") == s.count("<")
+    assert escaped.count("&gt;") == s.count(">")
+
+
+@given(st.data())
+def test_html_escape_ampersands_are_escaped(data):
+    s = data.draw(_TEXT)
+    quote = data.draw(st.booleans())
+
+    escaped = html.escape(s, quote=quote)
+
+    assert escaped.count("&amp;") == s.count("&")
+
+
+@given(st.data())
+def test_html_escape_quotes_are_escaped_when_quote_true(data):
+    s = data.draw(_TEXT)
+
+    escaped = html.escape(s, quote=True)
+
+    assert '"' not in escaped
+    assert "'" not in escaped
+    assert escaped.count("&quot;") == s.count('"')
+    assert escaped.count("&#x27;") == s.count("'")
+
+
+@given(st.data())
+def test_html_escape_quotes_are_preserved_when_quote_false(data):
+    s = data.draw(_TEXT)
+
+    escaped = html.escape(s, quote=False)
+
+    assert escaped.count('"') == s.count('"')
+    assert escaped.count("'") == s.count("'")
+
+
+@given(st.data())
+def test_html_escape_preserves_order_with_replacements_only(data):
+    s = data.draw(_TEXT)
+    quote = data.draw(st.booleans())
+
+    expected_parts = []
+    for char in s:
+        if char == "&":
+            expected_parts.append("&amp;")
+        elif char == "<":
+            expected_parts.append("&lt;")
+        elif char == ">":
+            expected_parts.append("&gt;")
+        elif quote and char == '"':
+            expected_parts.append("&quot;")
+        elif quote and char == "'":
+            expected_parts.append("&#x27;")
+        else:
+            expected_parts.append(char)
+
+    assert html.escape(s, quote=quote) == "".join(expected_parts)
+
+
+# End program

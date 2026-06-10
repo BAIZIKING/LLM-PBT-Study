@@ -1,0 +1,9 @@
+1. For any bytes `payload` compressed with zlib format using a compatible window size, `zlib.decompress(compressed)` returns exactly the original `payload`.
+
+2. For valid compressed input, the returned value is always a `bytes` object.
+
+3. For the same valid compressed input and `wbits` value, changing `bufsize` does not change the decompressed output.
+
+4. For gzip-formatted compressed data, using a compatible gzip `wbits` value, such as `16 + window_bits`, returns exactly the original uncompressed bytes.
+
+5. For raw deflate data, using the corresponding negative `wbits` value returns exactly the original uncompressed bytes.

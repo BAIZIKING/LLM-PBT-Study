@@ -1,0 +1,9 @@
+1. For any finite Decimal input, the result is a pair `(n, d)` where both `n` and `d` are integers.
+
+2. For any finite Decimal input, the denominator `d` is strictly positive.
+
+3. For any finite Decimal input, the fraction `n / d` represents exactly the same numeric value as the original Decimal.
+
+4. For any finite Decimal input, `n` and `d` are in lowest terms, meaning their greatest common divisor is `1`.
+
+5. For special Decimal values, the method raises `OverflowError` for infinities and `ValueError` for NaNs.

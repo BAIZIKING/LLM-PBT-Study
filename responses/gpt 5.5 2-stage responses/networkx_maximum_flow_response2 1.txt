@@ -1,0 +1,86 @@
+```python
+from hypothesis import given, strategies as st
+import networkx
+
+@given(st.data())
+def test_networkx_maximum_flow_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=7))
+    nodes = list(range(n))
+
+    source = data.draw(st.sampled_from(nodes))
+    sink = data.draw(st.sampled_from([node for node in nodes if node != source]))
+
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+    edges = data.draw(
+        st.lists(
+            st.sampled_from(possible_edges),
+            unique=True,
+            min_size=0,
+            max_size=min(len(possible_edges), 20),
+        )
+    )
+
+    graph = networkx.DiGraph()
+    graph.add_nodes_from(nodes)
+
+    for u, v in edges:
+        capacity = data.draw(st.integers(min_value=0, max_value=100))
+        graph.add_edge(u, v, capacity=capacity)
+
+    flow_value, flow_dict = networkx.maximum_flow(graph, source, sink)
+
+    total_out_of_source = sum(flow_dict[source].values())
+    total_into_source = sum(
+        flow_dict[u].get(source, 0) for u in graph.predecessors(source)
+    )
+    net_out_of_source = total_out_of_source - total_into_source
+
+    total_into_sink = sum(
+        flow_dict[u].get(sink, 0) for u in graph.predecessors(sink)
+    )
+    total_out_of_sink = sum(flow_dict[sink].values())
+    net_into_sink = total_into_sink - total_out_of_sink
+
+    assert flow_value == net_out_of_source
+    assert flow_value == net_into_sink
+
+    for u, v, attrs in graph.edges(data=True):
+        assert u in flow_dict
+        assert v in flow_dict[u]
+        assert flow_dict[u][v] >= 0
+        assert flow_dict[u][v] <= attrs["capacity"]
+
+    for node in graph.nodes:
+        assert node in flow_dict
+        assert set(flow_dict[node]) == set(graph.successors(node))
+
+    for node in graph.nodes:
+        if node != source and node != sink:
+            inflow = sum(flow_dict[u].get(node, 0) for u in graph.predecessors(node))
+            outflow = sum(flow_dict[node].values())
+            assert inflow == outflow
+
+    minimum_cut_capacity = float("inf")
+    other_nodes = [node for node in nodes if node != source and node != sink]
+
+    for mask in range(1 << len(other_nodes)):
+        source_side = {source}
+        for i, node in enumerate(other_nodes):
+            if mask & (1 << i):
+                source_side.add(node)
+
+        sink_side = set(nodes) - source_side
+        if sink not in sink_side:
+            continue
+
+        cut_capacity = sum(
+            graph[u][v]["capacity"]
+            for u in source_side
+            for v in graph.successors(u)
+            if v in sink_side
+        )
+        minimum_cut_capacity = min(minimum_cut_capacity, cut_capacity)
+
+    assert flow_value == minimum_cut_capacity
+# End program
+```

@@ -1,0 +1,68 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `statistics.geometric_mean`, I'll use the following approach:
+
+1. **Valid positive data**: Generate lists of positive floats/integers using `st.floats(min_value=..., allow_nan=False, allow_infinity=False)`. I'll use a range that avoids overflow but covers small and large positive values.
+2. **Edge cases that raise errors**: 
+   - Empty list (raises `StatisticsError`)
+   - Lists containing zero (raises `StatisticsError`)
+   - Lists containing negative values (raises `StatisticsError`)
+3. **Mixed approach**: Use `st.lists` with a strategy that can include positive, zero, and negative values, plus the empty case, so we cover both valid and invalid scenarios in one test.
+
+**Properties to Check:**
+Based on the API documentation:
+
+1. **Error conditions**: If data is empty, contains zero, or contains a negative value, `StatisticsError` must be raised.
+2. **Bounds property (for valid input)**: The geometric mean of positive values lies between the minimum and maximum values (inclusive, accounting for float tolerance): `min(data) <= geometric_mean(data) <= max(data)`.
+3. **Positivity**: The geometric mean of positive values is itself positive.
+4. **Known relationship**: The geometric mean is always less than or equal to the arithmetic mean (AM-GM inequality), within float tolerance.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists of floats/ints that may be empty, or contain positive,
+# zero, or negative values to exercise both valid computation paths and the
+# documented error conditions (empty, zero, or negative input).
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    # Strategy: numbers that can be positive, zero, or negative, in a safe range.
+    element_strategy = st.floats(
+        min_value=-1e6, max_value=1e6,
+        allow_nan=False, allow_infinity=False
+    )
+    values = data.draw(st.lists(element_strategy, min_size=0, max_size=20))
+
+    is_empty = len(values) == 0
+    has_nonpositive = any(v <= 0 for v in values)
+
+    if is_empty or has_nonpositive:
+        # Property 1: empty, zero, or negative input must raise StatisticsError.
+        try:
+            statistics.geometric_mean(values)
+            assert False, "Expected StatisticsError for empty/zero/negative input"
+        except statistics.StatisticsError:
+            pass
+    else:
+        # All values are strictly positive here.
+        result = statistics.geometric_mean(values)
+
+        # Property 3: geometric mean of positive values is positive.
+        assert result > 0
+
+        lo = min(values)
+        hi = max(values)
+        tol = 1e-6 * max(1.0, hi)
+
+        # Property 2: min <= geometric_mean <= max (within float tolerance).
+        assert lo - tol <= result <= hi + tol
+
+        # Property 4: AM-GM inequality: geometric mean <= arithmetic mean.
+        arithmetic_mean = statistics.fmean(values)
+        assert result <= arithmetic_mean + tol
+# End program
+```

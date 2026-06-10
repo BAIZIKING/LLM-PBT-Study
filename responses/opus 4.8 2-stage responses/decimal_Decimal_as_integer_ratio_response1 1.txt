@@ -1,0 +1,9 @@
+1. The denominator `d` is always a positive integer (strictly greater than 0).
+
+2. The fraction `n/d` is in lowest terms, meaning the greatest common divisor of `n` and `d` is 1.
+
+3. The ratio is exact: reconstructing a Decimal from `n` divided by `d` (e.g., via `Decimal(n) / Decimal(d)`) equals the original Decimal value.
+
+4. The sign of the numerator `n` matches the sign of the original Decimal (negative for negative values, zero for zero, positive for positive values).
+
+5. Calling the function on an infinity raises an OverflowError, and calling it on a NaN raises a ValueError.

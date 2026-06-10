@@ -1,0 +1,9 @@
+1. For any successful call, the return value is an instance of `datetime.datetime`.
+
+2. If `tz` is `None` or omitted, the returned `datetime` is naive: its `tzinfo` is `None`.
+
+3. If `tz` is provided, the returned `datetime` represents the given POSIX timestamp in that time zone, and converting it back with `.timestamp()` yields the original timestamp, up to normal floating-point precision.
+
+4. For `tz=datetime.timezone.utc`, the returned value represents the UTC instant equal to `1970-01-01 00:00:00+00:00` plus `timestamp` seconds.
+
+5. For any successful call, the returned `datetime` has valid calendar and time fields, and its `fold` attribute is always either `0` or `1`.

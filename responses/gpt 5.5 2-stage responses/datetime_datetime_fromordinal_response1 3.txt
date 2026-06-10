@@ -1,0 +1,9 @@
+1. For any valid ordinal, the returned object is a `datetime` instance.
+
+2. For any valid ordinal `n`, the returned datetime has `result.toordinal() == n`.
+
+3. The returned datetime always has time components set to midnight: `hour == 0`, `minute == 0`, `second == 0`, and `microsecond == 0`.
+
+4. The returned datetime is always timezone-naive, with `tzinfo is None`.
+
+5. For the minimum valid ordinal `1`, the result is `datetime(1, 1, 1, 0, 0)`, and for `datetime.max.toordinal()`, the result has the same date as `datetime.max` with time set to midnight.

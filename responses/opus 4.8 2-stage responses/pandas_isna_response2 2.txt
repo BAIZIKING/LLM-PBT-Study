@@ -1,0 +1,138 @@
+```python
+from hypothesis import given, strategies as st, assume
+import numpy as np
+import pandas as pd
+import math
+
+
+# Strategy for scalar values that could be missing or valid
+scalar_strategy = st.one_of(
+    st.none(),
+    st.just(np.nan),
+    st.just(pd.NA),
+    st.just(pd.NaT),
+    st.integers(min_value=-10**9, max_value=10**9),
+    st.floats(allow_nan=True, allow_infinity=True, width=32),
+    st.text(max_size=20),
+    st.booleans(),
+)
+
+# Strategy for elements that go into arrays (object-friendly)
+element_strategy = st.one_of(
+    st.none(),
+    st.just(np.nan),
+    st.integers(min_value=-10**6, max_value=10**6),
+    st.floats(allow_nan=True, allow_infinity=False, width=32),
+    st.text(max_size=10),
+)
+
+
+def is_missing_marker(x):
+    """Determine if a scalar should be considered missing by pandas.isna."""
+    if x is None:
+        return True
+    if x is pd.NA:
+        return True
+    if x is pd.NaT:
+        return True
+    try:
+        if isinstance(x, float) and math.isnan(x):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+@given(st.data())
+def test_pandas_isna_property(data):
+    choice = data.draw(st.integers(min_value=0, max_value=4))
+
+    if choice == 0:
+        # Property 2 & 3 & 5: scalar input -> scalar boolean, correctly identified
+        scalar = data.draw(scalar_strategy)
+        result = pd.isna(scalar)
+        # Scalar output (not an array)
+        assert np.isscalar(result) or isinstance(result, (bool, np.bool_))
+        # Boolean type
+        assert isinstance(result, (bool, np.bool_))
+        # Correct identification of missing markers
+        assert bool(result) == is_missing_marker(scalar)
+
+    elif choice == 1:
+        # Property 1 & 3: ndarray input -> same shape, boolean dtype
+        lst = data.draw(st.lists(element_strategy, min_size=0, max_size=30))
+        array = np.array(lst, dtype=object)
+        result = pd.isna(array)
+        # Shape preservation
+        assert result.shape == array.shape
+        # Boolean dtype
+        assert result.dtype == np.bool_
+        # Correct identification per element
+        for orig, res in zip(array.ravel(), result.ravel()):
+            assert bool(res) == is_missing_marker(orig)
+
+    elif choice == 2:
+        # Property 1 & 3 & 4: Series input -> same type, labels, boolean, inverse
+        lst = data.draw(st.lists(element_strategy, min_size=0, max_size=30))
+        s = pd.Series(lst, dtype=object)
+        result = pd.isna(s)
+        # Same container type
+        assert isinstance(result, pd.Series)
+        # Same length and index
+        assert len(result) == len(s)
+        assert result.index.equals(s.index)
+        # Boolean dtype
+        assert result.dtype == np.bool_
+        # Inverse relationship with notna
+        notna_result = pd.notna(s)
+        assert (result == ~notna_result).all()
+        # Correct identification per element
+        for orig, res in zip(s.tolist(), result.tolist()):
+            assert bool(res) == is_missing_marker(orig)
+
+    elif choice == 3:
+        # Property 1 & 3 & 4: DataFrame input -> same type, shape, boolean, inverse
+        ncols = data.draw(st.integers(min_value=1, max_value=4))
+        nrows = data.draw(st.integers(min_value=0, max_value=15))
+        cols = {}
+        for c in range(ncols):
+            col_data = data.draw(
+                st.lists(element_strategy, min_size=nrows, max_size=nrows)
+            )
+            cols[f"col{c}"] = pd.Series(col_data, dtype=object)
+        df = pd.DataFrame(cols)
+        result = pd.isna(df)
+        # Same container type
+        assert isinstance(result, pd.DataFrame)
+        # Same shape and axes
+        assert result.shape == df.shape
+        assert result.index.equals(df.index)
+        assert result.columns.equals(df.columns)
+        # Boolean dtype for all columns
+        assert all(dt == np.bool_ for dt in result.dtypes)
+        # Inverse relationship with notna
+        notna_result = pd.notna(df)
+        assert (result.values == ~notna_result.values).all()
+
+    else:
+        # Property 1 & 3 & 5: Index input -> ndarray of booleans
+        lst = data.draw(
+            st.lists(
+                st.one_of(st.none(), st.integers(min_value=-10**6, max_value=10**6)),
+                min_size=0,
+                max_size=30,
+            )
+        )
+        idx = pd.Index(lst, dtype=object)
+        result = pd.isna(idx)
+        # Index returns an ndarray
+        assert isinstance(result, np.ndarray)
+        # Same length
+        assert len(result) == len(idx)
+        # Boolean dtype
+        assert result.dtype == np.bool_
+        # Correct identification per element
+        for orig, res in zip(idx.tolist(), result.tolist()):
+            assert bool(res) == is_missing_marker(orig)
+# End program
+```

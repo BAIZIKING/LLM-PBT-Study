@@ -1,0 +1,154 @@
+```python
+from hypothesis import given, strategies as st
+import math
+from statistics import StatisticsError, linear_regression
+
+# Summary: Generate valid and invalid x/y sequences using finite bounded floats.
+# Valid cases have equal lengths >= 2 and non-constant x values; y is either
+# arbitrary or exactly linear. Invalid cases cover too-short inputs, mismatched
+# lengths, and constant-zero x. The test checks the documented OLS formulas,
+# proportional=True behavior, and documented StatisticsError conditions.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    number = st.floats(
+        min_value=-1_000_000,
+        max_value=1_000_000,
+        allow_nan=False,
+        allow_infinity=False,
+        width=32,
+    )
+
+    case = data.draw(
+        st.sampled_from(["valid", "too_short", "mismatched_lengths", "constant_x"])
+    )
+
+    if case == "too_short":
+        n = data.draw(st.integers(min_value=0, max_value=1))
+        x = data.draw(st.lists(number, min_size=n, max_size=n))
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+        proportional = data.draw(st.booleans())
+
+        try:
+            linear_regression(x, y, proportional=proportional)
+        except StatisticsError:
+            return
+        assert False, "linear_regression() should reject inputs shorter than two"
+
+    if case == "mismatched_lengths":
+        x_len = data.draw(st.integers(min_value=0, max_value=10))
+        y_len = data.draw(
+            st.integers(min_value=0, max_value=10).filter(lambda n: n != x_len)
+        )
+        x = data.draw(st.lists(number, min_size=x_len, max_size=x_len))
+        y = data.draw(st.lists(number, min_size=y_len, max_size=y_len))
+        proportional = data.draw(st.booleans())
+
+        try:
+            linear_regression(x, y, proportional=proportional)
+        except StatisticsError:
+            return
+        assert False, "linear_regression() should reject inputs of unequal length"
+
+    if case == "constant_x":
+        n = data.draw(st.integers(min_value=2, max_value=20))
+        x = [0.0] * n
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+        proportional = data.draw(st.booleans())
+
+        try:
+            linear_regression(x, y, proportional=proportional)
+        except StatisticsError:
+            return
+        assert False, "linear_regression() should reject constant x values"
+
+    n = data.draw(st.integers(min_value=2, max_value=30))
+    x = data.draw(
+        st.lists(number, min_size=n, max_size=n).filter(
+            lambda xs: len(set(xs)) > 1 and any(v != 0.0 for v in xs)
+        )
+    )
+
+    proportional = data.draw(st.booleans())
+    exact_linear = data.draw(st.booleans())
+
+    if exact_linear:
+        slope = data.draw(st.floats(
+            min_value=-1000,
+            max_value=1000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ))
+        intercept = 0.0 if proportional else data.draw(st.floats(
+            min_value=-1000,
+            max_value=1000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ))
+        y = [slope * xi + intercept for xi in x]
+    else:
+        y = data.draw(st.lists(number, min_size=n, max_size=n))
+
+    result = linear_regression(x, y, proportional=proportional)
+
+    if proportional:
+        expected_slope = math.fsum(xi * yi for xi, yi in zip(x, y)) / math.fsum(
+            xi * xi for xi in x
+        )
+        expected_intercept = 0.0
+
+        assert result.intercept == 0.0
+        assert math.isclose(
+            result.slope,
+            expected_slope,
+            rel_tol=1e-9,
+            abs_tol=1e-7,
+        )
+
+        residuals = [yi - result.slope * xi for xi, yi in zip(x, y)]
+        assert math.isclose(
+            math.fsum(xi * ri for xi, ri in zip(x, residuals)),
+            0.0,
+            rel_tol=1e-7,
+            abs_tol=1e-3,
+        )
+
+    else:
+        x_mean = math.fsum(x) / n
+        y_mean = math.fsum(y) / n
+
+        expected_slope = math.fsum(
+            (xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y)
+        ) / math.fsum((xi - x_mean) ** 2 for xi in x)
+        expected_intercept = y_mean - expected_slope * x_mean
+
+        assert math.isclose(
+            result.slope,
+            expected_slope,
+            rel_tol=1e-9,
+            abs_tol=1e-7,
+        )
+        assert math.isclose(
+            result.intercept,
+            expected_intercept,
+            rel_tol=1e-9,
+            abs_tol=1e-7,
+        )
+
+        residuals = [yi - (result.slope * xi + result.intercept) for xi, yi in zip(x, y)]
+        assert math.isclose(
+            math.fsum(residuals),
+            0.0,
+            rel_tol=1e-7,
+            abs_tol=1e-3,
+        )
+        assert math.isclose(
+            math.fsum(xi * ri for xi, ri in zip(x, residuals)),
+            0.0,
+            rel_tol=1e-7,
+            abs_tol=1e-3,
+        )
+
+# End program
+```

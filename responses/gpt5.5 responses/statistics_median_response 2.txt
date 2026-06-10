@@ -1,0 +1,103 @@
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generate homogeneous finite numeric inputs covering ints, floats, Fractions,
+# and Decimals, including empty lists, singletons, duplicates, negatives, even/odd
+# lengths, and extreme/outlier values. Then wrap the same generated values as either
+# a list, tuple, iterator, or generator to exercise both sequence and iterable inputs.
+#
+# Properties checked from the documentation:
+# 1. Empty data raises statistics.StatisticsError.
+# 2. Odd-length data returns the middle value of the sorted data.
+# 3. Even-length data returns the mean of the two middle sorted values.
+# 4. The API works for both sequences and general iterables.
+@given(st.data())
+def test_statistics_median(data):
+    import statistics
+    from decimal import Decimal
+    from fractions import Fraction
+
+    numeric_kind = data.draw(
+        st.sampled_from(["int", "float", "fraction", "decimal"])
+    )
+
+    if numeric_kind == "int":
+        element_strategy = st.one_of(
+            st.integers(min_value=-10**12, max_value=10**12),
+            st.sampled_from([0, 1, -1, 10**12, -(10**12)]),
+        )
+    elif numeric_kind == "float":
+        element_strategy = st.one_of(
+            st.floats(
+                min_value=-10**12,
+                max_value=10**12,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+            st.sampled_from([0.0, -0.0, 1.0, -1.0, 10**12, -(10**12)]),
+        )
+    elif numeric_kind == "fraction":
+        element_strategy = st.one_of(
+            st.fractions(
+                min_value=Fraction(-10**6),
+                max_value=Fraction(10**6),
+                max_denominator=1000,
+            ),
+            st.sampled_from(
+                [Fraction(0), Fraction(1), Fraction(-1), Fraction(1, 2)]
+            ),
+        )
+    else:
+        element_strategy = st.one_of(
+            st.decimals(
+                min_value=Decimal("-1000000000000"),
+                max_value=Decimal("1000000000000"),
+                allow_nan=False,
+                allow_infinity=False,
+                places=6,
+            ),
+            st.sampled_from(
+                [
+                    Decimal("0"),
+                    Decimal("1"),
+                    Decimal("-1"),
+                    Decimal("1000000000000"),
+                    Decimal("-1000000000000"),
+                ]
+            ),
+        )
+
+    values = data.draw(st.lists(element_strategy, min_size=0, max_size=50))
+
+    container_kind = data.draw(
+        st.sampled_from(["list", "tuple", "iterator", "generator"])
+    )
+
+    if container_kind == "list":
+        median_input = list(values)
+    elif container_kind == "tuple":
+        median_input = tuple(values)
+    elif container_kind == "iterator":
+        median_input = iter(values)
+    else:
+        median_input = (x for x in values)
+
+    if not values:
+        try:
+            statistics.median(median_input)
+        except statistics.StatisticsError:
+            return
+        assert False, "median() should raise StatisticsError for empty data"
+
+    result = statistics.median(median_input)
+    ordered = sorted(values)
+    n = len(ordered)
+
+    if n % 2 == 1:
+        expected = ordered[n // 2]
+    else:
+        expected = (ordered[n // 2 - 1] + ordered[n // 2]) / 2
+
+    assert result == expected
+# End program
+```

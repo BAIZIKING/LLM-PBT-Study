@@ -1,0 +1,59 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate nonempty directed acyclic graphs by using integer nodes 0..n-1
+# and only allowing edges i -> j where i < j. This covers isolated nodes,
+# disconnected graphs, chains, branching DAGs, dense DAGs, identical node pairs,
+# ancestor/descendant pairs, and pairs with no common ancestor. The default value
+# is generated from non-integer values so it cannot be confused with a graph node.
+# Properties checked: if no common ancestor exists, the function returns default;
+# otherwise, the result is a common ancestor of both nodes and is "lowest", meaning
+# no strictly lower common ancestor is reachable from it.
+@given(st.data())
+def test_networkx_lowest_common_ancestor(data):
+    n = data.draw(st.integers(min_value=1, max_value=10), label="node_count")
+    nodes = list(range(n))
+
+    possible_edges = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    edge_flags = data.draw(
+        st.lists(
+            st.booleans(),
+            min_size=len(possible_edges),
+            max_size=len(possible_edges),
+        ),
+        label="edge_flags",
+    )
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(
+        edge for edge, include_edge in zip(possible_edges, edge_flags) if include_edge
+    )
+
+    node1 = data.draw(st.sampled_from(nodes), label="node1")
+    node2 = data.draw(st.sampled_from(nodes), label="node2")
+    default = data.draw(
+        st.one_of(
+            st.none(),
+            st.text(),
+            st.tuples(st.just("default"), st.integers()),
+        ),
+        label="default",
+    )
+
+    result = nx.lowest_common_ancestor(G, node1, node2, default=default)
+
+    ancestors1 = nx.ancestors(G, node1) | {node1}
+    ancestors2 = nx.ancestors(G, node2) | {node2}
+    common_ancestors = ancestors1 & ancestors2
+
+    if not common_ancestors:
+        assert result == default
+    else:
+        assert result in common_ancestors
+        assert all(
+            other == result or not nx.has_path(G, result, other)
+            for other in common_ancestors
+        )
+
+# End program

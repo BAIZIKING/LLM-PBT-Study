@@ -1,0 +1,119 @@
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+from fractions import Fraction
+from decimal import Decimal
+
+# Summary: Generate empty and non-empty numeric datasets, using lists, tuples, and iterators.
+#          Non-empty datasets are homogeneous ints, finite floats, Fractions, or finite Decimals.
+#          Check that empty input raises StatisticsError, and that non-empty input equals
+#          the arithmetic sum divided by the number of data points, is order-independent,
+#          and lies between the minimum and maximum values.
+@given(st.data())
+def test_statistics_mean(data):
+    kind = data.draw(
+        st.sampled_from(["int", "float", "fraction", "decimal"]),
+        label="numeric_kind",
+    )
+
+    is_empty = data.draw(st.booleans(), label="is_empty")
+
+    if is_empty:
+        values = []
+    elif kind == "int":
+        values = data.draw(
+            st.lists(
+                st.integers(min_value=-1_000_000, max_value=1_000_000),
+                min_size=1,
+                max_size=50,
+            ),
+            label="int_values",
+        )
+    elif kind == "float":
+        values = data.draw(
+            st.lists(
+                st.floats(
+                    min_value=-1e12,
+                    max_value=1e12,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=64,
+                ),
+                min_size=1,
+                max_size=50,
+            ),
+            label="float_values",
+        )
+    elif kind == "fraction":
+        values = data.draw(
+            st.lists(
+                st.builds(
+                    Fraction,
+                    st.integers(min_value=-1_000_000, max_value=1_000_000),
+                    st.integers(min_value=1, max_value=1_000_000),
+                ),
+                min_size=1,
+                max_size=50,
+            ),
+            label="fraction_values",
+        )
+    else:
+        values = data.draw(
+            st.lists(
+                st.decimals(
+                    min_value=Decimal("-1000000"),
+                    max_value=Decimal("1000000"),
+                    places=6,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=1,
+                max_size=50,
+            ),
+            label="decimal_values",
+        )
+
+    container_kind = data.draw(
+        st.sampled_from(["list", "tuple", "iterator"]),
+        label="container_kind",
+    )
+
+    def as_input(xs):
+        if container_kind == "list":
+            return list(xs)
+        if container_kind == "tuple":
+            return tuple(xs)
+        return iter(xs)
+
+    if not values:
+        try:
+            statistics.mean(as_input(values))
+        except statistics.StatisticsError:
+            return
+        assert False, "statistics.mean() should raise StatisticsError for empty data"
+
+    result = statistics.mean(as_input(values))
+    reversed_result = statistics.mean(as_input(reversed(values)))
+
+    if kind == "fraction":
+        expected = sum(values, Fraction(0)) / len(values)
+        assert result == expected
+        assert reversed_result == expected
+    elif kind == "decimal":
+        expected = sum(values, Decimal(0)) / Decimal(len(values))
+        assert result == expected
+        assert reversed_result == expected
+    elif kind == "float":
+        expected = math.fsum(values) / len(values)
+        assert math.isclose(result, expected, rel_tol=1e-12, abs_tol=1e-12)
+        assert math.isclose(reversed_result, result, rel_tol=1e-12, abs_tol=1e-12)
+    else:
+        expected = sum(values) / len(values)
+        assert result == expected
+        assert reversed_result == expected
+
+    assert min(values) <= result <= max(values)
+
+# End program
+```

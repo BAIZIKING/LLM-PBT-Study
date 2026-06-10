@@ -1,0 +1,215 @@
+```python
+from hypothesis import given, strategies as st
+import math
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+
+# Summary: Generate scalars and array-like pandas.isna inputs, including ordinary
+# non-missing values and edge-case missing values: None, pd.NA, pd.NaT,
+# np.datetime64("NaT"), and NaN.  The test draws random input "shapes" covering
+# scalars, Python lists/tuples, NumPy arrays, pandas Index/DatetimeIndex, Series,
+# and DataFrame objects.  Properties checked: scalar input returns a scalar
+# boolean; ndarray/list/tuple/Index input returns a boolean ndarray with matching
+# shape/length; Series/DataFrame input returns the same pandas type with matching
+# labels; every returned boolean agrees with the documented missing-value rules.
+
+
+def _scalar_values():
+    safe_datetimes = st.datetimes(
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime(2100, 12, 31),
+        timezones=st.none(),
+    )
+    return st.one_of(
+        st.none(),
+        st.just(pd.NA),
+        st.just(pd.NaT),
+        st.just(np.datetime64("NaT")),
+        st.booleans(),
+        st.integers(min_value=-10**6, max_value=10**6),
+        st.floats(allow_nan=True, allow_infinity=True, width=64),
+        st.text(max_size=8),
+        safe_datetimes,
+        safe_datetimes.map(np.datetime64),
+    )
+
+
+def _expected_is_missing(x):
+    if x is None or x is pd.NA or x is pd.NaT:
+        return True
+
+    if isinstance(x, (np.datetime64, np.timedelta64)):
+        return bool(np.isnat(x))
+
+    try:
+        return bool(math.isnan(x))
+    except (TypeError, ValueError):
+        return False
+
+
+def _expected_ndarray_for_array(a):
+    expected = np.empty(a.shape, dtype=bool)
+    for idx in np.ndindex(a.shape):
+        expected[idx] = _expected_is_missing(a[idx])
+    return expected
+
+
+@given(st.data())
+def test_pandas_isna(data):
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "scalar",
+                "list",
+                "tuple",
+                "object_array",
+                "float_array",
+                "index",
+                "datetime_index",
+                "series",
+                "dataframe",
+            ]
+        )
+    )
+
+    if kind == "scalar":
+        obj = data.draw(_scalar_values())
+        result = pd.isna(obj)
+
+        assert isinstance(result, (bool, np.bool_))
+        assert bool(result) == _expected_is_missing(obj)
+
+    elif kind in {"list", "tuple"}:
+        values = data.draw(st.lists(_scalar_values(), min_size=0, max_size=10))
+        obj = values if kind == "list" else tuple(values)
+        result = pd.isna(obj)
+
+        expected = np.array([_expected_is_missing(x) for x in obj], dtype=bool)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+
+    elif kind == "object_array":
+        rows = data.draw(st.integers(min_value=0, max_value=4))
+        cols = data.draw(st.integers(min_value=0, max_value=4))
+        values = data.draw(
+            st.lists(_scalar_values(), min_size=rows * cols, max_size=rows * cols)
+        )
+        obj = np.array(values, dtype=object).reshape((rows, cols))
+        result = pd.isna(obj)
+
+        expected = _expected_ndarray_for_array(obj)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert result.shape == obj.shape
+        assert np.array_equal(result, expected)
+
+    elif kind == "float_array":
+        rows = data.draw(st.integers(min_value=0, max_value=4))
+        cols = data.draw(st.integers(min_value=0, max_value=4))
+        values = data.draw(
+            st.lists(
+                st.floats(allow_nan=True, allow_infinity=True, width=64),
+                min_size=rows * cols,
+                max_size=rows * cols,
+            )
+        )
+        obj = np.array(values, dtype=float).reshape((rows, cols))
+        result = pd.isna(obj)
+
+        expected = np.isnan(obj)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert result.shape == obj.shape
+        assert np.array_equal(result, expected)
+
+    elif kind == "index":
+        values = data.draw(st.lists(_scalar_values(), min_size=0, max_size=10))
+        obj = pd.Index(values, dtype=object)
+        result = pd.isna(obj)
+
+        expected = np.array([_expected_is_missing(x) for x in obj], dtype=bool)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+
+    elif kind == "datetime_index":
+        dt_values = data.draw(
+            st.lists(
+                st.one_of(
+                    st.none(),
+                    st.datetimes(
+                        min_value=datetime(1900, 1, 1),
+                        max_value=datetime(2100, 12, 31),
+                        timezones=st.none(),
+                    ),
+                ),
+                min_size=0,
+                max_size=10,
+            )
+        )
+        obj = pd.DatetimeIndex(dt_values)
+        result = pd.isna(obj)
+
+        expected = np.array([_expected_is_missing(x) for x in obj], dtype=bool)
+
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+
+    elif kind == "series":
+        values = data.draw(st.lists(_scalar_values(), min_size=0, max_size=10))
+        obj = pd.Series(values, dtype=object, name="generated")
+        result = pd.isna(obj)
+
+        expected = pd.Series(
+            [_expected_is_missing(x) for x in obj],
+            index=obj.index,
+            name=obj.name,
+            dtype=bool,
+        )
+
+        assert isinstance(result, pd.Series)
+        assert result.index.equals(obj.index)
+        assert result.name == obj.name
+        assert result.dtype == bool
+        assert result.equals(expected)
+
+    else:
+        rows = data.draw(st.integers(min_value=0, max_value=4))
+        cols = data.draw(st.integers(min_value=0, max_value=4))
+        values = data.draw(
+            st.lists(_scalar_values(), min_size=rows * cols, max_size=rows * cols)
+        )
+        matrix = [values[i * cols : (i + 1) * cols] for i in range(rows)]
+        columns = [f"c{i}" for i in range(cols)]
+        obj = pd.DataFrame(matrix, columns=columns, dtype=object)
+        result = pd.isna(obj)
+
+        expected = pd.DataFrame(
+            [
+                [_expected_is_missing(obj.iloc[r, c]) for c in range(cols)]
+                for r in range(rows)
+            ],
+            index=obj.index,
+            columns=obj.columns,
+            dtype=bool,
+        )
+
+        assert isinstance(result, pd.DataFrame)
+        assert result.index.equals(obj.index)
+        assert result.columns.equals(obj.columns)
+        assert all(dtype == bool for dtype in result.dtypes)
+        assert result.equals(expected)
+
+# End program
+```

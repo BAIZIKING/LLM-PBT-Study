@@ -1,0 +1,9 @@
+1. The output DataFrame has the same shape (same number of rows and columns) and the same set of column labels as the input DataFrame.
+
+2. The output DataFrame is a permutation of the input rows—every row from the input appears exactly once in the output (the multiset of rows is preserved), and the values within each row remain intact.
+
+3. The values in the `by` column(s) of the output are sorted according to the specified ordering: non-NaN values appear in ascending order when `ascending=True` and descending order when `ascending=False` (and correspondingly for each element when `ascending` is a list matching the `by` columns).
+
+4. NaN values in the `by` column(s) are placed at the end of the output when `na_position='last'` and at the beginning when `na_position='first'`, regardless of the `ascending` setting.
+
+5. When `inplace=True`, the function returns None and the original DataFrame is modified to the sorted result; when `inplace=False`, the original DataFrame is left unchanged and a new sorted DataFrame is returned. Additionally, when `ignore_index=True`, the output index is exactly the sequence 0, 1, …, n-1, whereas when `ignore_index=False`, the index labels are carried over from the corresponding original rows.

@@ -1,0 +1,9 @@
+1. **Non-negativity for standard norms**: For any input `x` with `ord` being one of the standard norm orders (None, 'fro', 'nuc', positive ints, inf), the output is always non-negative (≥ 0).
+
+2. **Absolute homogeneity (scaling)**: Scaling the input by a scalar `c` scales the norm by `|c|`, i.e., `norm(c * x, ord) == |c| * norm(x, ord)` (for valid norm orders), up to floating-point tolerance.
+
+3. **Triangle inequality**: For valid norm orders (ord ≥ 1, including inf, 'fro'), `norm(x + y, ord) <= norm(x, ord) + norm(y, ord)` up to floating-point tolerance, given `x` and `y` have compatible shapes.
+
+4. **Zero norm iff zero input**: For valid norm orders (ord ≥ 1), `norm(x, ord) == 0` if and only if all elements of `x` are zero; conversely, a nonzero input yields a strictly positive norm.
+
+5. **Default equals 2-norm of flattened array / keepdims shape consistency**: When `axis` and `ord` are both None, the output equals the Euclidean 2-norm of `x.ravel()`; and when `keepdims=True`, the result's shape matches the input shape with the normed axes reduced to size 1 (broadcastable against `x`).

@@ -1,0 +1,61 @@
+from hypothesis import given, strategies as st
+from datetime import timedelta
+
+# Summary: Generate timedeltas from normalized days/seconds/microseconds, mixing full valid
+# ranges with important edges: zero, signs, boundary component values, +/-270-year-ish
+# thresholds, and timedelta min/max-scale days. Check that total_seconds() is equivalent
+# to division by timedelta(seconds=1), preserves sign/zero, and for intervals within the
+# documented microsecond-accurate range has no microsecond-level loss.
+@given(st.data())
+def test_datetime_timedelta_total_seconds(data):
+    day_edges = [
+        -999_999_999,
+        -(270 * 366 + 1),
+        -(270 * 365),
+        -1,
+        0,
+        1,
+        270 * 365,
+        270 * 366 + 1,
+        999_999_999,
+    ]
+    second_edges = [0, 1, 59, 60, 3_599, 3_600, 86_398, 86_399]
+    microsecond_edges = [0, 1, 999, 1_000, 999_998, 999_999]
+
+    days = data.draw(
+        st.one_of(st.sampled_from(day_edges), st.integers(-999_999_999, 999_999_999)),
+        label="days",
+    )
+    seconds = data.draw(
+        st.one_of(st.sampled_from(second_edges), st.integers(0, 86_399)),
+        label="seconds",
+    )
+    microseconds = data.draw(
+        st.one_of(st.sampled_from(microsecond_edges), st.integers(0, 999_999)),
+        label="microseconds",
+    )
+
+    td = timedelta(days=days, seconds=seconds, microseconds=microseconds)
+    actual = td.total_seconds()
+
+    # Documented equivalence: td.total_seconds() == td / timedelta(seconds=1)
+    assert actual == td / timedelta(seconds=1)
+
+    # The returned total seconds should preserve the duration's sign and zero-ness.
+    assert (actual == 0.0) == (td == timedelta(0))
+    assert (actual < 0.0) == (td < timedelta(0))
+    assert (actual > 0.0) == (td > timedelta(0))
+
+    total_microseconds = (
+        (td.days * 86_400 + td.seconds) * 1_000_000 + td.microseconds
+    )
+
+    # The docs warn that very large intervals, greater than about 270 years, may lose
+    # microsecond accuracy. Inside that range, the value should agree to the microsecond.
+    safe_span = timedelta(days=270 * 365)
+    if -safe_span <= td <= safe_span:
+        assert abs(actual * 1_000_000 - total_microseconds) <= 0.5
+
+        # For units other than seconds, the docs recommend direct division.
+        assert td / timedelta(microseconds=1) == total_microseconds
+# End program

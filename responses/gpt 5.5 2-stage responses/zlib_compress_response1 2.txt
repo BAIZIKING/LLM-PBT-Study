@@ -1,0 +1,9 @@
+1. The output is always a `bytes` object.
+
+2. For valid arguments, decompressing the output with the corresponding `wbits` setting reconstructs the original input `data` exactly.
+
+3. For the same `data`, `level`, and `wbits`, the output is deterministic: repeated calls produce identical compressed bytes.
+
+4. When `wbits` is positive from `9` to `15`, the output includes a valid zlib header/trailer and can be decompressed as a zlib stream.
+
+5. When `wbits` is `25` to `31`, the output includes a gzip header/trailer, including the gzip magic prefix `0x1f 0x8b`, and can be decompressed as a gzip stream.

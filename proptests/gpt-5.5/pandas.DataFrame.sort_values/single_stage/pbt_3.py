@@ -1,0 +1,220 @@
+from hypothesis import given, strategies as st
+import math
+from collections import Counter
+
+import numpy as np
+import pandas as pd
+
+
+# Summary: Generate small numeric DataFrames with repeated values and NaNs, then draw
+# random valid sort_values parameters: axis, by as either a string or list, ascending
+# as either a bool or matching bool list, inplace, kind, na_position, ignore_index,
+# and optional vectorized key functions. Check documented properties: return value
+# vs inplace behavior, unchanged input when inplace=False, shape preservation,
+# non-sorted-axis preservation, ignore_index relabeling, data permutation, and
+# lexicographic sorted order when the sorted axis labels are retained.
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    cell = st.one_of(
+        st.just(float("nan")),
+        st.just(-0.0),
+        st.integers(-3, 3).map(float),
+        st.floats(
+            min_value=-100,
+            max_value=100,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+    n_rows = data.draw(st.integers(min_value=1, max_value=6), label="n_rows")
+    n_cols = data.draw(st.integers(min_value=1, max_value=6), label="n_cols")
+
+    value_rows = [f"r{i}" for i in range(n_rows)]
+    value_cols = [f"c{i}" for i in range(n_cols)]
+    row_id_col = "__row_id__"
+    col_id_row = "__col_id__"
+
+    matrix = data.draw(
+        st.lists(
+            st.lists(cell, min_size=n_cols, max_size=n_cols),
+            min_size=n_rows,
+            max_size=n_rows,
+        ),
+        label="matrix",
+    )
+
+    df = pd.DataFrame(matrix, index=value_rows, columns=value_cols)
+
+    for i, row in enumerate(value_rows):
+        df.loc[row, row_id_col] = float(i)
+
+    for j, col in enumerate(value_cols):
+        df.loc[col_id_row, col] = float(j)
+
+    df.loc[col_id_row, row_id_col] = float(n_cols)
+
+    before = df.copy(deep=True)
+
+    axis = data.draw(st.sampled_from([0, "index", 1, "columns"]), label="axis")
+    axis_num = 0 if axis in (0, "index") else 1
+
+    candidates = list(before.columns) if axis_num == 0 else list(before.index)
+    by_list = data.draw(
+        st.lists(
+            st.sampled_from(candidates),
+            min_size=1,
+            max_size=min(3, len(candidates)),
+            unique=True,
+        ),
+        label="by_list",
+    )
+
+    if len(by_list) == 1:
+        by = data.draw(st.one_of(st.just(by_list[0]), st.just(by_list)), label="by")
+    else:
+        by = by_list
+
+    normalized_by = [by] if isinstance(by, str) else list(by)
+
+    if data.draw(st.booleans(), label="ascending_as_list"):
+        ascending = data.draw(
+            st.lists(
+                st.booleans(),
+                min_size=len(normalized_by),
+                max_size=len(normalized_by),
+            ),
+            label="ascending_list",
+        )
+    else:
+        ascending = data.draw(st.booleans(), label="ascending_bool")
+
+    ascending_list = (
+        list(ascending)
+        if isinstance(ascending, list)
+        else [ascending] * len(normalized_by)
+    )
+
+    inplace = data.draw(st.booleans(), label="inplace")
+    kind = data.draw(
+        st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]),
+        label="kind",
+    )
+    na_position = data.draw(st.sampled_from(["first", "last"]), label="na_position")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    key_name = data.draw(
+        st.sampled_from(["none", "identity", "negate", "absolute"]),
+        label="key",
+    )
+
+    if key_name == "none":
+        key = None
+    elif key_name == "identity":
+        key = lambda s: s
+    elif key_name == "negate":
+        key = lambda s: -s
+    else:
+        key = lambda s: s.abs()
+
+    work = before.copy(deep=True)
+
+    result = work.sort_values(
+        by=by,
+        axis=axis,
+        ascending=ascending,
+        inplace=inplace,
+        kind=kind,
+        na_position=na_position,
+        ignore_index=ignore_index,
+        key=key,
+    )
+
+    if inplace:
+        assert result is None
+        sorted_df = work
+    else:
+        assert isinstance(result, pd.DataFrame)
+        sorted_df = result
+        pd.testing.assert_frame_equal(work, before)
+
+    assert sorted_df.shape == before.shape
+
+    if axis_num == 0:
+        assert list(sorted_df.columns) == list(before.columns)
+        if ignore_index:
+            assert list(sorted_df.index) == list(range(len(before.index)))
+    else:
+        assert list(sorted_df.index) == list(before.index)
+        if ignore_index:
+            assert list(sorted_df.columns) == list(range(len(before.columns)))
+
+    def normalize_scalar(x):
+        if pd.isna(x):
+            return ("NA",)
+        return ("VALUE", float(x))
+
+    if axis_num == 0:
+        original_items = [
+            tuple(normalize_scalar(v) for v in row) for row in before.to_numpy()
+        ]
+        sorted_items = [
+            tuple(normalize_scalar(v) for v in row) for row in sorted_df.to_numpy()
+        ]
+    else:
+        original_items = [
+            tuple(normalize_scalar(v) for v in col) for col in before.to_numpy().T
+        ]
+        sorted_items = [
+            tuple(normalize_scalar(v) for v in col) for col in sorted_df.to_numpy().T
+        ]
+
+    assert Counter(original_items) == Counter(sorted_items)
+
+    if not ignore_index:
+        transformed = {}
+        for label in normalized_by:
+            series = before[label] if axis_num == 0 else before.loc[label]
+            transformed[label] = series if key is None else key(series)
+
+        def same_sort_value(a, b):
+            if pd.isna(a) and pd.isna(b):
+                return True
+            return a == b
+
+        def key_value_in_order(a, b, asc):
+            a_na = pd.isna(a)
+            b_na = pd.isna(b)
+
+            if a_na and b_na:
+                return None
+
+            if a_na:
+                return na_position == "first"
+
+            if b_na:
+                return na_position == "last"
+
+            if same_sort_value(a, b):
+                return None
+
+            return a <= b if asc else a >= b
+
+        def lexicographically_in_order(left_label, right_label):
+            for label, asc in zip(normalized_by, ascending_list):
+                left_value = transformed[label].loc[left_label]
+                right_value = transformed[label].loc[right_label]
+                comparison = key_value_in_order(left_value, right_value, asc)
+                if comparison is None:
+                    continue
+                return comparison
+            return True
+
+        sorted_labels = (
+            list(sorted_df.index) if axis_num == 0 else list(sorted_df.columns)
+        )
+
+        for left, right in zip(sorted_labels, sorted_labels[1:]):
+            assert lexicographically_in_order(left, right)
+# End program

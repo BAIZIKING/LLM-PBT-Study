@@ -1,0 +1,9 @@
+1. The output array has the same total number of elements as the input array `a` (size is preserved regardless of axis).
+
+2. The last element of the cumulative sum (along the relevant axis, or of the flattened result when axis is None) equals the total sum of the corresponding elements, within floating-point tolerance.
+
+3. The first element of the output (along the computed axis) equals the first element of the input along that axis.
+
+4. The difference between consecutive elements of the output (along the computed axis) equals the corresponding original input elements, i.e. taking the discrete difference of the cumsum recovers the input.
+
+5. The output array's dtype matches the specified `dtype` argument when given; otherwise it matches the input dtype (promoted to the default platform integer if the input has a lower-precision integer type).

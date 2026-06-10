@@ -1,0 +1,9 @@
+1. The output of `encrypt` is always of type `bytes`.
+
+2. The output is URL-safe base64-encoded, meaning it only contains characters from the URL-safe base64 alphabet (A-Z, a-z, 0-9, `-`, `_`, and `=` padding) and can be successfully base64-decoded.
+
+3. Decrypting the output token with the same key (via `decrypt`) returns the original input `data` exactly.
+
+4. Encrypting the same input data twice produces different output tokens (due to the embedded timestamp and random IV), so the function is non-deterministic.
+
+5. Calling `encrypt` with input that is not `bytes` raises a `TypeError`.

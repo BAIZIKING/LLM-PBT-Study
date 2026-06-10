@@ -1,0 +1,102 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `parser.parse`, I'll focus on creating valid datetime objects first, then formatting them into strings in various supported formats. This "round-trip" approach guarantees parseable inputs while exercising many code paths:
+
+1. **Generate datetimes**: Use `st.datetimes()` to produce random valid datetime objects across a wide range (years, months, days, hours, minutes, seconds).
+2. **Format variety**: Convert each datetime into one of many string formats (ISO format, `YYYY-MM-DD HH:MM:SS`, `MM/DD/YYYY`, `DD/MM/YYYY`, month-name formats, etc.) to exercise different parsing branches.
+3. **Edge cases for flags**: Randomly toggle keyword arguments like `dayfirst`, `yearfirst`, `fuzzy`, and `ignoretz` to test their interactions.
+4. **Fuzzy inputs**: Wrap some date strings in surrounding text to test fuzzy parsing.
+5. **Ambiguity control**: When generating ambiguous formats (e.g., `01/05/09`), use only datetimes where day ≤ 12 to safely test `dayfirst`/`yearfirst` round-trips, or use unambiguous formats otherwise.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Round-trip correctness**: A datetime formatted unambiguously (e.g., ISO format) and re-parsed should equal the original (ignoring timezone/microseconds we don't emit).
+2. **Return type**: With `fuzzy_with_tokens=True`, the result is a 2-tuple `(datetime, tuple)`; otherwise it's a `datetime`.
+3. **`ignoretz` property**: When `ignoretz=True`, the returned datetime must be naive (`tzinfo is None`).
+4. **`fuzzy` property**: Adding surrounding text and using `fuzzy=True` should still recover the embedded datetime.
+5. **No unexpected exceptions**: For well-formed inputs, parsing should succeed (only `ParserError`/`OverflowError`/`ValueError` are acceptable per docs).
+
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate valid datetimes, format them into various unambiguous and
+# ambiguous string representations, and toggle parse flags (ignoretz, fuzzy,
+# fuzzy_with_tokens, dayfirst). Check round-trip equality, return types,
+# tz-naivety under ignoretz, and fuzzy recovery from surrounding text.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    dt = data.draw(st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31),
+    ))
+    # Strip microseconds since most string formats don't carry them reliably
+    dt = dt.replace(microsecond=0)
+
+    # Choose a string-format mode
+    mode = data.draw(st.sampled_from(["iso", "ymd_hms", "fuzzy", "ignoretz"]))
+
+    if mode == "iso":
+        timestr = dt.isoformat()
+        result = parse(timestr)
+        assert isinstance(result, datetime.datetime)
+        # Unambiguous ISO format must round-trip exactly (naive input -> naive)
+        assert result == dt
+
+    elif mode == "ymd_hms":
+        # Unambiguous explicit format
+        timestr = dt.strftime("%Y-%m-%d %H:%M:%S")
+        result = parse(timestr)
+        assert isinstance(result, datetime.datetime)
+        assert result.year == dt.year
+        assert result.month == dt.month
+        assert result.day == dt.day
+        assert result.hour == dt.hour
+        assert result.minute == dt.minute
+        assert result.second == dt.second
+
+    elif mode == "fuzzy":
+        # Embed an unambiguous date in surrounding text
+        core = dt.strftime("%B %d, %Y %H:%M:%S")
+        prefix = data.draw(st.sampled_from(["Today is ", "The date was ", "On "]))
+        suffix = data.draw(st.sampled_from([" exactly.", " for sure", ""]))
+        timestr = prefix + core + suffix
+
+        use_tokens = data.draw(st.booleans())
+        if use_tokens:
+            result = parse(timestr, fuzzy_with_tokens=True)
+            # fuzzy_with_tokens => returns a 2-tuple (datetime, tuple)
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            assert isinstance(result[0], datetime.datetime)
+            assert isinstance(result[1], tuple)
+            parsed_dt = result[0]
+        else:
+            parsed_dt = parse(timestr, fuzzy=True)
+            assert isinstance(parsed_dt, datetime.datetime)
+
+        # The embedded datetime should be recovered
+        assert parsed_dt.year == dt.year
+        assert parsed_dt.month == dt.month
+        assert parsed_dt.day == dt.day
+        assert parsed_dt.hour == dt.hour
+        assert parsed_dt.minute == dt.minute
+        assert parsed_dt.second == dt.second
+
+    elif mode == "ignoretz":
+        # Append a timezone name; with ignoretz=True result must be naive
+        timestr = dt.strftime("%Y-%m-%d %H:%M:%S") + " EST"
+        result = parse(timestr, ignoretz=True)
+        assert isinstance(result, datetime.datetime)
+        # ignoretz=True => naive datetime
+        assert result.tzinfo is None
+        assert result.year == dt.year
+        assert result.month == dt.month
+        assert result.day == dt.day
+# End program
+```

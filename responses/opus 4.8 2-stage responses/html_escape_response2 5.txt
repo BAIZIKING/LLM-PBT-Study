@@ -1,0 +1,92 @@
+```python
+from hypothesis import given, strategies as st
+import html
+import re
+
+
+# Property 1: The output never contains an unescaped &, <, or > character;
+# every occurrence of these characters in the input is replaced by its
+# corresponding HTML entity in the output.
+@given(s=st.text(max_size=1000), quote=st.booleans())
+def test_special_chars_are_escaped(s, quote):
+    result = html.escape(s, quote)
+    # After replacing all valid entities with a placeholder, no raw &, <, > remain.
+    # First check that the counts of escaped entities match the input counts.
+    assert result.count("&lt;") == s.count("<")
+    assert result.count("&gt;") == s.count(">")
+    # & is escaped to &amp; for every & in the input.
+    assert result.count("&amp;") == s.count("&")
+    # No raw < or > should remain in the output at all.
+    assert "<" not in result
+    assert ">" not in result
+
+
+# Property 2: When quote is true, the output contains no unescaped " or '
+# characters; each is replaced by &quot; and &#x27; respectively. When quote
+# is false, any " and ' characters appear unchanged in the output.
+@given(s=st.text(max_size=1000))
+def test_quote_handling(s):
+    result_quoted = html.escape(s, quote=True)
+    assert result_quoted.count("&quot;") == s.count('"')
+    assert result_quoted.count("&#x27;") == s.count("'")
+    assert '"' not in result_quoted
+    assert "'" not in result_quoted
+
+    result_unquoted = html.escape(s, quote=False)
+    # The number of " and ' characters should remain unchanged.
+    assert result_unquoted.count('"') == s.count('"')
+    assert result_unquoted.count("'") == s.count("'")
+
+
+# Property 3: If the input string contains none of the special characters,
+# the output equals the input unchanged (identity property).
+@given(quote=st.booleans(), data=st.data())
+def test_identity_for_non_special(quote, data):
+    special = set("&<>")
+    if quote:
+        special |= set("\"'")
+    s = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters="".join(special)),
+            max_size=1000,
+        )
+    )
+    result = html.escape(s, quote)
+    assert result == s
+
+
+# Property 4: Escaping is well-formed such that escaping an already-escaped
+# string still produces valid entity sequences (e.g. &amp;lt; rather than &lt;).
+@given(s=st.text(max_size=1000), quote=st.booleans())
+def test_double_escape_well_formed(s, quote):
+    once = html.escape(s, quote)
+    twice = html.escape(once, quote)
+    # Each & that was produced (and any original &) must again be escaped.
+    assert twice.count("&amp;") == once.count("&")
+    # The doubly-escaped string, when escaping is "undone" once textually,
+    # should give back the once-escaped string.
+    undone = (
+        twice.replace("&amp;", "&")
+    )
+    # After undoing only the ampersand escaping introduced by the second pass,
+    # the remaining entity-like structures must match the once-escaped string.
+    assert undone == once
+
+
+# Property 5: All non-special characters are preserved verbatim and in order;
+# removing all entity sequences yields the original non-special characters.
+@given(s=st.text(max_size=1000), quote=st.booleans())
+def test_non_special_chars_preserved(s, quote):
+    result = html.escape(s, quote)
+    # Strip out all entity sequences produced by escaping.
+    stripped = result
+    for entity in ("&lt;", "&gt;", "&quot;", "&#x27;", "&amp;"):
+        stripped = stripped.replace(entity, "")
+    # Compute the expected leftover: original string with all special chars removed.
+    special = "&<>"
+    if quote:
+        special += "\"'"
+    expected = "".join(c for c in s if c not in special)
+    assert stripped == expected
+# End program
+```

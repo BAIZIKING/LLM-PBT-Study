@@ -1,0 +1,9 @@
+1. The result has the same columns as the input DataFrame, and every row in the result is an unchanged row from the input; no new row values are introduced.
+
+2. Duplicate detection is based only on `subset` if provided, otherwise on all columns; the DataFrame index is not used to decide whether rows are duplicates.
+
+3. For `keep='first'`, the output contains exactly the first row from each duplicate group, preserving the original row order.
+
+4. For `keep='last'`, the output contains exactly the last row from each duplicate group, preserving the original row order of the retained rows.
+
+5. For `keep=False`, the output contains only rows whose duplicate key occurs exactly once in the input; if `ignore_index=True`, the output index is reset to `0, 1, ..., n-1`, otherwise retained rows keep their original index labels.

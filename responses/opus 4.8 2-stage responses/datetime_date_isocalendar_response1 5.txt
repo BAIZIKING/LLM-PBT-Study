@@ -1,0 +1,9 @@
+1. The output is a named tuple with exactly three components: year, week, and weekday.
+
+2. The week component is always an integer between 1 and 53 inclusive (since an ISO year consists of 52 or 53 weeks).
+
+3. The weekday component is always an integer between 1 and 7 inclusive (Monday=1 through Sunday=7).
+
+4. The ISO year component is always within one year of the date's Gregorian year (i.e., it equals the Gregorian year, or the year before, or the year after).
+
+5. Two dates that are exactly 7 days apart yield the same weekday, and consecutive dates yield weekdays that cycle through 1–7 (incrementing by 1, wrapping from 7 back to 1).

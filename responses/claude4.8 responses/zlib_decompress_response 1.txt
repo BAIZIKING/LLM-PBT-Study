@@ -1,0 +1,79 @@
+## Strategy for Generating Diverse Inputs
+
+To exercise `zlib.decompress` thoroughly, I want to generate inputs that are *valid* compressed streams (so I can check round-trip correctness) as well as edge cases that test error handling. My approach:
+
+1. **Generate random payloads**: Use `st.binary()` with a wide size range (including empty bytes and large blobs) to create the original uncompressed data.
+
+2. **Match wbits to compression format**: The key insight from the docs is that `wbits` controls the *format* (zlib header, raw, gzip) and the *window size*. To get valid round-trip data, I compress the payload with a chosen wbits, then decompress with a compatible wbits. I cover:
+   - `+9..+15`: zlib header/trailer (compress with same wbits, decompress with `0` auto-detect or same value).
+   - `-9..-15`: raw stream (compress and decompress with the same negative wbits).
+   - `+25..+31`: gzip header/trailer (decompress with same value or `+40..+47` auto-accept).
+
+3. **Edge cases**: Include empty payloads, decompressing with `0` (auto-detect zlib), and `32+` (auto-detect zlib/gzip), plus random `bufsize` values (small and large) to ensure buffer-growth logic works.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Round-trip correctness**: Decompressing a validly-compressed stream (with a compatible `wbits`) must return exactly the original bytes.
+2. **Return type**: The result must always be a `bytes` object.
+3. **`bufsize` independence**: The docs say `bufsize` is only a performance hint ("you don't have to get this value exactly right"); the decompressed output must be identical regardless of `bufsize`.
+4. **Auto-detect compatibility**: `wbits=0` accepts zlib streams, and `wbits=32+n` accepts both zlib and gzip streams, producing the same output as the matching explicit wbits.
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random payloads, compress them with a randomly chosen valid
+# format/window (zlib, raw, or gzip), then decompress with a *compatible* wbits
+# (exact match or an auto-detect value) and random bufsize. Properties checked:
+# round-trip identity, bytes return type, and bufsize-independence of the output.
+@given(st.data())
+def test_zlib_decompress(data):
+    payload = data.draw(st.binary(min_size=0, max_size=2048))
+
+    # Window-size logarithm (8..15). Use >=9 to safely allow auto-detect/larger windows.
+    wlog = data.draw(st.integers(min_value=9, max_value=15))
+
+    # Pick a format to compress with, and a compatible set of decompress wbits.
+    fmt = data.draw(st.sampled_from(["zlib", "raw", "gzip"]))
+
+    if fmt == "zlib":
+        compress_wbits = wlog                       # +9..+15: zlib header/trailer
+        decompress_wbits = data.draw(st.sampled_from([
+            wlog,        # exact zlib wbits
+            0,           # auto-detect window from zlib header
+            32 + wlog,   # auto-accept zlib or gzip
+        ]))
+    elif fmt == "raw":
+        compress_wbits = -wlog                       # -9..-15: raw stream, no header
+        decompress_wbits = -wlog                      # must match raw format
+    else:  # gzip
+        compress_wbits = 16 + wlog                    # +25..+31: gzip header/trailer
+        decompress_wbits = data.draw(st.sampled_from([
+            16 + wlog,   # exact gzip wbits
+            32 + wlog,   # auto-accept zlib or gzip
+        ]))
+
+    # Build a valid compressed stream using the matching wbits.
+    compressor = zlib.compressobj(level=6, wbits=compress_wbits)
+    compressed = compressor.compress(payload) + compressor.flush()
+
+    # Two different bufsizes to verify buffer-growth independence.
+    bufsize_a = data.draw(st.integers(min_value=1, max_value=8))
+    bufsize_b = data.draw(st.integers(min_value=1024, max_value=65536))
+
+    result_a = zlib.decompress(compressed, wbits=decompress_wbits, bufsize=bufsize_a)
+    result_b = zlib.decompress(compressed, wbits=decompress_wbits, bufsize=bufsize_b)
+
+    # Property 2: return type is always bytes.
+    assert isinstance(result_a, bytes)
+    assert isinstance(result_b, bytes)
+
+    # Property 1: round-trip identity.
+    assert result_a == payload
+
+    # Property 3: bufsize is only a performance hint; output is identical.
+    assert result_a == result_b
+# End program
+```

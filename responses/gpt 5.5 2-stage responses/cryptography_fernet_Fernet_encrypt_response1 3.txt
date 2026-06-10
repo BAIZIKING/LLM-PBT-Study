@@ -1,0 +1,9 @@
+1. The output is a `bytes` object.
+
+2. The output is URL-safe base64-encoded data.
+
+3. Decrypting the output with the same `Fernet` key returns exactly the original input bytes.
+
+4. The output does not contain the original plaintext bytes in readable form.
+
+5. Encrypting the same input bytes multiple times with the same key produces valid Fernet tokens that may differ from each other.

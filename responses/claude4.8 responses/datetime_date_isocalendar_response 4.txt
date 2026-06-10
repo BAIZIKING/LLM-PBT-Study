@@ -1,0 +1,56 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `date.isocalendar()`, I'll use Hypothesis's built-in `st.dates()` strategy, which generates random `date` objects across the full range supported by Python's `datetime.date` (from year 1 to year 9999). This naturally covers:
+- Ordinary dates throughout the year
+- Year boundaries (Dec 31 / Jan 1) where ISO year may differ from Gregorian year
+- Leap years and Feb 29
+- The min and max supported dates
+
+## Properties to Check
+
+Based on the API documentation, I'll verify these properties:
+
+1. **Return structure**: The result is a named tuple with exactly 3 components named `year`, `week`, and `weekday`.
+2. **Week range**: The ISO week number is between 1 and 53 (years have 52 or 53 weeks).
+3. **Weekday range**: The weekday is between 1 (Monday) and 7 (Sunday).
+4. **Year proximity**: The ISO year is within 1 of the Gregorian year (the difference only occurs at year boundaries).
+5. **Round-trip consistency**: Reconstructing the date from the ISO calendar components via `date.fromisocalendar()` returns the original date.
+6. **Weekday consistency**: The ISO weekday matches the standard `isoweekday()` method.
+
+```python
+from hypothesis import given, strategies as st
+from datetime import date
+
+# Summary: Generate arbitrary date objects across the full supported range
+# (year 1 to 9999) using st.dates(), naturally covering year boundaries,
+# leap years, and min/max edge cases where ISO year diverges from Gregorian year.
+@given(st.data())
+def test_datetime_date_isocalendar():
+    d = st.data().draw(st.dates())
+
+    result = d.isocalendar()
+
+    # Property 1: named tuple with year, week, weekday
+    assert len(result) == 3
+    assert result.year == result[0]
+    assert result.week == result[1]
+    assert result.weekday == result[2]
+
+    iso_year, iso_week, iso_weekday = result
+
+    # Property 2: week is between 1 and 53
+    assert 1 <= iso_week <= 53
+
+    # Property 3: weekday is between 1 (Monday) and 7 (Sunday)
+    assert 1 <= iso_weekday <= 7
+
+    # Property 4: ISO year is within 1 of the Gregorian year
+    assert abs(iso_year - d.year) <= 1
+
+    # Property 5: round-trip consistency via fromisocalendar
+    assert date.fromisocalendar(iso_year, iso_week, iso_weekday) == d
+
+    # Property 6: ISO weekday matches isoweekday()
+    assert iso_weekday == d.isoweekday()
+# End program
+```

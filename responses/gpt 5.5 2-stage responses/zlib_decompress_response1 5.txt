@@ -1,0 +1,9 @@
+1. For any successful call, the returned value is a `bytes` object.
+
+2. For data compressed with a compatible zlib-format compressor, `zlib.decompress(data, wbits)` returns exactly the original uncompressed bytes.
+
+3. For raw deflate streams compressed with a matching negative `wbits` value, `zlib.decompress(data, wbits)` returns exactly the original uncompressed bytes.
+
+4. For valid gzip-format compressed data, using a compatible gzip `wbits` value returns exactly the original uncompressed bytes.
+
+5. Changing `bufsize` does not change the decompressed output; for the same valid `data` and `wbits`, all `bufsize` values should produce identical bytes.

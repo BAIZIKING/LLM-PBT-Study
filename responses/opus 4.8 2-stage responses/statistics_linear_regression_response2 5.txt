@@ -1,0 +1,185 @@
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+
+# A reasonable strategy for finite, bounded floats to avoid overflow issues.
+reasonable_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+def _not_constant(xs):
+    return any(x != xs[0] for x in xs)
+
+
+# Property 1: Residuals are orthogonal to x (OLS normal equations).
+# For the non-proportional case: sum of residuals ~ 0 and sum of x*residuals ~ 0.
+@given(st.data())
+def test_residuals_orthogonality():
+    n = st.integers(min_value=2, max_value=50).example()
+    data = st.data()
+
+    @given(
+        xs=st.lists(reasonable_floats, min_size=2, max_size=50),
+        ys=st.lists(reasonable_floats, min_size=2, max_size=50),
+    )
+    def inner(xs, ys):
+        m = min(len(xs), len(ys))
+        xs2 = xs[:m]
+        ys2 = ys[:m]
+        assume(m >= 2)
+        assume(_not_constant(xs2))
+
+        slope, intercept = statistics.linear_regression(xs2, ys2)
+        residuals = [y - (slope * x + intercept) for x, y in zip(xs2, ys2)]
+
+        sum_res = math.fsum(residuals)
+        sum_x_res = math.fsum(x * r for x, r in zip(xs2, residuals))
+
+        scale = 1.0 + math.fsum(abs(y) for y in ys2)
+        x_scale = scale * (1.0 + math.fsum(abs(x) for x in xs2))
+
+        assert abs(sum_res) <= 1e-6 * scale
+        assert abs(sum_x_res) <= 1e-6 * x_scale
+
+    inner()
+
+
+# Property 2: With proportional=True, intercept is exactly 0.0.
+@given(st.data())
+def test_proportional_intercept_zero():
+    @given(
+        xs=st.lists(reasonable_floats, min_size=2, max_size=50),
+        ys=st.lists(reasonable_floats, min_size=2, max_size=50),
+    )
+    def inner(xs, ys):
+        m = min(len(xs), len(ys))
+        xs2 = xs[:m]
+        ys2 = ys[:m]
+        assume(m >= 2)
+        assume(_not_constant(xs2))
+
+        result = statistics.linear_regression(xs2, ys2, proportional=True)
+        assert result.intercept == 0.0
+
+    inner()
+
+
+# Property 3: Recovery of exact line parameters.
+@given(st.data())
+def test_recover_exact_line():
+    @given(
+        xs=st.lists(reasonable_floats, min_size=2, max_size=50),
+        a=reasonable_floats,
+        b=reasonable_floats,
+    )
+    def inner(xs, a, b):
+        assume(_not_constant(xs))
+        ys = [a * x + b for x in xs]
+        # Guard against overflow in generated ys.
+        assume(all(math.isfinite(y) for y in ys))
+
+        slope, intercept = statistics.linear_regression(xs, ys)
+
+        scale = 1.0 + abs(a) + abs(b) + math.fsum(abs(x) for x in xs)
+        assert math.isclose(slope, a, rel_tol=1e-6, abs_tol=1e-6 * scale)
+        assert math.isclose(intercept, b, rel_tol=1e-6, abs_tol=1e-6 * scale)
+
+    inner()
+
+
+# Property 3b: Proportional case recovers slope of y = a*x.
+@given(st.data())
+def test_recover_proportional_line():
+    @given(
+        xs=st.lists(reasonable_floats, min_size=2, max_size=50),
+        a=reasonable_floats,
+    )
+    def inner(xs, a):
+        assume(_not_constant(xs))
+        ys = [a * x for x in xs]
+        assume(all(math.isfinite(y) for y in ys))
+        # Need x not all zero for proportional fit to be meaningful.
+        assume(any(x != 0.0 for x in xs))
+
+        result = statistics.linear_regression(xs, ys, proportional=True)
+        scale = 1.0 + abs(a)
+        assert math.isclose(result.slope, a, rel_tol=1e-6, abs_tol=1e-6 * scale)
+
+    inner()
+
+
+# Property 4: Error conditions raise StatisticsError.
+@given(st.data())
+def test_error_conditions():
+    @given(
+        xs=st.lists(reasonable_floats, min_size=0, max_size=50),
+        ys=st.lists(reasonable_floats, min_size=0, max_size=50),
+    )
+    def inner(xs, ys):
+        try:
+            statistics.linear_regression(xs, ys)
+            raised = False
+        except statistics.StatisticsError:
+            raised = True
+
+        should_raise = (
+            len(xs) != len(ys)
+            or len(xs) < 2
+            or (len(xs) >= 1 and not _not_constant(xs))
+        )
+        if should_raise:
+            assert raised
+
+    inner()
+
+
+# Property 5: Equivariance under scaling/shifting of y.
+@given(st.data())
+def test_equivariance():
+    @given(
+        xs=st.lists(reasonable_floats, min_size=2, max_size=50),
+        ys=st.lists(reasonable_floats, min_size=2, max_size=50),
+        c=st.floats(min_value=-1e3, max_value=1e3, allow_nan=False,
+                    allow_infinity=False),
+        d=st.floats(min_value=-1e6, max_value=1e6, allow_nan=False,
+                    allow_infinity=False),
+    )
+    def inner(xs, ys, c, d):
+        m = min(len(xs), len(ys))
+        xs2 = xs[:m]
+        ys2 = ys[:m]
+        assume(m >= 2)
+        assume(_not_constant(xs2))
+
+        slope0, intercept0 = statistics.linear_regression(xs2, ys2)
+
+        # Scaling y by c multiplies both slope and intercept by c.
+        ys_scaled = [c * y for y in ys2]
+        assume(all(math.isfinite(y) for y in ys_scaled))
+        slope_s, intercept_s = statistics.linear_regression(xs2, ys_scaled)
+
+        scale = 1.0 + abs(slope0) + abs(intercept0) + abs(c)
+        assert math.isclose(slope_s, c * slope0, rel_tol=1e-6,
+                            abs_tol=1e-6 * scale)
+        assert math.isclose(intercept_s, c * intercept0, rel_tol=1e-6,
+                            abs_tol=1e-6 * scale)
+
+        # Adding constant d to y increases intercept by d, slope unchanged.
+        ys_shifted = [y + d for y in ys2]
+        assume(all(math.isfinite(y) for y in ys_shifted))
+        slope_sh, intercept_sh = statistics.linear_regression(xs2, ys_shifted)
+
+        scale2 = 1.0 + abs(slope0) + abs(intercept0) + abs(d)
+        assert math.isclose(slope_sh, slope0, rel_tol=1e-6,
+                            abs_tol=1e-6 * scale2)
+        assert math.isclose(intercept_sh, intercept0 + d, rel_tol=1e-6,
+                            abs_tol=1e-6 * scale2)
+
+    inner()
+# End program
+```

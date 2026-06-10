@@ -1,0 +1,9 @@
+1. The result contains the same data values as the input, only reordered along the requested `axis`; no rows/columns are added, removed, or modified.
+
+2. Along the sorted axis, labels are ordered lexicographically by `by`, respecting each corresponding `ascending` value and applying `key` to the sort columns/labels when provided.
+
+3. Missing values in the sort keys appear at the beginning when `na_position="first"` and at the end when `na_position="last"`, regardless of ascending or descending order.
+
+4. If `ignore_index=True`, the sorted axis is relabeled as `0, 1, ..., n-1`; otherwise, the original labels are preserved and reordered with their corresponding data.
+
+5. If `inplace=True`, the function returns `None` and the original DataFrame is mutated to the same sorted result that would have been returned with `inplace=False`.

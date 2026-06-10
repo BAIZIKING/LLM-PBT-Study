@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `html.unescape`:
+
+1. **Idempotence on plain text**: If the input string contains no character references (no `&` followed by a valid named or numeric reference), the output equals the input unchanged.
+
+2. **Output type and structure**: The output is always a string, and its length is less than or equal to the input length (since unescaping replaces multi-character references with single or fewer characters, and unrecognized `&` sequences are left as-is).
+
+3. **Correct named reference resolution**: For any valid HTML5 named character reference (e.g., `&amp;`, `&lt;`, `&gt;`), the function returns the corresponding Unicode character (e.g., `&amp;` → `&`, `&lt;` → `<`).
+
+4. **Correct numeric reference resolution**: For any valid numeric character reference, both decimal (`&#N;`) and hexadecimal (`&#xH;`) forms that refer to the same code point produce the same single Unicode character (e.g., `&#62;`, `&#x3e;`, and `&#x3E;` all yield `>`).
+
+5. **Round-trip consistency with escape**: For any string `s`, calling `html.unescape(html.escape(s))` returns the original string `s` (escaping then unescaping is the identity for content that `html.escape` handles).

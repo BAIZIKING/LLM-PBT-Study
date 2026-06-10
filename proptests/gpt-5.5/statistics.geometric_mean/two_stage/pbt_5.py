@@ -1,0 +1,79 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+positive_floats = st.floats(
+    min_value=1e-50,
+    max_value=1e50,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+positive_float_lists = st.lists(
+    positive_floats,
+    min_size=1,
+    max_size=50,
+)
+
+
+@given(positive_float_lists)
+def test_statistics_geometric_mean_returns_positive_float(data):
+    result = statistics.geometric_mean(data)
+
+    assert isinstance(result, float)
+    assert result > 0.0
+    assert math.isfinite(result)
+
+
+@given(positive_floats)
+def test_statistics_geometric_mean_single_value_equals_that_value(x):
+    result = statistics.geometric_mean([x])
+
+    assert math.isclose(result, float(x), rel_tol=1e-12, abs_tol=0.0)
+
+
+@given(positive_float_lists)
+def test_statistics_geometric_mean_lies_between_minimum_and_maximum(data):
+    result = statistics.geometric_mean(data)
+
+    lower = min(data)
+    upper = max(data)
+
+    assert result >= lower or math.isclose(result, lower, rel_tol=1e-12, abs_tol=0.0)
+    assert result <= upper or math.isclose(result, upper, rel_tol=1e-12, abs_tol=0.0)
+
+
+@given(positive_float_lists)
+def test_statistics_geometric_mean_is_invariant_under_reordering(data):
+    result = statistics.geometric_mean(data)
+    reversed_result = statistics.geometric_mean(reversed(data))
+
+    assert math.isclose(result, reversed_result, rel_tol=1e-12, abs_tol=0.0)
+
+
+@given(
+    st.lists(
+        st.floats(
+            min_value=1e-25,
+            max_value=1e25,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
+        min_size=1,
+        max_size=50,
+    ),
+    st.floats(
+        min_value=1e-25,
+        max_value=1e25,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+)
+def test_statistics_geometric_mean_scales_with_positive_constant(data, c):
+    result = statistics.geometric_mean(data)
+    scaled_result = statistics.geometric_mean([c * x for x in data])
+
+    assert math.isclose(scaled_result, c * result, rel_tol=1e-12, abs_tol=0.0)
+
+
+# End program

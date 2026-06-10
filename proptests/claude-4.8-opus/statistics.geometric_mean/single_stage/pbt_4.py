@@ -1,0 +1,64 @@
+from hypothesis import given, strategies as st
+import math
+from statistics import geometric_mean, StatisticsError
+
+# Summary: Generate lists that are either "clean" (all positive floats/ints, where
+# the geometric mean is well-defined) or "problematic" (empty, or containing zeros
+# or negative values, which must raise StatisticsError). For clean positive data we
+# verify the result is a positive finite value bounded by min/max; for all-equal
+# data we verify the geometric mean equals the common value; for problematic data
+# we verify StatisticsError is raised.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    positive = st.one_of(
+        st.floats(min_value=1e-3, max_value=1e6,
+                  allow_nan=False, allow_infinity=False),
+        st.integers(min_value=1, max_value=10**6),
+    )
+    bad_values = st.one_of(
+        st.just(0),
+        st.just(0.0),
+        st.floats(min_value=-1e6, max_value=-1e-3,
+                  allow_nan=False, allow_infinity=False),
+        st.integers(min_value=-10**6, max_value=-1),
+    )
+
+    category = data.draw(st.sampled_from(["positive", "constant", "bad", "empty"]))
+
+    if category == "positive":
+        values = data.draw(st.lists(positive, min_size=1, max_size=20))
+        result = geometric_mean(values)
+        assert math.isfinite(result)
+        assert result > 0.0
+        lo, hi = min(values), max(values)
+        # Geometric mean lies within [min, max], with floating-point tolerance.
+        assert lo - 1e-6 <= result <= hi + 1e-6
+
+    elif category == "constant":
+        c = data.draw(positive)
+        n = data.draw(st.integers(min_value=1, max_value=20))
+        values = [c] * n
+        result = geometric_mean(values)
+        assert math.isclose(result, float(c), rel_tol=1e-6, abs_tol=1e-6)
+
+    elif category == "bad":
+        # A list of positive values with at least one zero/negative inserted.
+        good = data.draw(st.lists(positive, max_size=10))
+        bad = data.draw(st.lists(bad_values, min_size=1, max_size=5))
+        values = good + bad
+        # Shuffle-like interleave: position shouldn't matter.
+        idx = data.draw(st.permutations(list(range(len(values)))))
+        values = [values[i] for i in idx]
+        try:
+            geometric_mean(values)
+            assert False, "Expected StatisticsError for zero/negative input"
+        except StatisticsError:
+            pass
+
+    else:  # empty
+        try:
+            geometric_mean([])
+            assert False, "Expected StatisticsError for empty input"
+        except StatisticsError:
+            pass
+# End program

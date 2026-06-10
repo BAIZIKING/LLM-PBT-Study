@@ -1,0 +1,9 @@
+1. The returned DataFrame contains no duplicate rows with respect to `subset` if `keep` is `'first'` or `'last'`; if `subset` is `None`, this applies to all columns.
+
+2. When `keep='first'`, each remaining row is the first occurrence from the input for its duplicate group; when `keep='last'`, each remaining row is the last occurrence.
+
+3. When `keep=False`, no row in the output belongs to a duplicate group from the input; only rows whose `subset` values occur exactly once are retained.
+
+4. The relative order of retained rows is the same as their order in the original DataFrame.
+
+5. If `ignore_index=True`, the output index is a consecutive range from `0` to `len(output) - 1`; otherwise, retained rows keep their original index labels.

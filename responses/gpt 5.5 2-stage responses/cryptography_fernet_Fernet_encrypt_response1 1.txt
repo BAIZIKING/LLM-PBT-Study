@@ -1,0 +1,9 @@
+1. For any `bytes` input, the output is of type `bytes`.
+
+2. The output is a URL-safe base64-encoded Fernet token.
+
+3. Decrypting the output with the same `Fernet` key returns exactly the original input bytes.
+
+4. Any modification to the output token should cause authentication/decryption to fail with the same key.
+
+5. The output token contains the plaintext creation time corresponding to when `encrypt` was called.

@@ -1,0 +1,68 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To exercise `html.unescape` thoroughly, I want inputs that contain a mix of:
+1. **Plain text** — ordinary Unicode characters that should pass through unchanged.
+2. **Named character references** — e.g. `&amp;`, `&gt;`, `&lt;`, `&copy;`. I can pull real ones from `html.entities.html5`.
+3. **Numeric character references** — both decimal (`&#62;`) and hexadecimal (`&#x3e;`, `&#X3E;`).
+4. **Malformed/edge-case references** — bare `&`, missing semicolons, invalid code points, empty references like `&#;`, etc.
+
+I combine these fragments by sampling lists of them and joining, which produces realistic mixed strings as well as adversarial edge cases.
+
+**Properties to Check (from the documentation):**
+
+The doc states `unescape` converts references to Unicode characters following HTML5 rules. Key invariants:
+
+1. **Idempotence on the literal characters**: The known mappings from `html.entities.html5` must convert correctly — for a valid named reference `&name;`, `unescape("&name;")` equals its documented Unicode value.
+2. **No `&entity;` survives that has a valid mapping**: After unescaping a well-formed named reference, the result should equal the mapped character (a concrete correctness check).
+3. **Plain text without ampersands is unchanged** (a stability property): if a string contains no `&`, `unescape` returns it identically.
+4. **Total / non-crashing**: For arbitrary input, `unescape` always returns a `str` and never raises.
+
+I'll combine these into one test using a composite strategy.
+
+```python
+from hypothesis import given, strategies as st
+import html
+from html.entities import html5
+
+# Summary: Build strings from a mix of plain text, real named refs (from
+# html.entities.html5), decimal/hex numeric refs, and malformed refs, then
+# join random selections. Check: (a) unescape never crashes and returns str,
+# (b) ampersand-free text is returned unchanged, (c) well-formed named refs
+# map to their documented Unicode value.
+@given(st.data())
+def test_html_unescape(data):
+    # Real named references (those ending in ';') and their target values.
+    named_refs = {k: v for k, v in html5.items() if k.endswith(";")}
+    named_keys = sorted(named_refs.keys())
+
+    # Strategy for various kinds of fragments.
+    plain_text = st.text(
+        alphabet=st.characters(blacklist_characters="&"), max_size=10
+    )
+    named_ref = st.sampled_from(["&" + k for k in named_keys])
+    dec_ref = st.integers(min_value=0, max_value=0x10FFFF).map(lambda n: f"&#{n};")
+    hex_ref = st.integers(min_value=0, max_value=0x10FFFF).map(
+        lambda n: f"&#x{n:x};"
+    )
+    malformed = st.sampled_from(
+        ["&", "&;", "&#;", "&#x;", "&amp", "&#999999999;", "&notareal;", "&#xZZ;"]
+    )
+
+    fragment = st.one_of(plain_text, named_ref, dec_ref, hex_ref, malformed)
+    s = data.draw(st.lists(fragment, max_size=8).map("".join))
+
+    # Property (a): total function, always returns a str, never raises.
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+    # Property (b): a string with no '&' must be returned unchanged.
+    if "&" not in s:
+        assert result == s
+
+    # Property (c): a well-formed named reference alone maps to its
+    # documented Unicode value.
+    key = data.draw(st.sampled_from(named_keys))
+    assert html.unescape("&" + key) == named_refs[key]
+# End program
+```

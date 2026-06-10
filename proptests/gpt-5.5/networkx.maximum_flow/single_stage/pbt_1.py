@@ -1,0 +1,158 @@
+from hypothesis import given, strategies as st
+import math
+import networkx as nx
+from networkx.algorithms.flow import edmonds_karp, preflow_push, shortest_augmenting_path
+
+# Summary: Generate small random directed capacitated graphs, including empty/disconnected graphs, zero and float capacities, custom capacity attribute names, missing capacity attributes (infinite capacity), self-loops, different supported flow algorithms/kwargs, and occasional MultiDiGraphs. Check documented behavior: MultiDiGraphs are rejected; infinite-capacity s-t paths are unbounded; otherwise the returned flow obeys capacity constraints, flow conservation, source/sink net-flow definitions, and max-flow/min-cut equality.
+@given(st.data())
+def test_networkx_maximum_flow(data):
+    capacity_name = data.draw(
+        st.one_of(
+            st.just("capacity"),
+            st.text(
+                alphabet=st.characters(blacklist_categories=("Cs",)),
+                min_size=0,
+                max_size=6,
+            ),
+        )
+    )
+
+    algorithm = data.draw(
+        st.sampled_from(
+            ["default", "edmonds_karp", "preflow_push", "shortest_augmenting_path"]
+        )
+    )
+    kwargs = {}
+    if algorithm == "default":
+        flow_func = None
+    elif algorithm == "edmonds_karp":
+        flow_func = edmonds_karp
+        if data.draw(st.booleans()):
+            kwargs["cutoff"] = None
+    elif algorithm == "preflow_push":
+        flow_func = preflow_push
+        if data.draw(st.booleans()):
+            kwargs["global_relabel_freq"] = data.draw(st.sampled_from([None, 1, 2]))
+    else:
+        flow_func = shortest_augmenting_path
+        if data.draw(st.booleans()):
+            kwargs["two_phase"] = data.draw(st.booleans())
+        if data.draw(st.booleans()):
+            kwargs["cutoff"] = None
+
+    n = data.draw(st.integers(min_value=2, max_value=7))
+    nodes = list(range(n))
+    s = data.draw(st.integers(min_value=0, max_value=n - 1))
+    t = data.draw(st.integers(min_value=0, max_value=n - 2))
+    if t >= s:
+        t += 1
+
+    use_multigraph = data.draw(st.integers(min_value=0, max_value=9)) == 0
+    G = nx.MultiDiGraph() if use_multigraph else nx.DiGraph()
+    G.add_nodes_from(nodes)
+
+    capacity_values = st.one_of(
+        st.integers(min_value=0, max_value=20),
+        st.floats(
+            min_value=0,
+            max_value=20,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+            width=32,
+        ),
+    )
+    ignored_capacity_key = "capacity" if capacity_name != "capacity" else "not_capacity"
+
+    def add_random_edge(u, v):
+        if use_multigraph:
+            key = G.add_edge(u, v)
+            attrs = G[u][v][key]
+        else:
+            G.add_edge(u, v)
+            attrs = G[u][v]
+
+        if data.draw(st.booleans()):
+            attrs[capacity_name] = data.draw(capacity_values)
+
+        if data.draw(st.booleans()):
+            attrs[ignored_capacity_key] = data.draw(capacity_values)
+
+    for u in nodes:
+        for v in nodes:
+            if u >= v:
+                continue
+            choice = data.draw(st.integers(min_value=0, max_value=2))
+            if choice == 1:
+                add_random_edge(u, v)
+            elif choice == 2:
+                add_random_edge(v, u)
+
+    if data.draw(st.booleans()):
+        for u in nodes:
+            if data.draw(st.booleans()):
+                add_random_edge(u, u)
+
+    if use_multigraph:
+        try:
+            nx.maximum_flow(
+                G, s, t, capacity=capacity_name, flow_func=flow_func, **kwargs
+            )
+        except (nx.NetworkXError, nx.NetworkXNotImplemented):
+            return
+        assert False, "maximum_flow should reject MultiGraph/MultiDiGraph inputs"
+
+    infinite_capacity_subgraph = nx.DiGraph()
+    infinite_capacity_subgraph.add_nodes_from(nodes)
+    for u, v in G.edges():
+        if capacity_name not in G[u][v]:
+            infinite_capacity_subgraph.add_edge(u, v)
+
+    expected_unbounded = nx.has_path(infinite_capacity_subgraph, s, t)
+
+    try:
+        flow_value, flow_dict = nx.maximum_flow(
+            G, s, t, capacity=capacity_name, flow_func=flow_func, **kwargs
+        )
+    except nx.NetworkXUnbounded:
+        assert expected_unbounded
+        return
+
+    assert not expected_unbounded
+
+    eps = 1e-7
+
+    def assert_close(a, b):
+        assert math.isclose(float(a), float(b), rel_tol=eps, abs_tol=eps)
+
+    assert flow_value >= -eps
+
+    inflow = {node: 0.0 for node in nodes}
+    outflow = {node: 0.0 for node in nodes}
+
+    for u, v in G.edges():
+        assert u in flow_dict
+        assert v in flow_dict[u]
+
+        edge_flow = flow_dict[u][v]
+        assert edge_flow >= -eps
+
+        if capacity_name in G[u][v]:
+            assert edge_flow <= G[u][v][capacity_name] + eps
+
+        outflow[u] += edge_flow
+        inflow[v] += edge_flow
+
+    assert_close(outflow[s] - inflow[s], flow_value)
+    assert_close(inflow[t] - outflow[t], flow_value)
+
+    for node in nodes:
+        if node not in {s, t}:
+            assert_close(inflow[node], outflow[node])
+
+    cut_value = nx.minimum_cut_value(
+        G, s, t, capacity=capacity_name, flow_func=flow_func, **kwargs
+    )
+    assert_close(flow_value, cut_value)
+
+# End program

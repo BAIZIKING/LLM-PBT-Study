@@ -1,0 +1,241 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+
+FINITE_FLOATS = st.floats(
+    min_value=-1_000_000,
+    max_value=1_000_000,
+    allow_nan=False,
+    allow_infinity=False,
+    width=32,
+)
+
+SMALL_FLOATS = st.floats(
+    min_value=-100,
+    max_value=100,
+    allow_nan=False,
+    allow_infinity=False,
+    width=32,
+)
+
+
+def _is_missing(value):
+    return bool(pandas.isna(value))
+
+
+def _expected_cut_code(value, edges, right=True, include_lowest=False):
+    if _is_missing(value):
+        return None
+
+    for i in range(len(edges) - 1):
+        left = edges[i]
+        right_edge = edges[i + 1]
+
+        if right:
+            lower_ok = value > left or (
+                include_lowest and i == 0 and value >= left
+            )
+            upper_ok = value <= right_edge
+        else:
+            lower_ok = value >= left
+            upper_ok = value < right_edge
+
+        if lower_ok and upper_ok:
+            return i
+
+    return None
+
+
+def _assert_same_cut_codes(left, right):
+    assert len(left) == len(right)
+
+    for left_value, right_value in zip(left, right):
+        if _is_missing(left_value) or _is_missing(right_value):
+            assert _is_missing(left_value)
+            assert _is_missing(right_value)
+        else:
+            assert int(left_value) == int(right_value)
+
+
+@given(st.data())
+def test_pandas_cut_preserves_output_length_and_series_index(data):
+    values = data.draw(st.lists(FINITE_FLOATS, min_size=1, max_size=50))
+    bins = data.draw(st.integers(min_value=1, max_value=10))
+
+    index = [f"row_{i}" for i in range(len(values))]
+    series = pandas.Series(values, index=index)
+
+    series_result = pandas.cut(series, bins)
+    array_result = pandas.cut(values, bins)
+
+    assert len(series_result) == len(series)
+    assert list(series_result.index) == index
+    assert len(array_result) == len(values)
+
+
+@given(st.data())
+def test_pandas_cut_missing_and_out_of_bounds_values_become_missing(data):
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                st.floats(
+                    min_value=-5,
+                    max_value=5,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=32,
+                ),
+                st.just(float("nan")),
+            ),
+            min_size=1,
+            max_size=50,
+        )
+    )
+
+    bins = [0.0, 1.0, 2.0]
+    result = pandas.cut(values, bins)
+
+    for input_value, output_value in zip(values, result):
+        if _is_missing(input_value) or input_value <= 0.0 or input_value > 2.0:
+            assert _is_missing(output_value)
+
+
+@given(st.data())
+def test_pandas_cut_assigns_each_value_to_the_expected_interval_code(data):
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                st.floats(
+                    min_value=-12,
+                    max_value=12,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=32,
+                ),
+                st.just(float("nan")),
+            ),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    bins = [-10.0, -1.0, 0.0, 2.0, 10.0]
+    result = pandas.cut(
+        values,
+        bins,
+        labels=False,
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    for input_value, output_code in zip(values, result):
+        expected_code = _expected_cut_code(
+            input_value,
+            bins,
+            right=right,
+            include_lowest=include_lowest,
+        )
+
+        if expected_code is None:
+            assert _is_missing(output_code)
+        else:
+            assert not _is_missing(output_code)
+            assert int(output_code) == expected_code
+
+
+@given(st.data())
+def test_pandas_cut_labels_false_outputs_only_valid_integer_codes_or_missing(data):
+    values = data.draw(
+        st.lists(
+            st.one_of(SMALL_FLOATS, st.just(float("nan"))),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    bins = [-3.0, 0.0, 4.0, 9.0]
+    number_of_bins = len(bins) - 1
+
+    result = pandas.cut(
+        pandas.Series(values),
+        bins,
+        labels=False,
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    for output_code in result:
+        if not _is_missing(output_code):
+            assert float(output_code).is_integer()
+            assert 0 <= int(output_code) < number_of_bins
+
+
+@given(st.data())
+def test_pandas_cut_retbins_matches_effective_bins_after_dropping_duplicates(data):
+    unique_edges = sorted(
+        data.draw(
+            st.lists(
+                st.integers(min_value=-50, max_value=50),
+                min_size=2,
+                max_size=10,
+                unique=True,
+            )
+        )
+    )
+
+    bins_with_possible_duplicates = []
+    for edge in unique_edges:
+        bins_with_possible_duplicates.append(float(edge))
+        if data.draw(st.booleans()):
+            bins_with_possible_duplicates.append(float(edge))
+
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                st.floats(
+                    min_value=float(unique_edges[0] - 10),
+                    max_value=float(unique_edges[-1] + 10),
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=32,
+                ),
+                st.just(float("nan")),
+            ),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    result, returned_bins = pandas.cut(
+        values,
+        bins_with_possible_duplicates,
+        labels=False,
+        retbins=True,
+        duplicates="drop",
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    effective_bins = [float(edge) for edge in unique_edges]
+    assert list(returned_bins) == effective_bins
+
+    result_using_returned_bins = pandas.cut(
+        values,
+        returned_bins,
+        labels=False,
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    _assert_same_cut_codes(result, result_using_returned_bins)
+
+
+# End program
+```

@@ -1,0 +1,9 @@
+1. For two 1-D inputs, the output is a scalar equal to the sum of elementwise products, with no complex conjugation applied.
+
+2. For two 2-D inputs, the output is the standard matrix product: each element equals the sum of products of the corresponding row of `a` and column of `b`.
+
+3. If either input is scalar/0-D, the output is equivalent to ordinary multiplication of `a` and `b`.
+
+4. For higher-dimensional inputs, the output values are computed by summing over the last axis of `a` and the second-to-last axis of `b`.
+
+5. For valid non-scalar array inputs, the output shape follows NumPy’s dot-product shape rules, combining the non-contracted axes of `a` and `b`; when a valid `out` is supplied, the returned object is that same `out` array containing the result.

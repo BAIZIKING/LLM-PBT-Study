@@ -1,0 +1,9 @@
+1. For any valid data with at least two values, the returned variance is non-negative.
+
+2. The returned variance is zero if and only if all values in the data are equal.
+
+3. When `xbar` is omitted, `None`, or equal to the actual mean of the data, the result equals `sum((x - mean(data)) ** 2 for x in data) / (len(data) - 1)`.
+
+4. Passing the actual mean as `xbar` produces the same result as omitting `xbar`.
+
+5. Adding the same constant to every data value does not change the returned variance; multiplying every data value by a constant `k` multiplies the variance by `k ** 2`.

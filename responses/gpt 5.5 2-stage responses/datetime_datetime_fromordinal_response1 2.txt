@@ -1,0 +1,9 @@
+1. For any valid ordinal, the result is a `datetime` instance.
+
+2. For any valid ordinal `n`, the result’s `toordinal()` value is exactly `n`.
+
+3. The result always has `hour == 0`, `minute == 0`, `second == 0`, and `microsecond == 0`.
+
+4. The result always has `tzinfo is None`.
+
+5. The result’s date is within the supported datetime range, from `datetime(1, 1, 1)` through `datetime.max.date()`.

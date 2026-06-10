@@ -1,0 +1,64 @@
+from hypothesis import given, strategies as st, assume
+import zlib
+
+# Property 1: The output is always a bytes object.
+@given(st.binary(max_size=4096), st.integers(min_value=0, max_value=9))
+def test_zlib_decompress_returns_bytes(original, level):
+    compressed = zlib.compress(original, level)
+    result = zlib.decompress(compressed)
+    assert isinstance(result, bytes)
+
+
+# Property 2: Round-trip property: decompressing data produced by zlib.compress
+# yields exactly the original uncompressed bytes.
+@given(st.binary(max_size=4096), st.integers(min_value=0, max_value=9))
+def test_zlib_decompress_roundtrip(original, level):
+    compressed = zlib.compress(original, level)
+    result = zlib.decompress(compressed)
+    assert result == original
+
+
+# Property 3: For input that is not validly compressed data, the function raises
+# a zlib.error exception.
+@given(st.binary(max_size=4096))
+def test_zlib_decompress_invalid_raises(data):
+    # Ensure the data is not a valid zlib stream by checking decompression fails.
+    try:
+        valid_result = zlib.decompress(data)
+    except zlib.error:
+        # As expected, invalid data raises zlib.error
+        return
+    # If it did not raise, then it happened to be valid; skip such cases.
+    assume(False)
+
+
+# Property 4: The output is independent of the bufsize argument.
+@given(
+    st.binary(max_size=4096),
+    st.integers(min_value=0, max_value=9),
+    st.integers(min_value=1, max_value=65536),
+    st.integers(min_value=1, max_value=65536),
+)
+def test_zlib_decompress_bufsize_independent(original, level, bufsize1, bufsize2):
+    compressed = zlib.compress(original, level)
+    result1 = zlib.decompress(compressed, zlib.MAX_WBITS, bufsize1)
+    result2 = zlib.decompress(compressed, zlib.MAX_WBITS, bufsize2)
+    assert result1 == result2
+
+
+# Property 5: Automatic-detection wbits modes match explicit corresponding wbits.
+@given(st.binary(max_size=4096), st.integers(min_value=0, max_value=9))
+def test_zlib_decompress_auto_wbits(original, level):
+    # zlib format compressed with default wbits (MAX_WBITS = 15)
+    compressed = zlib.compress(original, level)
+
+    explicit = zlib.decompress(compressed, zlib.MAX_WBITS)
+
+    # wbits=0: automatically determine the window size from the zlib header.
+    auto_window = zlib.decompress(compressed, 0)
+    assert auto_window == explicit
+
+    # wbits=32+15: automatically accept either zlib or gzip format.
+    auto_format = zlib.decompress(compressed, 32 + zlib.MAX_WBITS)
+    assert auto_format == explicit
+# End program

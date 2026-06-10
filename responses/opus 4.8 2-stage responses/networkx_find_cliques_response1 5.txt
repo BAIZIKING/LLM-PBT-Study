@@ -1,0 +1,9 @@
+1. Every clique returned is a valid clique in G, meaning all nodes in it are mutually adjacent (every pair of distinct nodes in the clique is connected by an edge).
+
+2. Every clique returned is maximal, meaning no other node in G can be added to the clique while keeping it a complete subgraph (i.e., no node outside the clique is adjacent to all of its members).
+
+3. If `nodes` is provided and forms a valid clique, every returned clique contains all of the nodes in `nodes`; conversely, if `nodes` is not a clique, a ValueError is raised.
+
+4. The collection of returned cliques is complete and non-redundant: every maximal clique of G (subject to the `nodes` constraint) appears exactly once, with no duplicate cliques (as sets of nodes).
+
+5. Every node appearing in any returned clique is a node of G, and self-loops and parallel edges have no effect on the output (the result is identical to that of the corresponding simple graph).

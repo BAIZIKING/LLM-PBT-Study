@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `pandas.isna`:
+
+1. **Type/shape preservation for array-like inputs:** For an array-like input (ndarray, Series, DataFrame, Index), the output has the same shape/length as the input, and for Series/DataFrame the output is the same container type with the same axes/labels (Index returns an ndarray).
+
+2. **Scalar output for scalar input:** For any scalar input, the output is a single Python/numpy boolean value (not an array).
+
+3. **Boolean dtype of output:** Every element of the output (or the scalar output) is of boolean type—the function never returns any value other than `True` or `False`.
+
+4. **Inverse relationship with `notna`:** For any input, `pandas.isna(obj)` is the elementwise logical negation of `pandas.notna(obj)`.
+
+5. **Correct identification of missing markers:** Recognized missing values (`np.nan`, `None` in object arrays, `pd.NA`, `pd.NaT`) map to `True`, while all other valid values (numbers, non-null strings, valid dates) map to `False`.

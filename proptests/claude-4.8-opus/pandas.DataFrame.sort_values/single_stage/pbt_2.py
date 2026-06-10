@@ -1,0 +1,127 @@
+from hypothesis import given, strategies as st
+import pandas as pd
+import numpy as np
+import math
+
+# Summary: Generate a mixed-dtype DataFrame (ints, floats with NaN, strings) with
+# fixed column names, then randomly pick `by` (single col or list), `ascending`
+# (bool or matching-length list), `na_position`, `kind`, and `ignore_index`.
+# Check shape preservation, row-multiset permutation, ignore_index labeling, and
+# actual sortedness honoring ascending/na_position.
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    cols = ["a", "b", "c"]
+    n = data.draw(st.integers(min_value=0, max_value=8), label="nrows")
+
+    int_vals = data.draw(
+        st.lists(st.integers(min_value=-5, max_value=5), min_size=n, max_size=n),
+        label="ints",
+    )
+    float_vals = data.draw(
+        st.lists(
+            st.one_of(
+                st.floats(min_value=-10, max_value=10, allow_nan=False),
+                st.just(float("nan")),
+            ),
+            min_size=n, max_size=n,
+        ),
+        label="floats",
+    )
+    str_vals = data.draw(
+        st.lists(st.text(alphabet="abcABC", max_size=3), min_size=n, max_size=n),
+        label="strs",
+    )
+
+    df = pd.DataFrame({"a": int_vals, "b": float_vals, "c": str_vals})
+
+    # Choose `by`: single column or a list of distinct columns
+    by = data.draw(
+        st.one_of(
+            st.sampled_from(cols),
+            st.lists(st.sampled_from(cols), min_size=1, max_size=3, unique=True),
+        ),
+        label="by",
+    )
+    by_list = [by] if isinstance(by, str) else by
+
+    # Choose `ascending`: single bool or list matching by_list length
+    ascending = data.draw(
+        st.one_of(
+            st.booleans(),
+            st.lists(st.booleans(), min_size=len(by_list), max_size=len(by_list)),
+        ),
+        label="ascending",
+    )
+    asc_list = (
+        [ascending] * len(by_list) if isinstance(ascending, bool) else ascending
+    )
+
+    na_position = data.draw(st.sampled_from(["first", "last"]), label="na_position")
+    kind = data.draw(
+        st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]),
+        label="kind",
+    )
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    result = df.sort_values(
+        by=by,
+        ascending=ascending,
+        na_position=na_position,
+        kind=kind,
+        ignore_index=ignore_index,
+    )
+
+    # Property 1: shape is preserved
+    assert result.shape == df.shape
+
+    # Property 2: result is a permutation of original rows (same multiset of rows)
+    def canon(frame):
+        # Sort by all columns to get a canonical row ordering for comparison.
+        sortable = frame.reset_index(drop=True).sort_values(
+            by=list(frame.columns), na_position="last"
+        ).reset_index(drop=True)
+        return sortable
+
+    pd.testing.assert_frame_equal(canon(result), canon(df), check_like=False)
+
+    # Property 3: ignore_index labels the axis 0..n-1
+    if ignore_index:
+        assert list(result.index) == list(range(len(result)))
+
+    # Property 4: result is actually sorted according to by/ascending/na_position
+    def cmp(x, y, asc):
+        x_na = isinstance(x, float) and math.isnan(x)
+        y_na = isinstance(y, float) and math.isnan(y)
+        if x_na and y_na:
+            return 0
+        if x_na or y_na:
+            # The non-na vs na ordering depends only on na_position.
+            na_is_x = x_na
+            if na_position == "first":
+                return -1 if na_is_x else 1
+            else:  # 'last'
+                return 1 if na_is_x else -1
+        # Both non-NaN: normal comparison adjusted for ascending.
+        if x == y:
+            return 0
+        less = x < y
+        if asc:
+            return -1 if less else 1
+        else:
+            return 1 if less else -1
+
+    rows = [result.iloc[i] for i in range(len(result))]
+    for i in range(len(rows) - 1):
+        r1, r2 = rows[i], rows[i + 1]
+        for col, asc in zip(by_list, asc_list):
+            c = cmp(r1[col], r2[col], asc)
+            if c < 0:
+                break  # correctly ordered at this key
+            elif c > 0:
+                raise AssertionError(
+                    f"Rows {i},{i+1} out of order on column {col!r}: "
+                    f"{r1[col]!r} vs {r2[col]!r} (ascending={asc}, "
+                    f"na_position={na_position})"
+                )
+            # c == 0: tie, move to next sort key
+# End program

@@ -1,0 +1,9 @@
+1. For compatible inputs, the output shape follows NumPy dot rules: scalar for two scalars or two 1-D arrays; `(a.shape[:-1])` for N-D `a` with 1-D `b`; and `a.shape[:-1] + b.shape[:-2] + b.shape[-1:]` when `b` is at least 2-D.
+
+2. For two 1-D arrays of equal length, the output equals the sum of elementwise products, with no complex conjugation applied.
+
+3. For two 2-D arrays with compatible inner dimensions, the output equals standard matrix multiplication.
+
+4. If either input is scalar/0-D, the output equals ordinary multiplication of the two inputs.
+
+5. For N-D `a` and M-D `b` where `M >= 2`, each output element equals the sum product over the last axis of `a` and the second-to-last axis of `b`.

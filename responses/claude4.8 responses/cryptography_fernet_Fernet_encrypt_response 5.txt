@@ -1,0 +1,93 @@
+## Generation Strategy
+
+To generate a wide variety of inputs for `Fernet.encrypt`, I focus on the `data` parameter, which must be `bytes`:
+
+1. **Use `st.binary()`** to generate raw byte strings. This naturally covers many edge cases:
+   - Empty bytes (`b""`)
+   - Single-byte values
+   - Long byte sequences
+   - All possible byte values (0–255), including null bytes and high-value bytes
+2. **Set a generous `max_size`** so we test both small and reasonably large payloads.
+3. The Fernet key itself is generated fresh per test case via `Fernet.generate_key()`, ensuring the encryption object is always valid.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: `encrypt` returns `bytes` (the Fernet token).
+2. **URL-safe base64 encoding**: The token must be valid URL-safe base64. We can verify this by decoding it with `base64.urlsafe_b64decode` without error.
+3. **Round-trip correctness (privacy/integrity)**: Decrypting the token with the same key must return exactly the original input data. This validates that the encryption is reversible and lossless.
+4. **Non-emptiness / authenticity**: The token should be non-empty and verifiable (decryption succeeds without `InvalidToken`).
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generate arbitrary byte strings (including empty, null bytes,
+# high-value bytes, and large payloads) via st.binary(). For each, create a
+# fresh Fernet key, encrypt the data, and verify the token is bytes, is valid
+# URL-safe base64, and decrypts back to the exact original data.
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt():
+    import base64
+    from cryptography.fernet import Fernet
+
+    data = st.data  # placeholder to satisfy format; real draw below
+    drawn_data = test_data.draw(st.binary(min_size=0, max_size=4096))
+
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    token = f.encrypt(drawn_data)
+
+    # Property 1: encrypt returns bytes
+    assert isinstance(token, bytes)
+
+    # Property 2: token is non-empty
+    assert len(token) > 0
+
+    # Property 3: token is valid URL-safe base64
+    decoded = base64.urlsafe_b64decode(token)
+    assert isinstance(decoded, bytes)
+
+    # Property 4: round-trip decryption returns the exact original data
+    assert f.decrypt(token) == drawn_data
+# End program
+```
+
+Note: The `@given(st.data())` signature in the required format provides a `data` object for interactive drawing. Below is the corrected version that properly uses the injected `st.data()` object:
+
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generate arbitrary byte strings (including empty, null bytes,
+# high-value bytes, and large payloads) via st.binary(). For each, create a
+# fresh Fernet key, encrypt the data, and verify the token is bytes, is valid
+# URL-safe base64, and decrypts back to the exact original data.
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt(data):
+    import base64
+    from cryptography.fernet import Fernet
+
+    drawn_data = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    token = f.encrypt(drawn_data)
+
+    # Property 1: encrypt returns bytes
+    assert isinstance(token, bytes)
+
+    # Property 2: token is non-empty
+    assert len(token) > 0
+
+    # Property 3: token is valid URL-safe base64
+    decoded = base64.urlsafe_b64decode(token)
+    assert isinstance(decoded, bytes)
+
+    # Property 4: round-trip decryption returns the exact original data
+    assert f.decrypt(token) == drawn_data
+# End program
+```

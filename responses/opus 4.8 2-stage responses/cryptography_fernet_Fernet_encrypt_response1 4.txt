@@ -1,0 +1,11 @@
+Here are five properties for property-based testing of `Fernet.encrypt`:
+
+1. **Round-trip correctness**: Decrypting the output token with the same key returns the original input data exactly (`f.decrypt(f.encrypt(data)) == data`).
+
+2. **Output type**: The output is always of type `bytes`, regardless of the input data content or length.
+
+3. **URL-safe base64 encoding**: The output token is valid URL-safe base64-encoded data (i.e., it can be successfully decoded with a URL-safe base64 decoder and contains only characters from the URL-safe base64 alphabet).
+
+4. **Non-determinism / uniqueness**: Encrypting the same input data twice produces different tokens (because the token embeds a timestamp and a random IV), yet both still decrypt back to the same original data.
+
+5. **Cross-key isolation**: A token produced by encrypting with one key cannot be successfully decrypted with a different key (decryption with a different key raises an `InvalidToken` error).

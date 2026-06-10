@@ -1,0 +1,9 @@
+1. The output is a `float` representing the duration in seconds.
+
+2. For any `timedelta` `td`, the output equals `td / timedelta(seconds=1)`.
+
+3. For any `timedelta` `td`, the output equals `td.days * 86400 + td.seconds + td.microseconds / 1_000_000`, subject to floating-point precision limits.
+
+4. A zero-duration `timedelta` always returns `0.0`.
+
+5. If two `timedelta` objects are equal after normalization, their `total_seconds()` outputs are equal.

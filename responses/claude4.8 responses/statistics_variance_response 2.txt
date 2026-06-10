@@ -1,0 +1,83 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.variance`, I'll focus on:
+
+1. **List of floats**: Generate lists of at least 2 floats. I'll exclude `nan` and `inf` (since these break the mathematical properties), and bound the magnitude to avoid floating-point overflow/precision blowup that would make property checks unreliable.
+
+2. **Edge cases covered**:
+   - Minimum valid size (exactly 2 elements)
+   - Larger lists
+   - All identical values (variance should be 0)
+   - Negative, positive, and zero values
+   - Small and large magnitudes
+
+3. **Variable list size**: Use `min_size=2` to ensure validity (avoiding `StatisticsError`), and allow larger lists for diversity.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify these mathematical properties:
+
+1. **Non-negativity**: Variance is a measure of spread, so it must be `>= 0` (allowing tiny negative values from floating-point error).
+
+2. **Zero variance for identical data**: If all values are equal, variance is exactly 0 (spread is zero).
+
+3. **Consistency with `xbar` argument**: Passing the precomputed mean as `xbar` yields the same result as computing it automatically (per the documentation: "you can pass it as the optional second argument xbar to avoid recalculation").
+
+4. **Translation invariance**: Variance is the "second moment about the mean", so shifting all data points by a constant `c` does not change the variance (the spread is unchanged).
+
+5. **Scaling property**: Multiplying all data by a constant `k` multiplies the variance by `k²`.
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists of >=2 finite, bounded floats to keep mathematical
+# properties (non-negativity, translation invariance, scaling) numerically
+# stable, while a separate strategy produces all-identical lists for the
+# zero-variance edge case. Verify non-negativity, zero-variance for constant
+# data, equivalence of passing xbar, translation invariance, and the k^2
+# scaling law.
+@given(st.data())
+def test_statistics_variance(data):
+    finite_floats = st.floats(
+        min_value=-1e6, max_value=1e6,
+        allow_nan=False, allow_infinity=False
+    )
+    values = data.draw(st.lists(finite_floats, min_size=2, max_size=50))
+
+    v = statistics.variance(values)
+
+    # Property 1: variance is non-negative (allow tiny FP error)
+    assert v >= -1e-6
+
+    # Property 2: zero variance when all values identical
+    const = data.draw(finite_floats)
+    n = data.draw(st.integers(min_value=2, max_value=50))
+    const_list = [const] * n
+    assert math.isclose(statistics.variance(const_list), 0.0, abs_tol=1e-9)
+
+    # Property 3: passing precomputed mean as xbar gives same result
+    m = statistics.mean(values)
+    v_with_xbar = statistics.variance(values, m)
+    assert math.isclose(v, v_with_xbar, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 4: translation invariance (shift by constant c)
+    c = data.draw(finite_floats)
+    shifted = [x + c for x in values]
+    v_shifted = statistics.variance(shifted)
+    scale = max(1.0, abs(v))
+    assert math.isclose(v, v_shifted, rel_tol=1e-6, abs_tol=1e-6 * scale)
+
+    # Property 5: scaling by k multiplies variance by k^2
+    k = data.draw(st.floats(min_value=-100, max_value=100,
+                            allow_nan=False, allow_infinity=False))
+    scaled = [x * k for x in values]
+    v_scaled = statistics.variance(scaled)
+    expected = v * (k ** 2)
+    scale2 = max(1.0, abs(expected))
+    assert math.isclose(v_scaled, expected, rel_tol=1e-6, abs_tol=1e-6 * scale2)
+# End program
+```

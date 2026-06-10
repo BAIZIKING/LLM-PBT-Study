@@ -1,0 +1,100 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Property 1: The output never contains an unescaped &, <, or > character;
+# every such character in the input is replaced by its corresponding HTML entity.
+@given(st.text(max_size=1000), st.booleans())
+def test_html_escape_no_unescaped_special_chars(s, quote):
+    result = html.escape(s, quote)
+    # Replace the known entities with a placeholder to neutralize them,
+    # then ensure no raw special characters remain.
+    neutralized = (
+        result.replace("&amp;", "")
+        .replace("&lt;", "")
+        .replace("&gt;", "")
+        .replace("&quot;", "")
+        .replace("&#x27;", "")
+    )
+    assert "&" not in neutralized
+    assert "<" not in neutralized
+    assert ">" not in neutralized
+    # Also verify each special char was escaped: counts should match.
+    assert result.count("&lt;") == s.count("<")
+    assert result.count("&gt;") == s.count(">")
+# End program
+
+
+# Property 2: When quote is true, " and ' are escaped to &quot; and &#x27;.
+# When quote is false, " and ' appear unchanged in the output.
+@given(st.text(max_size=1000))
+def test_html_escape_quote_behavior(s):
+    escaped_quote = html.escape(s, True)
+    # Quotes should be escaped, no raw quotes among non-entity text.
+    neutralized = (
+        escaped_quote.replace("&amp;", "")
+        .replace("&lt;", "")
+        .replace("&gt;", "")
+        .replace("&quot;", "")
+        .replace("&#x27;", "")
+    )
+    assert '"' not in neutralized
+    assert "'" not in neutralized
+    assert escaped_quote.count("&quot;") == s.count('"')
+    assert escaped_quote.count("&#x27;") == s.count("'")
+
+    escaped_noquote = html.escape(s, False)
+    # Without quote, the number of raw quotes is preserved.
+    assert escaped_noquote.count('"') == s.count('"')
+    assert escaped_noquote.count("'") == s.count("'")
+# End program
+
+
+# Property 3: If the input contains none of the special characters being escaped,
+# the output is identical to the input (idempotent on "safe" strings).
+@given(st.data())
+def test_html_escape_safe_strings_unchanged(data):
+    quote = data.draw(st.booleans())
+    forbidden = "&<>"
+    if quote:
+        forbidden += "\"'"
+    # Generate strings that avoid the special characters.
+    safe_text = data.draw(
+        st.text(
+            alphabet=st.characters(blacklist_characters=forbidden),
+            max_size=1000,
+        )
+    )
+    assert html.escape(safe_text, quote) == safe_text
+# End program
+
+
+# Property 4: The output is always a string, and an empty input produces empty output.
+@given(st.text(max_size=1000), st.booleans())
+def test_html_escape_output_type_and_empty(s, quote):
+    result = html.escape(s, quote)
+    assert isinstance(result, str)
+    assert html.escape("", quote) == ""
+# End program
+
+
+# Property 5: All characters not being escaped appear unchanged and in the same
+# relative order in the output.
+@given(st.text(max_size=1000), st.booleans())
+def test_html_escape_preserves_non_special_order(s, quote):
+    result = html.escape(s, quote)
+    special = set("&<>")
+    if quote:
+        special |= {'"', "'"}
+    # Remove escaped entities from result, leaving only the originally-safe chars.
+    neutralized = (
+        result.replace("&amp;", "")
+        .replace("&lt;", "")
+        .replace("&gt;", "")
+        .replace("&quot;", "")
+        .replace("&#x27;", "")
+    )
+    expected_remaining = "".join(c for c in s if c not in special)
+    assert neutralized == expected_remaining
+# End program
+```

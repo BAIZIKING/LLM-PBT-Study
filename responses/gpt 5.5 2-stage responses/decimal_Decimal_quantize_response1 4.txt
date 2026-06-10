@@ -1,0 +1,9 @@
+1. If `quantize` completes successfully, the result has exactly the same exponent as the `exp` operand.
+
+2. If rounding is required, the numeric value of the result equals the first operand rounded to the exponent of `exp` using the selected rounding mode.
+
+3. If no rounding is required, the result is numerically equal to the first operand, but represented with the exponent of `exp`.
+
+4. If the coefficient length of the quantized result would exceed the active context precision, `InvalidOperation` is signaled instead of returning such a result.
+
+5. `quantize` never signals `Underflow`, even when the returned result is both subnormal and inexact.

@@ -1,0 +1,9 @@
+1. The returned cycle is a non-empty list of edges, and consecutive edges share a node (the head of one edge equals the tail of the next), forming a connected path that closes into a cycle (the last edge's head equals the first edge's tail), respecting the chosen orientation.
+
+2. Every edge in the returned cycle corresponds to an actual edge present in the graph G (taking orientation into account: forward edges exist as directed in original/reverse mode, and in 'ignore' mode each edge exists in at least one direction).
+
+3. When orientation is None, each returned edge tuple has the base form (length matching the graph type: 2 for graphs, 3 for multigraphs); when orientation is not None, each tuple is extended by one with a final element that is either 'forward' or 'reverse'.
+
+4. If a source node is provided, the source node appears among the nodes participating in the returned cycle (the cycle includes/begins at the source).
+
+5. If find_cycle returns a cycle, then the graph indeed contains a cycle (consistent with whether NetworkXNoCycle is raised); for an acyclic graph under the given orientation, the function raises NetworkXNoCycle rather than returning a result.

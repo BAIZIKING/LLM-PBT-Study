@@ -1,0 +1,9 @@
+1. The output is always a non-negative integer (unsigned 32-bit), i.e., it lies in the range [0, 2^32 - 1].
+
+2. Calling the function with the same data (and same starting value) always produces the same checksum (deterministic).
+
+3. Computing the checksum over concatenated inputs by passing the result of one call as the starting value of the next yields the same result as computing the checksum over the concatenation of those inputs in a single call.
+
+4. The checksum of empty data using the default starting value equals 1 (the default starting value), and more generally the checksum of empty data with a given starting value equals that starting value (masked to 32 bits).
+
+5. Computing the checksum with an explicit starting value of 1 produces the same result as computing it with the default starting value (no value argument).

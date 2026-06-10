@@ -1,0 +1,131 @@
+## Strategy Explanation
+
+### Input Generation Strategy
+
+The `as_integer_ratio()` method operates on `Decimal` instances. To generate a wide variety of inputs and edge cases, I'll use Hypothesis's `st.decimals()` strategy, which can produce:
+
+1. **Regular finite decimals** - both positive and negative values
+2. **Zero** - including `Decimal('0')` and `Decimal('-0')`
+3. **Very large and very small magnitudes** - to test edge cases in fraction conversion
+4. **High-precision decimals** - many digits after the decimal point
+5. **Special values** - NaN and infinities (which should raise exceptions)
+
+I'll configure `st.decimals()` to allow NaN and infinity so we can verify the documented exception behavior (`OverflowError` on infinities and `ValueError` on NaNs). The test will branch based on whether the input is a special value or a finite number.
+
+### Properties to Check
+
+Based on the API documentation, the following properties should hold:
+
+1. **Special value exceptions**:
+   - Infinities (`Decimal('Infinity')`, `Decimal('-Infinity')`) raise `OverflowError`.
+   - NaNs (`Decimal('NaN')`, `Decimal('sNaN')`) raise `ValueError`.
+
+2. **For finite decimals**, `as_integer_ratio()` returns a pair `(n, d)` where:
+   - Both `n` and `d` are integers.
+   - **Positive denominator**: `d > 0`.
+   - **Lowest terms**: `gcd(n, d) == 1`.
+   - **Exact conversion**: The fraction `n/d` exactly equals the original decimal. This can be verified using `Decimal(n) / Decimal(d)` with sufficient precision, or more robustly by checking `Decimal(n) == d_value * Decimal(d)`.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, Context
+from math import gcd
+
+# Summary: Generate decimals including NaN/infinity to test exception behavior,
+# and finite decimals to verify the returned (n, d) pair is in lowest terms,
+# has a positive denominator, and exactly reconstructs the original value.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio():
+    value = data_value = (
+        st.decimals(allow_nan=True, allow_infinity=True)
+    )
+    d = (yield from ())  # placeholder to satisfy format; real draw below
+
+# End program
+```
+
+Let me correct the format to properly use `st.data()`:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, InvalidOperation
+from math import gcd
+
+# Summary: Generate decimals including NaN and infinities (to verify the
+# documented OverflowError/ValueError behavior) as well as a wide range of
+# finite decimals (varying sign, magnitude, and precision). For finite inputs,
+# verify the result is a pair of ints, the denominator is positive, the
+# fraction is in lowest terms (gcd == 1), and that n/d exactly equals the input.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio():
+    d = data.draw(st.decimals(allow_nan=True, allow_infinity=True))
+
+    if d.is_nan():
+        # NaNs must raise ValueError.
+        try:
+            d.as_integer_ratio()
+            assert False, "Expected ValueError on NaN"
+        except ValueError:
+            pass
+    elif d.is_infinite():
+        # Infinities must raise OverflowError.
+        try:
+            d.as_integer_ratio()
+            assert False, "Expected OverflowError on infinity"
+        except OverflowError:
+            pass
+    else:
+        n, denom = d.as_integer_ratio()
+        # Both components are integers.
+        assert isinstance(n, int)
+        assert isinstance(denom, int)
+        # Denominator is positive.
+        assert denom > 0
+        # Fraction is in lowest terms.
+        assert gcd(n, denom) == 1
+        # Conversion is exact: reconstruct the original decimal exactly.
+        # d == n / denom  <=>  d * denom == n  (as exact rationals)
+        assert Decimal(n) == d * denom
+# End program
+```
+
+Wait — I need to bind `data` correctly. Here is the final, format-compliant version:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+from math import gcd
+
+# Summary: Generate decimals including NaN and infinities (to verify the
+# documented OverflowError/ValueError behavior) as well as a wide range of
+# finite decimals (varying sign, magnitude, and precision). For finite inputs,
+# verify the result is a pair of ints, the denominator is positive, the fraction
+# is in lowest terms (gcd == 1), and that n/d exactly reconstructs the input.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio(data):
+    d = data.draw(st.decimals(allow_nan=True, allow_infinity=True))
+
+    if d.is_nan():
+        try:
+            d.as_integer_ratio()
+            assert False, "Expected ValueError on NaN"
+        except ValueError:
+            pass
+    elif d.is_infinite():
+        try:
+            d.as_integer_ratio()
+            assert False, "Expected OverflowError on infinity"
+        except OverflowError:
+            pass
+    else:
+        n, denom = d.as_integer_ratio()
+        assert isinstance(n, int)
+        assert isinstance(denom, int)
+        assert denom > 0
+        assert gcd(n, denom) == 1
+        # Exact conversion: d == n / denom  <=>  d * denom == n (exactly).
+        assert Decimal(n) == d * denom
+# End program
+```

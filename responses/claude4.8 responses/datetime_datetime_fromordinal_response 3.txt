@@ -1,0 +1,57 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and exercise edge cases for `datetime.fromordinal(ordinal)`:
+
+1. **Valid range**: The documentation states `1 <= ordinal <= datetime.max.toordinal()`. So I'll use `st.integers()` bounded by these values to generate valid ordinals that should succeed.
+2. **Edge cases**: By using `min_value=1` and `max_value=datetime.max.toordinal()`, Hypothesis will naturally explore the boundaries (1 = January 1 of year 1, and the maximum valid ordinal). Hypothesis tends to shrink toward small values like `1`, which covers the lower edge.
+3. Since we want to verify correct behavior of valid inputs, restricting to the valid range lets us assert strong properties without expecting exceptions.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Type**: The result is a `datetime` instance.
+2. **Time fields are zero**: `hour`, `minute`, `second`, and `microsecond` are all `0`.
+3. **tzinfo is None**: The resulting datetime has no timezone info.
+4. **Round-trip consistency**: Calling `.toordinal()` on the result returns the original ordinal (since `fromordinal` and `toordinal` are inverses for the date portion).
+5. **Lower-bound semantics**: Ordinal `1` corresponds to year 1, January 1.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate integer ordinals within the valid documented range
+# [1, datetime.max.toordinal()] to exercise lower/upper boundaries and
+# random interior values; verify type, zeroed time fields, None tzinfo,
+# and round-trip consistency with toordinal().
+@given(st.data())
+def test_datetime_datetime_fromordinal(data):
+    ordinal = data.draw(
+        st.integers(min_value=1, max_value=datetime.max.toordinal())
+    )
+    result = datetime.fromordinal(ordinal)
+
+    # Property 1: result is a datetime instance
+    assert isinstance(result, datetime)
+
+    # Property 2: hour, minute, second, microsecond are all 0
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+
+    # Property 3: tzinfo is None
+    assert result.tzinfo is None
+
+    # Property 4: round-trip consistency
+    assert result.toordinal() == ordinal
+
+    # Property 5: ordinal 1 maps to year 1, January 1
+    if ordinal == 1:
+        assert result.year == 1
+        assert result.month == 1
+        assert result.day == 1
+# End program
+```

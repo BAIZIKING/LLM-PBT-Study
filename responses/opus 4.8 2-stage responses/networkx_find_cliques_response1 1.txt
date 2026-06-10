@@ -1,0 +1,9 @@
+1. Every clique returned is a valid clique in G: all pairs of nodes within each returned list are actually adjacent (connected by an edge) in G.
+
+2. Every clique returned is maximal: no node outside the clique can be added while keeping it a complete subgraph (i.e., no returned clique is a proper subset of another valid clique).
+
+3. When the `nodes` argument is provided and forms a valid clique, every returned clique contains all of the nodes in `nodes`; conversely, when `nodes` is provided but does not itself form a clique, the function raises a ValueError.
+
+4. The collection of returned cliques covers every node in G (when `nodes` is None): the union of all returned cliques equals the set of nodes in G, and every node appears in at least one clique.
+
+5. Self-loops and parallel edges are ignored, so the set of returned maximal cliques is unchanged whether or not such edges are present in G.

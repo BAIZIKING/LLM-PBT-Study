@@ -1,0 +1,9 @@
+1. When `nbunch` is omitted, the output contains exactly one `(node, degree)` entry for every node in `G`, and no entries for nodes outside `G`.
+
+2. When `nbunch` is a collection of nodes, the output contains degree entries only for nodes from `nbunch` that are present in `G`.
+
+3. When `nbunch` is a single node in `G`, the output is that node’s degree value rather than an iterable of `(node, degree)` pairs.
+
+4. With `weight=None`, each degree value is a non-negative integer equal to the number of incident edges, counting self-loops twice.
+
+5. With `weight` specified, each degree value equals the sum of the corresponding edge attribute values over incident edges, using `1` for edges that do not have that attribute.

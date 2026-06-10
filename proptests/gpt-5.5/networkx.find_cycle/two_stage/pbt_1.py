@@ -1,0 +1,99 @@
+from hypothesis import given, strategies as st
+import networkx
+
+
+def _draw_small_graph(data):
+    graph_kind = data.draw(
+        st.sampled_from(["Graph", "DiGraph", "MultiGraph", "MultiDiGraph"])
+    )
+
+    node_count = data.draw(st.integers(min_value=0, max_value=6))
+    nodes = list(range(node_count))
+
+    if node_count == 0:
+        edges = []
+    else:
+        edges = data.draw(
+            st.lists(
+                st.tuples(
+                    st.integers(min_value=0, max_value=node_count - 1),
+                    st.integers(min_value=0, max_value=node_count - 1),
+                ),
+                min_size=0,
+                max_size=15,
+            )
+        )
+
+    graph_class = getattr(networkx, graph_kind)
+    graph = graph_class()
+    graph.add_nodes_from(nodes)
+    graph.add_edges_from(edges)
+    return graph
+
+
+def _traversal_endpoints(edge, graph, orientation):
+    u, v = edge[0], edge[1]
+
+    if graph.is_directed() and orientation is not None:
+        direction = edge[-1]
+        if direction == "forward":
+            return u, v
+        if direction == "reverse":
+            return v, u
+
+    return u, v
+
+
+@given(st.data())
+def test_networkx_find_cycle_property(data):
+    graph = _draw_small_graph(data)
+
+    if graph.is_directed():
+        orientation = data.draw(st.sampled_from([None, "original", "reverse", "ignore"]))
+    else:
+        orientation = None
+
+    try:
+        cycle = networkx.find_cycle(graph, orientation=orientation)
+    except networkx.exception.NetworkXNoCycle:
+        return
+
+    assert isinstance(cycle, list)
+    assert len(cycle) > 0
+
+    expected_base_length = 3 if graph.is_multigraph() else 2
+    expected_length = expected_base_length
+    if graph.is_directed() and orientation is not None:
+        expected_length += 1
+
+    traversal_pairs = []
+
+    for edge in cycle:
+        assert isinstance(edge, tuple)
+        assert len(edge) == expected_length
+
+        u, v = edge[0], edge[1]
+
+        if graph.is_multigraph():
+            key = edge[2]
+            assert graph.has_edge(u, v, key)
+        else:
+            assert graph.has_edge(u, v)
+
+        if graph.is_directed() and orientation is not None:
+            direction = edge[-1]
+            assert direction in {"forward", "reverse"}
+
+            if orientation == "original":
+                assert direction == "forward"
+            elif orientation == "reverse":
+                assert direction == "reverse"
+
+        traversal_pairs.append(_traversal_endpoints(edge, graph, orientation))
+
+    for index, (_, current_head) in enumerate(traversal_pairs):
+        next_tail, _ = traversal_pairs[(index + 1) % len(traversal_pairs)]
+        assert current_head == next_tail
+
+
+# End program

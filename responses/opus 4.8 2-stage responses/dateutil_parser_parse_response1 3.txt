@@ -1,0 +1,9 @@
+1. The function returns a `datetime.datetime` object (or a tuple whose first element is a `datetime.datetime` object when `fuzzy_with_tokens=True`).
+
+2. When `ignoretz=True`, the returned datetime is always naive (its `tzinfo` attribute is None), regardless of any timezone information present in the input string.
+
+3. When a `default` datetime object is provided, any date/time components not specified in the input string are taken from the default object, while components present in the string override the corresponding default values.
+
+4. When `fuzzy_with_tokens=True`, the function returns a tuple where the second element is a tuple of strings, and concatenating these ignored token strings together with the consumed portions reconstructs (a subset of) the original input string.
+
+5. When a timezone name from the `tzinfos` mapping appears in the input string (and `ignoretz` is False), the returned datetime is timezone-aware with a `tzinfo` corresponding to the mapped offset or tzinfo object.

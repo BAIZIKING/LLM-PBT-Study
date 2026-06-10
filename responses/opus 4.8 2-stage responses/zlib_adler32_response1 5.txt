@@ -1,0 +1,9 @@
+1. The output is always an unsigned 32-bit integer (i.e., an integer in the range [0, 2³²-1]).
+
+2. The function is deterministic: calling it with the same data and value always produces the same checksum.
+
+3. The checksum is composable for concatenation: computing the checksum of data1 + data2 equals computing the checksum of data2 using the checksum of data1 (with the default starting value) as the starting value.
+
+4. When called with empty data, the output equals the starting value (or the default value of 1 if no value is provided).
+
+5. The output for given data depends on the starting value, such that different starting values generally produce different checksums for the same data.

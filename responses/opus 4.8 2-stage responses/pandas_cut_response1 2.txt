@@ -1,0 +1,9 @@
+1. **Output length preservation**: The length of the output is always equal to the length of the input array `x`, regardless of the binning parameters used.
+
+2. **NA handling**: Any NA/NaN value in the input `x`, as well as any value that falls outside all bins (out of bounds), results in an NA/NaN in the corresponding output position.
+
+3. **Bin count correctness**: When `bins` is an integer `n` and `labels` is not False, the number of resulting categories equals `n` (or fewer if `duplicates='drop'` removes non-unique edges); when `labels` is a sequence, the number of categories equals the number of distinct labels.
+
+4. **Membership consistency**: For each non-NA value in `x`, the interval (or label/index) assigned to it correctly contains that value according to the bin edges and the `right`/`include_lowest` inclusivity rules (e.g., with `right=True`, a value falls in `(a, b]` if `a < value <= b`).
+
+5. **Output type correspondence**: When `labels=False`, the output is an ndarray of integer bin indicators; when `labels=None`, the output values are Interval dtype; and when `x` is a Series, the output is a Series, otherwise it is a Categorical (with ordering matching the `ordered` argument when labels are provided).

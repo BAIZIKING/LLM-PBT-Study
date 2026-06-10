@@ -1,0 +1,9 @@
+1. The output never contains a raw `&` character that isn't part of a valid HTML escape sequence (i.e., every `&` in the output is the start of one of the entity sequences like `&amp;`, `&lt;`, `&gt;`, `&quot;`, or `&#x27;`).
+
+2. The output never contains the raw characters `<` or `>`, regardless of the value of the `quote` flag.
+
+3. When `quote` is True, the output never contains raw `"` or `'` characters; when `quote` is False, any `"` and `'` characters present in the input appear unchanged in the output.
+
+4. If the input string contains none of the special characters (`&`, `<`, `>`, and also `"` and `'` when quote is True), the output equals the input unchanged (idempotency on "safe" strings).
+
+5. All characters in the input other than the special ones (`&`, `<`, `>`, `"`, `'`) appear unchanged and in the same relative order in the output.

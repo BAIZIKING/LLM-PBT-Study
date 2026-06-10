@@ -1,0 +1,131 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+import numpy as np
+
+
+def nonmissing_scalars():
+    return st.one_of(
+        st.booleans(),
+        st.integers(min_value=-1_000_000, max_value=1_000_000),
+        st.floats(allow_nan=False, allow_infinity=False, width=32),
+        st.text(max_size=20),
+    )
+
+
+def missing_scalars():
+    return st.one_of(
+        st.none(),
+        st.just(np.nan),
+        st.just(pandas.NA),
+        st.just(pandas.NaT),
+        st.just(np.datetime64("NaT")),
+    )
+
+
+def scalar_values():
+    return st.one_of(nonmissing_scalars(), missing_scalars())
+
+
+def draw_object_array(data, max_rows=5, max_cols=5):
+    rows = data.draw(st.integers(min_value=0, max_value=max_rows))
+    cols = data.draw(st.integers(min_value=0, max_value=max_cols))
+    array = np.empty((rows, cols), dtype=object)
+
+    for row in range(rows):
+        values = data.draw(
+            st.lists(scalar_values(), min_size=cols, max_size=cols)
+        )
+        for col, value in enumerate(values):
+            array[row, col] = value
+
+    return array
+
+
+@given(st.data())
+def test_pandas_isna_scalar_output_is_boolean(data):
+    value = data.draw(scalar_values())
+
+    result = pandas.isna(value)
+
+    assert isinstance(result, (bool, np.bool_))
+
+
+@given(st.data())
+def test_pandas_isna_known_missing_and_nonmissing_scalars(data):
+    value, expected = data.draw(
+        st.one_of(
+            st.tuples(missing_scalars(), st.just(True)),
+            st.tuples(nonmissing_scalars(), st.just(False)),
+        )
+    )
+
+    result = pandas.isna(value)
+
+    assert bool(result) == expected
+
+
+@given(st.data())
+def test_pandas_isna_ndarray_output_has_same_shape_and_boolean_dtype(data):
+    array = draw_object_array(data)
+
+    result = pandas.isna(array)
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == array.shape
+    assert result.dtype == bool
+
+
+@given(st.data())
+def test_pandas_isna_ndarray_output_matches_elementwise_scalar_isna(data):
+    array = draw_object_array(data)
+
+    result = pandas.isna(array)
+
+    for index in np.ndindex(array.shape):
+        assert bool(result[index]) == bool(pandas.isna(array[index]))
+
+
+@given(st.data())
+def test_pandas_isna_preserves_series_and_dataframe_structure(data):
+    series_values = data.draw(st.lists(scalar_values(), min_size=0, max_size=10))
+    series_index = [f"row_{i}" for i in range(len(series_values))]
+    series = pandas.Series(series_values, index=series_index, dtype=object)
+
+    series_result = pandas.isna(series)
+
+    assert isinstance(series_result, pandas.Series)
+    assert series_result.shape == series.shape
+    assert series_result.index.equals(series.index)
+    assert all(
+        isinstance(value, (bool, np.bool_))
+        for value in series_result.to_numpy(dtype=object)
+    )
+
+    rows = data.draw(st.integers(min_value=0, max_value=5))
+    cols = data.draw(st.integers(min_value=0, max_value=5))
+    table = [
+        data.draw(st.lists(scalar_values(), min_size=cols, max_size=cols))
+        for _ in range(rows)
+    ]
+    frame_index = [f"row_{i}" for i in range(rows)]
+    frame_columns = [f"col_{i}" for i in range(cols)]
+    frame = pandas.DataFrame(
+        table,
+        index=frame_index,
+        columns=frame_columns,
+        dtype=object,
+    )
+
+    frame_result = pandas.isna(frame)
+
+    assert isinstance(frame_result, pandas.DataFrame)
+    assert frame_result.shape == frame.shape
+    assert frame_result.index.equals(frame.index)
+    assert frame_result.columns.equals(frame.columns)
+    assert all(
+        isinstance(value, (bool, np.bool_))
+        for value in frame_result.to_numpy(dtype=object).ravel()
+    )
+# End program
+```

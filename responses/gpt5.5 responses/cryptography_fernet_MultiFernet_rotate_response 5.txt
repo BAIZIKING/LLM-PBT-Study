@@ -1,0 +1,91 @@
+```python
+from hypothesis import given, strategies as st
+import base64
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+# Summary: Generate valid Fernet tokens from multiple keys, sometimes as bytes and sometimes as ASCII str;
+# also generate definitely invalid bytes/str tokens, corrupted real tokens, and non-bytes/non-str values.
+# Properties checked: valid tokens rotate to bytes, decrypt to the original plaintext using the primary key,
+# preserve the original timestamp, and remain decryptable by MultiFernet; invalid tokens raise InvalidToken;
+# non-bytes/non-str inputs raise TypeError.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate(data):
+    keys = [
+        base64.urlsafe_b64encode(bytes([0]) * 32),
+        base64.urlsafe_b64encode(bytes([1]) * 32),
+        base64.urlsafe_b64encode(bytes([2]) * 32),
+    ]
+    fernets = [Fernet(key) for key in keys]
+    mf = MultiFernet(fernets)
+
+    case = data.draw(
+        st.sampled_from(
+            [
+                "valid_token",
+                "invalid_bad_version_token",
+                "invalid_corrupted_token",
+                "wrong_type",
+            ]
+        )
+    )
+
+    if case == "valid_token":
+        plaintext = data.draw(st.binary(max_size=2048))
+        timestamp = data.draw(st.integers(min_value=0, max_value=2**32 - 1))
+        source_index = data.draw(st.integers(min_value=0, max_value=len(fernets) - 1))
+        as_text = data.draw(st.booleans())
+
+        source_fernet = fernets[source_index]
+        token = source_fernet.encrypt_at_time(plaintext, timestamp)
+        msg = token.decode("ascii") if as_text else token
+
+        rotated = mf.rotate(msg)
+
+        assert isinstance(rotated, bytes)
+        assert mf.decrypt(rotated) == plaintext
+        assert fernets[0].decrypt(rotated) == plaintext
+        assert fernets[0].extract_timestamp(rotated) == source_fernet.extract_timestamp(token)
+
+    elif case == "invalid_bad_version_token":
+        payload = data.draw(st.binary(max_size=512))
+        invalid_token = base64.urlsafe_b64encode(b"\x00" + payload)
+        as_text = data.draw(st.booleans())
+        msg = invalid_token.decode("ascii") if as_text else invalid_token
+
+        with pytest.raises(InvalidToken):
+            mf.rotate(msg)
+
+    elif case == "invalid_corrupted_token":
+        plaintext = data.draw(st.binary(max_size=2048))
+        timestamp = data.draw(st.integers(min_value=0, max_value=2**32 - 1))
+        source_index = data.draw(st.integers(min_value=0, max_value=len(fernets) - 1))
+        token = bytearray(fernets[source_index].encrypt_at_time(plaintext, timestamp))
+
+        corrupt_index = data.draw(st.integers(min_value=0, max_value=len(token) - 1))
+        token[corrupt_index] = ord("A") if token[corrupt_index] != ord("A") else ord("B")
+
+        corrupted = bytes(token)
+        as_text = data.draw(st.booleans())
+        msg = corrupted.decode("ascii") if as_text else corrupted
+
+        with pytest.raises(InvalidToken):
+            mf.rotate(msg)
+
+    else:
+        msg = data.draw(
+            st.one_of(
+                st.none(),
+                st.booleans(),
+                st.integers(),
+                st.floats(allow_nan=True, allow_infinity=True),
+                st.lists(st.integers(), max_size=10),
+                st.dictionaries(st.text(max_size=10), st.integers(), max_size=10),
+                st.tuples(st.integers(), st.text(max_size=10)),
+            )
+        )
+
+        with pytest.raises(TypeError):
+            mf.rotate(msg)
+# End program
+```

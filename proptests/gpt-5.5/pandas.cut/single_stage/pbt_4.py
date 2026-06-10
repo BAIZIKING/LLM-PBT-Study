@@ -1,0 +1,214 @@
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+
+# Summary: Generate 1-D numeric arrays/Series containing finite values and NaN,
+# and combine them with integer bins, scalar-edge bins including duplicate edges
+# with duplicates="drop", and non-overlapping IntervalIndex bins. Randomize right,
+# include_lowest, labels=None/False/custom labels, retbins, precision, and ordered
+# while only generating valid parameter combinations.
+@given(st.data())
+def test_pandas_cut(data):
+    finite_float = st.floats(
+        min_value=-100,
+        max_value=100,
+        allow_nan=False,
+        allow_infinity=False,
+        width=32,
+    )
+
+    x_values = data.draw(
+        st.lists(
+            st.one_of(finite_float, st.just(np.nan)),
+            min_size=1,
+            max_size=25,
+        ).filter(lambda xs: any(not pd.isna(x) for x in xs))
+    )
+
+    as_series = data.draw(st.booleans())
+    if as_series:
+        x = pd.Series(x_values, index=[f"idx_{i}" for i in range(len(x_values))])
+    else:
+        x = np.asarray(x_values, dtype=float)
+
+    mode = data.draw(st.sampled_from(["int", "sequence", "interval"]))
+
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+    retbins = data.draw(st.booleans())
+    precision = data.draw(st.integers(min_value=0, max_value=6))
+
+    if mode == "int":
+        bins = data.draw(st.integers(min_value=1, max_value=8))
+        expected_bin_count = bins
+        duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+
+    elif mode == "sequence":
+        unique_edges = sorted(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=-120, max_value=120),
+                    min_size=2,
+                    max_size=9,
+                    unique=True,
+                )
+            )
+        )
+        bins = [float(v) for v in unique_edges]
+
+        if len(bins) >= 3 and data.draw(st.booleans()):
+            duplicate_pos = data.draw(st.integers(min_value=1, max_value=len(bins) - 2))
+            bins.insert(duplicate_pos, bins[duplicate_pos])
+            duplicates = "drop"
+        else:
+            duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+
+        expected_bin_count = len(pd.unique(bins)) - 1
+
+    else:
+        breaks = sorted(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=-120, max_value=120),
+                    min_size=2,
+                    max_size=9,
+                    unique=True,
+                )
+            )
+        )
+        closed = data.draw(st.sampled_from(["left", "right", "neither"]))
+        bins = pd.IntervalIndex.from_breaks(breaks, closed=closed)
+        expected_bin_count = len(bins)
+        duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+
+    if mode == "interval":
+        labels = data.draw(st.sampled_from([None, False]))
+        ordered = True
+    else:
+        label_kind = data.draw(st.sampled_from(["none", "false", "sequence"]))
+        if label_kind == "none":
+            labels = None
+            ordered = True
+        elif label_kind == "false":
+            labels = False
+            ordered = True
+        else:
+            ordered = data.draw(st.booleans())
+            if ordered:
+                labels = [f"label_{i}" for i in range(expected_bin_count)]
+            else:
+                labels = data.draw(
+                    st.lists(
+                        st.sampled_from(["A", "B", "C", "D"]),
+                        min_size=expected_bin_count,
+                        max_size=expected_bin_count,
+                    )
+                )
+
+    result = pd.cut(
+        x,
+        bins=bins,
+        right=right,
+        labels=labels,
+        retbins=retbins,
+        precision=precision,
+        include_lowest=include_lowest,
+        duplicates=duplicates,
+        ordered=ordered,
+    )
+
+    if retbins:
+        out, returned_bins = result
+    else:
+        out = result
+        returned_bins = None
+
+    # Property 1: output length always matches the 1-D input length.
+    assert len(out) == len(x_values)
+
+    # Property 2: Series input preserves the index for Series-like cut results.
+    if as_series and isinstance(out, pd.Series):
+        assert list(out.index) == list(x.index)
+
+    out_values = out.to_numpy() if isinstance(out, pd.Series) else np.asarray(out)
+
+    # Property 3: NA values in the input remain NA in the result.
+    for value, binned in zip(x_values, out_values):
+        if pd.isna(value):
+            assert pd.isna(binned)
+
+    # Property 4: labels=False returns integer bin indicators, with NA allowed.
+    if labels is False and mode != "interval":
+        non_na_codes = [code for code in out_values if not pd.isna(code)]
+        for code in non_na_codes:
+            assert float(code).is_integer()
+            assert 0 <= int(code) < expected_bin_count
+
+    # Property 5: custom labels appear only from the supplied labels.
+    if mode != "interval" and labels not in (None, False):
+        allowed = set(labels)
+        non_na_values = [value for value in out_values if not pd.isna(value)]
+        assert set(non_na_values).issubset(allowed)
+
+    # Property 6: with labels=None, categorical categories are IntervalIndex bins.
+    if mode != "interval" and labels is None:
+        if isinstance(out, pd.Series):
+            assert isinstance(out.dtype, pd.CategoricalDtype)
+            assert isinstance(out.cat.categories, pd.IntervalIndex)
+            assert out.cat.ordered is True
+        else:
+            assert isinstance(out, pd.Categorical)
+            assert isinstance(out.categories, pd.IntervalIndex)
+            assert out.ordered is True
+
+    # Property 7: IntervalIndex bins are used exactly, and labels/right are ignored.
+    if mode == "interval":
+        if isinstance(out, pd.Series):
+            categories = out.cat.categories
+        else:
+            categories = out.categories
+        assert categories.equals(bins)
+
+        for value, binned in zip(x_values, out_values):
+            if pd.isna(value):
+                continue
+            covered = any(value in interval for interval in bins)
+            if covered:
+                assert not pd.isna(binned)
+            else:
+                assert pd.isna(binned)
+
+    # Property 8: out-of-bounds values for explicit scalar-edge bins become NA.
+    if mode == "sequence":
+        effective_edges = np.asarray(pd.unique(bins), dtype=float)
+        low = effective_edges[0]
+        high = effective_edges[-1]
+
+        for value, binned in zip(x_values, out_values):
+            if pd.isna(value):
+                continue
+
+            below = value < low
+            above = value > high
+            excluded_left_edge = value == low and right and not include_lowest
+            excluded_right_edge = value == high and not right
+
+            if below or above or excluded_left_edge or excluded_right_edge:
+                assert pd.isna(binned)
+
+    # Property 9: scalar integer bins extend the data range enough to include all finite values.
+    if mode == "int":
+        for value, binned in zip(x_values, out_values):
+            if not pd.isna(value):
+                assert not pd.isna(binned)
+
+    # Property 10: retbins returns the computed/specified bins with the documented shape/type.
+    if retbins:
+        if mode == "interval":
+            assert returned_bins.equals(bins)
+        else:
+            assert isinstance(returned_bins, np.ndarray)
+            assert len(returned_bins) == expected_bin_count + 1
+            assert np.all(np.diff(returned_bins.astype(float)) > 0)
+
+# End program

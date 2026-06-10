@@ -1,0 +1,66 @@
+from hypothesis import given, strategies as st
+import statistics
+
+# A reasonable strategy for numeric data: bounded floats (no nan/inf) and integers,
+# avoiding overflow and precision issues with very large magnitudes.
+numbers = st.one_of(
+    st.integers(min_value=-10**9, max_value=10**9),
+    st.floats(min_value=-1e9, max_value=1e9, allow_nan=False, allow_infinity=False),
+)
+
+nonempty_data = st.lists(numbers, min_size=1, max_size=100)
+
+
+# Property 1: The median lies within the range [min(data), max(data)].
+@given(data=nonempty_data)
+def test_statistics_median_within_range(data):
+    result = statistics.median(data)
+    assert min(data) <= result <= max(data)
+
+
+# Property 2: For odd-length input the median is an actual element;
+# for even-length input it equals the average of the two middle sorted elements.
+@given(data=nonempty_data)
+def test_statistics_median_middle_definition(data):
+    s = sorted(data)
+    n = len(s)
+    result = statistics.median(data)
+    if n % 2 == 1:
+        assert result == s[n // 2]
+    else:
+        expected = (s[n // 2 - 1] + s[n // 2]) / 2
+        assert result == expected
+
+
+# Property 3: The median is invariant under permutation of the input.
+@given(data=nonempty_data, rdata=st.randoms(use_true_random=False))
+def test_statistics_median_permutation_invariant(data, rdata):
+    shuffled = list(data)
+    rdata.shuffle(shuffled)
+    assert statistics.median(shuffled) == statistics.median(data)
+
+
+# Property 4: For odd-length input with distinct values, the count of elements
+# strictly less than the median equals the count strictly greater.
+@given(data=st.lists(numbers, min_size=1, max_size=99).filter(
+    lambda d: len(d) % 2 == 1 and len(set(d)) == len(d)))
+def test_statistics_median_balanced_counts(data):
+    result = statistics.median(data)
+    less = sum(1 for x in data if x < result)
+    greater = sum(1 for x in data if x > result)
+    assert less == greater
+
+
+# Property 5: The median is equivariant under linear transformation x -> c*x + d.
+@given(
+    data=nonempty_data,
+    c=st.floats(min_value=-1000, max_value=1000, allow_nan=False, allow_infinity=False),
+    d=st.floats(min_value=-1000, max_value=1000, allow_nan=False, allow_infinity=False),
+)
+def test_statistics_median_linear_equivariance(data, c, d):
+    original = statistics.median(data)
+    transformed = statistics.median([c * x + d for x in data])
+    expected = c * original + d
+    # Allow for floating point tolerance.
+    assert transformed == expected or abs(transformed - expected) <= 1e-6 * (1 + abs(expected))
+# End program

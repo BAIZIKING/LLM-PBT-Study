@@ -1,0 +1,61 @@
+from hypothesis import given, strategies as st
+import statistics
+
+@given(st.data())
+def test_statistics_mean_is_between_minimum_and_maximum(data):
+    values = data.draw(
+        st.lists(
+            st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    result = statistics.mean(values)
+    assert min(values) <= result <= max(values)
+
+@given(st.data())
+def test_statistics_mean_of_single_element_is_that_element(data):
+    value = data.draw(
+        st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000)
+    )
+    assert statistics.mean([value]) == value
+
+@given(st.data())
+def test_statistics_mean_of_identical_values_is_that_value(data):
+    value = data.draw(
+        st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000)
+    )
+    size = data.draw(st.integers(min_value=1, max_value=100))
+    values = [value] * size
+    assert statistics.mean(values) == value
+
+@given(st.data())
+def test_statistics_mean_shifts_by_added_constant(data):
+    values = data.draw(
+        st.lists(
+            st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    constant = data.draw(
+        st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000)
+    )
+    shifted_values = [value + constant for value in values]
+    assert statistics.mean(shifted_values) == statistics.mean(values) + constant
+
+@given(st.data())
+def test_statistics_mean_scales_by_multiplied_constant(data):
+    values = data.draw(
+        st.lists(
+            st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000),
+            min_size=1,
+            max_size=100,
+        )
+    )
+    constant = data.draw(
+        st.fractions(min_value=-10**6, max_value=10**6, max_denominator=1000)
+    )
+    scaled_values = [value * constant for value in values]
+    assert statistics.mean(scaled_values) == statistics.mean(values) * constant
+# End program

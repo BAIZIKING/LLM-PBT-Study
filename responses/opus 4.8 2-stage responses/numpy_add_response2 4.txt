@@ -1,0 +1,140 @@
+```python
+from hypothesis import given, strategies as st, assume
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# A reasonable float strategy that avoids NaN/inf and stays away from overflow.
+# We bound magnitudes well within float64 range so that additions don't overflow.
+safe_floats = st.floats(
+    min_value=-1e150,
+    max_value=1e150,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+# Strategy for generating numpy arrays of float64 with safe values.
+def arrays(shape):
+    return hnp.arrays(dtype=np.float64, shape=shape, elements=safe_floats)
+
+# Strategy for small-ish broadcastable shapes.
+shapes = hnp.array_shapes(min_dims=0, max_dims=4, min_side=0, max_side=5)
+
+
+@given(st.data())
+def test_numpy_add_commutativity():
+    # Property 1: np.add(x1, x2) == np.add(x2, x1)
+    data = st.data
+    shape = data().draw(shapes) if False else None  # placeholder, replaced below
+# End program
+```
+
+Let me rewrite this properly as a clean, single test suite with one test per property.
+
+```python
+from hypothesis import given, strategies as st, assume
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# A reasonable float strategy that avoids NaN/inf and stays away from overflow.
+safe_floats = st.floats(
+    min_value=-1e150,
+    max_value=1e150,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+# Strategy for small-ish shapes (including scalar-like 0-dim).
+shapes = hnp.array_shapes(min_dims=0, max_dims=4, min_side=0, max_side=5)
+
+
+def arrays_of_shape(shape):
+    return hnp.arrays(dtype=np.float64, shape=shape, elements=safe_floats)
+
+
+@given(st.data())
+def test_numpy_add_commutativity(data):
+    # Property 1: Commutativity -- np.add(x1, x2) == np.add(x2, x1)
+    shape = data.draw(
+        hnp.mutually_broadcastable_shapes(num_shapes=2, max_dims=4, max_side=5)
+    )
+    s1, s2 = shape.input_shapes
+    x1 = data.draw(arrays_of_shape(s1))
+    x2 = data.draw(arrays_of_shape(s2))
+
+    result_a = np.add(x1, x2)
+    result_b = np.add(x2, x1)
+
+    np.testing.assert_allclose(result_a, result_b, rtol=1e-12, atol=0.0)
+
+
+@given(st.data())
+def test_numpy_add_identity_element(data):
+    # Property 2: Adding zero returns an array element-wise equal to x.
+    shape = data.draw(shapes)
+    x = data.draw(arrays_of_shape(shape))
+
+    result = np.add(x, 0.0)
+
+    np.testing.assert_array_equal(result, x)
+
+
+@given(st.data())
+def test_numpy_add_output_shape(data):
+    # Property 3: Output shape equals broadcasted shape; scalars -> scalar.
+    shape = data.draw(
+        hnp.mutually_broadcastable_shapes(num_shapes=2, max_dims=4, max_side=5)
+    )
+    s1, s2 = shape.input_shapes
+    x1 = data.draw(arrays_of_shape(s1))
+    x2 = data.draw(arrays_of_shape(s2))
+
+    result = np.add(x1, x2)
+
+    expected_shape = np.broadcast_shapes(s1, s2)
+    assert result.shape == expected_shape
+
+    # Both scalar inputs -> scalar output.
+    py_scalar = data.draw(safe_floats)
+    py_scalar2 = data.draw(safe_floats)
+    scalar_result = np.add(py_scalar, py_scalar2)
+    assert np.isscalar(scalar_result) or scalar_result.ndim == 0
+
+
+@given(st.data())
+def test_numpy_add_equivalence_to_operator(data):
+    # Property 4: np.add(x1, x2) equals x1 + x2 for array inputs.
+    shape = data.draw(
+        hnp.mutually_broadcastable_shapes(num_shapes=2, max_dims=4, max_side=5)
+    )
+    s1, s2 = shape.input_shapes
+    x1 = data.draw(arrays_of_shape(s1))
+    x2 = data.draw(arrays_of_shape(s2))
+
+    result_func = np.add(x1, x2)
+    result_op = x1 + x2
+
+    np.testing.assert_array_equal(result_func, result_op)
+
+
+@given(st.data())
+def test_numpy_add_where_masking(data):
+    # Property 5: with out + where, masked-True positions get the sum,
+    # masked-False positions retain original out values.
+    shape = data.draw(shapes)
+    x1 = data.draw(arrays_of_shape(shape))
+    x2 = data.draw(arrays_of_shape(shape))
+    where_mask = data.draw(
+        hnp.arrays(dtype=np.bool_, shape=shape, elements=st.booleans())
+    )
+    out_initial = data.draw(arrays_of_shape(shape))
+
+    out = out_initial.copy()
+    np.add(x1, x2, out=out, where=where_mask)
+
+    expected = np.where(where_mask, x1 + x2, out_initial)
+
+    np.testing.assert_array_equal(out, expected)
+# End program
+```

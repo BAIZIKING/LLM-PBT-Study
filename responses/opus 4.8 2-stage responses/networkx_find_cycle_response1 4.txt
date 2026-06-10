@@ -1,0 +1,9 @@
+1. Every edge returned by `find_cycle` must be an actual edge in the input graph `G` (i.e., the (u, v) pair, ignoring any traversal-direction tag and considering orientation, corresponds to an existing edge/multigraph key in G).
+
+2. The returned list of edges must form a connected closed path (a cycle): consecutive edges share a node, and the path eventually returns to a previously visited node, with no node other than the closing one repeated, so that it genuinely represents a single cycle.
+
+3. When `orientation` is None, each returned edge tuple has exactly the base length (2 for graphs, 3 for multigraphs); when `orientation` is 'original', 'reverse', or 'ignore', each edge tuple is extended by exactly one final element that is either 'forward' or 'reverse'.
+
+4. If `find_cycle` returns a cycle, then the graph must actually contain a cycle under the given orientation semantics; conversely, if it raises `NetworkXNoCycle`, then no cycle exists under those semantics (e.g., for an acyclic graph with orientation 'original', the exception must be raised).
+
+5. When a `source` node is specified and a cycle is returned, the cycle must be reachable from that source via the depth-first traversal (i.e., the source-constrained search only yields cycles consistent with starting from that source), and supplying `source=None` must still find a cycle whenever one exists anywhere in the graph.

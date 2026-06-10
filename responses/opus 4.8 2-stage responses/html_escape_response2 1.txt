@@ -1,0 +1,84 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Property 1: The output never contains an unescaped &, <, or > character;
+# every such character in the input is replaced by its corresponding HTML entity.
+@given(s=st.text(max_size=1000))
+def test_html_escape_no_unescaped_special_chars():
+    result = html.escape(s)
+    # Remove all known entities, then verify no raw &, <, > remain.
+    cleaned = (result
+               .replace("&amp;", "")
+               .replace("&lt;", "")
+               .replace("&gt;", "")
+               .replace("&quot;", "")
+               .replace("&#x27;", ""))
+    assert "<" not in cleaned
+    assert ">" not in cleaned
+    assert "&" not in cleaned
+
+
+# Property 2: When quote=True, no unescaped " or ' remain; when quote=False,
+# " and ' are preserved unchanged.
+@given(s=st.text(max_size=1000))
+def test_html_escape_quote_behavior():
+    result_quoted = html.escape(s, quote=True)
+    cleaned = (result_quoted
+               .replace("&amp;", "")
+               .replace("&lt;", "")
+               .replace("&gt;", "")
+               .replace("&quot;", "")
+               .replace("&#x27;", ""))
+    assert '"' not in cleaned
+    assert "'" not in cleaned
+
+    result_unquoted = html.escape(s, quote=False)
+    # Number of quotes should be preserved when quote=False.
+    assert result_unquoted.count('"') == s.count('"')
+    assert result_unquoted.count("'") == s.count("'")
+
+
+# Property 3: For input containing none of the special characters,
+# the output is identical to the input.
+@given(s=st.text(
+    alphabet=st.characters(blacklist_characters='&<>"\''),
+    max_size=1000,
+))
+def test_html_escape_identity_on_safe_strings():
+    assert html.escape(s, quote=True) == s
+    assert html.escape(s, quote=False) == s
+
+
+# Property 4: The count of entities in the output equals the count of the
+# corresponding original characters in the input.
+@given(s=st.text(max_size=1000))
+def test_html_escape_entity_counts_match():
+    result = html.escape(s, quote=True)
+    # & is tricky: escaping & first means new &amp; etc. all contain &.
+    # Count original characters in input.
+    assert result.count("&lt;") == s.count("<")
+    assert result.count("&gt;") == s.count(">")
+    assert result.count("&quot;") == s.count('"')
+    assert result.count("&#x27;") == s.count("'")
+    # Every original & becomes &amp;. No other entity uses &amp; literally.
+    assert result.count("&amp;") == s.count("&")
+
+    result_noquote = html.escape(s, quote=False)
+    assert result_noquote.count("&lt;") == s.count("<")
+    assert result_noquote.count("&gt;") == s.count(">")
+    assert result_noquote.count("&amp;") == s.count("&")
+
+
+# Property 5: The output is always a string and is never shorter than the input.
+@given(s=st.text(max_size=1000))
+def test_html_escape_is_string_and_not_shorter():
+    result = html.escape(s, quote=True)
+    assert isinstance(result, str)
+    assert len(result) >= len(s)
+
+    result_noquote = html.escape(s, quote=False)
+    assert isinstance(result_noquote, str)
+    assert len(result_noquote) >= len(s)
+# End program
+```

@@ -1,0 +1,9 @@
+1. The output is always a float bounded within the range [-1, +1] (inclusive).
+
+2. The function is symmetric in its first two arguments: correlation(x, y) equals correlation(y, x) for the same method.
+
+3. The correlation of a variable with itself (i.e., correlation(x, x)) equals +1.0 (for any non-constant x, under either method).
+
+4. Applying a positive linear transformation to one input (e.g., scaling by a positive constant and/or adding a constant) leaves the result unchanged, while applying a negative scaling factor negates the result (this holds exactly for the linear method, and for the ranked method as long as the transformation preserves the ordering or reverses it).
+
+5. For inputs exhibiting a perfect monotonic but nonlinear relationship, the ranked method returns exactly 1.0 (or -1.0 for a perfectly decreasing relationship), whereas the linear method may return a value strictly less than 1.0 in absolute value.

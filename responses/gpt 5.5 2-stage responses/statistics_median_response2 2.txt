@@ -1,0 +1,56 @@
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+BOUNDED_INTS = st.integers(min_value=-10**6, max_value=10**6)
+
+
+@given(st.data())
+def test_statistics_median_is_invariant_under_reordering(data):
+    values = data.draw(st.lists(BOUNDED_INTS, min_size=1, max_size=100))
+    reordered = list(reversed(values))
+
+    assert statistics.median(values) == statistics.median(reordered)
+
+
+@given(st.data())
+def test_statistics_median_lies_between_minimum_and_maximum(data):
+    values = data.draw(st.lists(BOUNDED_INTS, min_size=1, max_size=100))
+
+    result = statistics.median(values)
+
+    assert min(values) <= result <= max(values)
+
+
+@given(st.data())
+def test_statistics_median_of_odd_length_input_is_middle_sorted_value(data):
+    half_size = data.draw(st.integers(min_value=0, max_value=50))
+    values = data.draw(st.lists(BOUNDED_INTS, min_size=2 * half_size + 1, max_size=2 * half_size + 1))
+
+    sorted_values = sorted(values)
+    expected = sorted_values[half_size]
+
+    assert statistics.median(values) == expected
+
+
+@given(st.data())
+def test_statistics_median_of_even_length_input_is_mean_of_two_middle_sorted_values(data):
+    half_size = data.draw(st.integers(min_value=1, max_value=50))
+    values = data.draw(st.lists(BOUNDED_INTS, min_size=2 * half_size, max_size=2 * half_size))
+
+    sorted_values = sorted(values)
+    expected = (sorted_values[half_size - 1] + sorted_values[half_size]) / 2
+
+    assert statistics.median(values) == expected
+
+
+@given(st.data())
+def test_statistics_median_of_empty_input_raises_statistics_error(data):
+    try:
+        statistics.median([])
+    except statistics.StatisticsError:
+        pass
+    else:
+        assert False
+# End program
+```

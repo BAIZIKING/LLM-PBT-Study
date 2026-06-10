@@ -1,0 +1,94 @@
+from hypothesis import given, strategies as st
+import statistics
+from decimal import Decimal
+from fractions import Fraction
+
+# Summary: Generate a homogeneous numeric dataset so statistics.mean receives valid inputs:
+# integers, finite floats, Fractions, or Decimals. Draw possibly-empty lists to cover the
+# documented StatisticsError case, and pass the same data as a list, tuple, or one-shot
+# iterator to cover both sequences and general iterables. For non-empty data, check that
+# the result is the arithmetic mean sum(data) / len(data), that it lies between min and
+# max as a central-location measure, and that a singleton dataset returns that item.
+@given(st.data())
+def test_statistics_mean(data):
+    kind = data.draw(st.sampled_from(("int", "float", "fraction", "decimal")))
+
+    if kind == "int":
+        xs = data.draw(st.lists(st.integers(min_value=-10**12, max_value=10**12), max_size=30))
+    elif kind == "float":
+        xs = data.draw(
+            st.lists(
+                st.floats(
+                    min_value=-1e100,
+                    max_value=1e100,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    width=64,
+                ),
+                max_size=30,
+            )
+        )
+    elif kind == "fraction":
+        xs = data.draw(
+            st.lists(
+                st.fractions(
+                    min_value=Fraction(-10**6, 1),
+                    max_value=Fraction(10**6, 1),
+                    max_denominator=1000,
+                ),
+                max_size=30,
+            )
+        )
+    else:
+        xs = data.draw(
+            st.lists(
+                st.decimals(
+                    min_value=Decimal("-1000000"),
+                    max_value=Decimal("1000000"),
+                    allow_nan=False,
+                    allow_infinity=False,
+                    places=3,
+                ),
+                max_size=30,
+            )
+        )
+
+    container_kind = data.draw(st.sampled_from(("list", "tuple", "iterator")))
+    if container_kind == "list":
+        argument = list(xs)
+    elif container_kind == "tuple":
+        argument = tuple(xs)
+    else:
+        argument = iter(xs)
+
+    if not xs:
+        try:
+            statistics.mean(argument)
+        except statistics.StatisticsError:
+            return
+        assert False, "statistics.mean must raise StatisticsError for empty data"
+
+    result = statistics.mean(argument)
+
+    if kind in ("int", "fraction"):
+        exact_mean = sum((Fraction(x) for x in xs), Fraction(0, 1)) / len(xs)
+    else:
+        exact_mean = sum((Fraction(*x.as_integer_ratio()) for x in xs), Fraction(0, 1)) / len(xs)
+
+    if kind == "int":
+        expected = exact_mean.numerator if exact_mean.denominator == 1 else float(exact_mean)
+        assert result == expected
+    elif kind == "float":
+        assert result == float(exact_mean)
+    elif kind == "fraction":
+        assert result == exact_mean
+    else:
+        expected = Decimal(exact_mean.numerator) / Decimal(exact_mean.denominator)
+        assert result == expected
+
+    assert min(xs) <= result <= max(xs)
+
+    if len(xs) == 1:
+        assert result == xs[0]
+
+# End program

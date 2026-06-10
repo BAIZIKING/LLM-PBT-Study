@@ -1,0 +1,250 @@
+```python
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+
+# Summary: Generate 1-D numeric inputs as either lists, numpy arrays, or Series,
+# including NaN, boundary values, repeated values, and out-of-range values.
+# Generate bins as an integer count, a sorted scalar sequence with optional
+# duplicates, or a non-overlapping IntervalIndex. Randomize right, labels,
+# retbins, precision, include_lowest, duplicates, and ordered while respecting
+# documented validity constraints such as label length and ordered=False
+# requiring labels. Check documented properties: output length matches input,
+# Series inputs preserve the index, NaN inputs remain NaN, out-of-bounds values
+# are NaN for explicit bins, returned bins match the requested/computed bins,
+# labels=False returns valid bin codes, provided labels are used only from the
+# label set, and duplicate bin edges either raise or are dropped as documented.
+@given(st.data())
+def test_pandas_cut(data):
+    finite_float = st.floats(
+        min_value=-50,
+        max_value=50,
+        allow_nan=False,
+        allow_infinity=False,
+        allow_subnormal=False,
+        width=32,
+    )
+
+    kind = data.draw(st.sampled_from(["int_bins", "sequence_bins", "interval_bins"]))
+
+    right = data.draw(st.booleans())
+    retbins = data.draw(st.booleans())
+    precision = data.draw(st.integers(min_value=0, max_value=6))
+    include_lowest = data.draw(st.booleans())
+
+    expected_edges = None
+
+    if kind == "int_bins":
+        bins = data.draw(st.integers(min_value=1, max_value=8))
+        n_intervals = bins
+        duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+        special_values = [np.nan, -1.0, -0.0, 0.0, 1.0, 10.0]
+
+    elif kind == "sequence_bins":
+        raw_edges = data.draw(
+            st.lists(
+                st.integers(min_value=-20, max_value=20),
+                min_size=2,
+                max_size=9,
+            ).filter(lambda xs: len(set(xs)) >= 2)
+        )
+        bins = sorted(raw_edges)
+        duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+
+        has_duplicate_edges = len(set(bins)) != len(bins)
+        if duplicates == "drop":
+            expected_edges = sorted(set(bins))
+        else:
+            expected_edges = bins
+
+        n_intervals = len(expected_edges) - 1
+
+        mids = [
+            (expected_edges[i] + expected_edges[i + 1]) / 2
+            for i in range(len(expected_edges) - 1)
+        ]
+        special_values = (
+            [np.nan]
+            + [float(edge) for edge in expected_edges]
+            + mids
+            + [float(expected_edges[0] - 1), float(expected_edges[-1] + 1)]
+        )
+
+    else:
+        unique_edges = data.draw(
+            st.lists(
+                st.integers(min_value=-20, max_value=20),
+                min_size=2,
+                max_size=9,
+                unique=True,
+            ).map(sorted)
+        )
+
+        candidate_intervals = [
+            (unique_edges[i], unique_edges[i + 1])
+            for i in range(len(unique_edges) - 1)
+        ]
+
+        chosen_intervals = [
+            interval
+            for interval in candidate_intervals
+            if data.draw(st.booleans())
+        ]
+        if not chosen_intervals:
+            chosen_intervals = [data.draw(st.sampled_from(candidate_intervals))]
+
+        closed = data.draw(st.sampled_from(["left", "right", "neither"]))
+        bins = pd.IntervalIndex.from_tuples(chosen_intervals, closed=closed)
+
+        n_intervals = len(bins)
+        duplicates = data.draw(st.sampled_from(["raise", "drop"]))
+
+        mids = [(left + right_) / 2 for left, right_ in chosen_intervals]
+        endpoints = [float(v) for interval in chosen_intervals for v in interval]
+        special_values = (
+            [np.nan]
+            + endpoints
+            + mids
+            + [float(min(unique_edges) - 1), float(max(unique_edges) + 1)]
+        )
+
+    x_values = data.draw(
+        st.lists(
+            st.one_of(finite_float, st.sampled_from(special_values)),
+            min_size=1,
+            max_size=30,
+        ).filter(lambda xs: any(not pd.isna(x) for x in xs))
+    )
+
+    as_series = data.draw(st.booleans())
+    if as_series:
+        x = pd.Series(x_values, index=[f"idx_{i}" for i in range(len(x_values))])
+    else:
+        x = data.draw(
+            st.sampled_from([
+                list(x_values),
+                np.asarray(x_values, dtype=float),
+            ])
+        )
+
+    ordered = data.draw(st.booleans())
+
+    if kind == "interval_bins":
+        labels = data.draw(st.sampled_from([None, False]))
+    else:
+        if not ordered:
+            labels = data.draw(
+                st.lists(
+                    st.sampled_from(["A", "B", "C", "D"]),
+                    min_size=n_intervals,
+                    max_size=n_intervals,
+                )
+            )
+        else:
+            label_mode = data.draw(st.sampled_from(["none", "false", "labels"]))
+            if label_mode == "none":
+                labels = None
+            elif label_mode == "false":
+                labels = False
+            else:
+                labels = [f"label_{i}" for i in range(n_intervals)]
+
+    cut_kwargs = dict(
+        x=x,
+        bins=bins,
+        right=right,
+        labels=labels,
+        retbins=retbins,
+        precision=precision,
+        include_lowest=include_lowest,
+        duplicates=duplicates,
+        ordered=ordered,
+    )
+
+    if kind == "sequence_bins" and has_duplicate_edges and duplicates == "raise":
+        try:
+            pd.cut(**cut_kwargs)
+        except ValueError:
+            return
+        raise AssertionError("duplicate bin edges should raise ValueError")
+
+    result = pd.cut(**cut_kwargs)
+
+    if retbins:
+        out, returned_bins = result
+
+        if kind == "interval_bins":
+            assert returned_bins.equals(bins)
+        elif kind == "sequence_bins":
+            assert np.array_equal(
+                np.asarray(returned_bins),
+                np.asarray(expected_edges),
+            )
+        else:
+            returned_bins = np.asarray(returned_bins, dtype=float)
+            assert len(returned_bins) == bins + 1
+            assert np.all(np.diff(returned_bins) > 0)
+    else:
+        out = result
+
+    assert len(out) == len(x_values)
+
+    if as_series:
+        assert isinstance(out, pd.Series)
+        assert out.index.equals(x.index)
+
+    out_values = out.tolist()
+
+    def covered_by_sequence_bins(value):
+        for i in range(len(expected_edges) - 1):
+            left = expected_edges[i]
+            right_edge = expected_edges[i + 1]
+
+            if right:
+                if left < value <= right_edge:
+                    return True
+                if include_lowest and i == 0 and left <= value <= right_edge:
+                    return True
+            else:
+                if left <= value < right_edge:
+                    return True
+
+        return False
+
+    def covered_by_interval_bins(value):
+        return any(value in interval for interval in bins)
+
+    for original, assigned in zip(x_values, out_values):
+        if pd.isna(original):
+            assert pd.isna(assigned)
+            continue
+
+        if kind == "int_bins":
+            should_be_missing = False
+        elif kind == "sequence_bins":
+            should_be_missing = not covered_by_sequence_bins(original)
+        else:
+            should_be_missing = not covered_by_interval_bins(original)
+
+        assert pd.isna(assigned) == should_be_missing
+
+    if kind != "interval_bins" and labels is False:
+        for assigned in out_values:
+            if pd.isna(assigned):
+                continue
+            assert float(assigned).is_integer()
+            assert 0 <= int(assigned) < n_intervals
+
+    if kind != "interval_bins" and isinstance(labels, list):
+        allowed_labels = set(labels)
+
+        for assigned in out_values:
+            if pd.isna(assigned):
+                continue
+            assert assigned in allowed_labels
+
+        categorical = out.cat if isinstance(out, pd.Series) else out
+        assert categorical.ordered == ordered
+
+# End program
+```

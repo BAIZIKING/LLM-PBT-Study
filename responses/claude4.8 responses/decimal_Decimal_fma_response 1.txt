@@ -1,0 +1,49 @@
+# Strategy for Input Generation
+
+To generate a wide variety of inputs and edge cases for `Decimal.fma(other, third)`, I will:
+
+1. **Use `st.decimals()`** to generate `Decimal` values directly for `self`, `other`, and `third`.
+2. **Cover edge cases** by configuring the strategy with `allow_nan=False` and `allow_infinity=False` initially to focus on finite arithmetic (NaN/Infinity have special semantics and can make exact comparisons tricky). However, to keep the test robust and meaningful, I'll bound the values to avoid context overflow/`InvalidOperation` issues.
+3. **Vary the magnitude and precision** by allowing different numbers of digits (`places`) and a reasonable range of exponents, capturing very small, very large, zero, and negative values.
+4. **Set a sufficiently large context precision** so that the exact result `self*other+third` can be represented without rounding artifacts, allowing exact comparison.
+
+# Properties to Check
+
+Based on the documentation, the key property is:
+
+- **Definition correctness**: `self.fma(other, third)` should equal `self * other + third`, where the intermediate product `self * other` is computed **without rounding**. To verify this faithfully, I compute the reference result `self * other + third` in a context with high enough precision to avoid rounding the intermediate product, and compare it to `fma`'s result computed under the same high-precision context. They should be numerically equal.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate three finite, bounded Decimals (self, other, third) with varied
+# precision and exponents. Under a high-precision context, verify that
+# self.fma(other, third) == self*other + third (intermediate product unrounded).
+@given(st.data())
+def test_decimal_Decimal_fma():
+    data = st.data()  # placeholder to satisfy format; real draws below
+
+    finite_decimals = st.decimals(
+        allow_nan=False,
+        allow_infinity=False,
+        min_value=Decimal("-1e50"),
+        max_value=Decimal("1e50"),
+        places=None,
+    )
+
+    @given(self_val=finite_decimals, other=finite_decimals, third=finite_decimals)
+    def inner(self_val, other, third):
+        # Use a high-precision context so the exact product is not rounded,
+        # allowing an exact comparison between fma and the manual computation.
+        with localcontext() as ctx:
+            ctx.prec = 200  # large enough to hold exact intermediate product + add
+            fma_result = self_val.fma(other, third)
+            reference = self_val * other + third
+            assert fma_result == reference
+
+    inner()
+# End program
+```

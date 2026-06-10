@@ -1,0 +1,117 @@
+from hypothesis import given, strategies as st
+import numpy as np
+
+# Summary: Generate bool, signed/unsigned integer, float, and complex NumPy values.
+# Shapes are chosen to be broadcast-compatible, including scalars, 0-D arrays,
+# normal N-D arrays, singleton dimensions, and zero-length dimensions. Values
+# include edge cases such as NaN, infinity, signed integer bounds, and empty arrays.
+# Properties checked: np.add(x1, x2) matches x1 + x2, the result shape is the
+# broadcast shape, scalar inputs produce scalar outputs, and out/where obey the
+# documented rule that True locations are updated while False locations retain
+# their original out value.
+@given(st.data())
+def test_numpy_add(data):
+    dtypes = [
+        np.dtype("bool"),
+        np.dtype("int8"),
+        np.dtype("int16"),
+        np.dtype("int32"),
+        np.dtype("int64"),
+        np.dtype("uint8"),
+        np.dtype("uint16"),
+        np.dtype("uint32"),
+        np.dtype("uint64"),
+        np.dtype("float16"),
+        np.dtype("float32"),
+        np.dtype("float64"),
+        np.dtype("complex64"),
+        np.dtype("complex128"),
+    ]
+
+    def element_strategy(dtype):
+        dtype = np.dtype(dtype)
+        if dtype.kind == "b":
+            return st.booleans()
+        if dtype.kind in "iu":
+            info = np.iinfo(dtype)
+            return st.integers(info.min, info.max)
+        if dtype.kind == "f":
+            return st.floats(
+                width=dtype.itemsize * 8,
+                allow_nan=True,
+                allow_infinity=True,
+            )
+        if dtype.kind == "c":
+            return st.complex_numbers(
+                width=dtype.itemsize * 8,
+                allow_nan=True,
+                allow_infinity=True,
+            )
+        raise AssertionError(f"unsupported dtype: {dtype}")
+
+    def draw_broadcastable_shape(base_shape):
+        if not base_shape:
+            return ()
+
+        start = data.draw(st.integers(0, len(base_shape)))
+        dims = []
+        for dim in base_shape[start:]:
+            dims.append(data.draw(st.sampled_from([dim, 1])))
+        return tuple(dims)
+
+    def draw_array(dtype, shape):
+        size = int(np.prod(shape, dtype=np.int64)) if shape else 1
+        values = data.draw(
+            st.lists(element_strategy(dtype), min_size=size, max_size=size)
+        )
+        return np.array(values, dtype=dtype).reshape(shape)
+
+    def draw_value(dtype, shape, allow_scalar):
+        arr = draw_array(dtype, shape)
+        if allow_scalar and shape == () and data.draw(st.booleans()):
+            return arr[()]
+        return arr
+
+    rank = data.draw(st.integers(0, 3))
+    base_shape = tuple(
+        data.draw(st.lists(st.integers(0, 4), min_size=rank, max_size=rank))
+    )
+
+    x1_shape = draw_broadcastable_shape(base_shape)
+    x2_shape = draw_broadcastable_shape(base_shape)
+
+    x1_dtype = data.draw(st.sampled_from(dtypes))
+    x2_dtype = data.draw(st.sampled_from(dtypes))
+
+    x1 = draw_value(x1_dtype, x1_shape, allow_scalar=True)
+    x2 = draw_value(x2_dtype, x2_shape, allow_scalar=True)
+
+    expected_shape = np.broadcast_shapes(np.shape(x1), np.shape(x2))
+
+    with np.errstate(all="ignore"):
+        expected = x1 + x2
+        result = np.add(x1, x2)
+
+    np.testing.assert_equal(result, expected)
+    assert np.shape(result) == expected_shape
+
+    if np.isscalar(x1) and np.isscalar(x2):
+        assert np.isscalar(result)
+
+    result_dtype = np.result_type(x1, x2)
+    out = draw_array(result_dtype, expected_shape)
+    original_out = out.copy()
+
+    where_shape = draw_broadcastable_shape(expected_shape)
+    where = draw_value(np.dtype("bool"), where_shape, allow_scalar=True)
+
+    expected_out = original_out.copy()
+    np.copyto(expected_out, expected, where=where)
+
+    with np.errstate(all="ignore"):
+        returned = np.add(x1, x2, out=out, where=where)
+
+    assert returned is out
+    np.testing.assert_equal(out, expected_out)
+
+# End program

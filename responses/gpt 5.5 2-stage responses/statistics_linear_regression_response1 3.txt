@@ -1,0 +1,9 @@
+1. For valid non-proportional input, the returned slope and intercept satisfy the ordinary least-squares condition that the residuals sum to zero.
+
+2. For valid non-proportional input, the fitted line passes through the point of sample means: `mean(y) == slope * mean(x) + intercept`, up to numerical precision.
+
+3. For data generated exactly from a line `y = a * x + b`, the function returns `slope == a` and `intercept == b`, up to numerical precision.
+
+4. When `proportional=True`, the returned intercept is always `0.0`, and the slope satisfies the origin-constrained least-squares formula `slope == sum(x_i * y_i) / sum(x_i ** 2)`, up to numerical precision.
+
+5. Scaling all `y` values by a constant scales both returned parameters by that same constant: the new slope and intercept equal `constant * slope` and `constant * intercept`, up to numerical precision.

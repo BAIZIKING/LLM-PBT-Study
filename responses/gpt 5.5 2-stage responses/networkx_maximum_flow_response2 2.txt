@@ -1,0 +1,63 @@
+```python
+from hypothesis import given, strategies as st
+import networkx
+
+
+@given(st.data())
+def test_networkx_maximum_flow_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=8))
+    nodes = list(range(n))
+
+    source = data.draw(st.sampled_from(nodes))
+    sink = data.draw(st.sampled_from([node for node in nodes if node != source]))
+
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+    edges = data.draw(
+        st.sets(
+            st.sampled_from(possible_edges),
+            min_size=0,
+            max_size=min(len(possible_edges), 25),
+        )
+    )
+
+    graph = networkx.DiGraph()
+    graph.add_nodes_from(nodes)
+
+    for u, v in edges:
+        capacity = data.draw(st.integers(min_value=0, max_value=100))
+        graph.add_edge(u, v, capacity=capacity)
+
+    flow_value, flow_dict = networkx.maximum_flow(graph, source, sink)
+
+    # Property 1: flow on every edge is nonnegative and at most the edge capacity.
+    for u, v, attrs in graph.edges(data=True):
+        edge_flow = flow_dict[u][v]
+        assert edge_flow >= 0
+        assert edge_flow <= attrs["capacity"]
+
+    # Property 2: flow is conserved at every node except source and sink.
+    for node in graph.nodes:
+        if node in (source, sink):
+            continue
+
+        inflow = sum(flow_dict[pred][node] for pred in graph.predecessors(node))
+        outflow = sum(flow_dict[node][succ] for succ in graph.successors(node))
+
+        assert inflow == outflow
+
+    # Property 3: flow_value equals net flow out of the source.
+    source_outflow = sum(flow_dict[source][succ] for succ in graph.successors(source))
+    source_inflow = sum(flow_dict[pred][source] for pred in graph.predecessors(source))
+    assert flow_value == source_outflow - source_inflow
+
+    # Property 4: flow_value equals net flow into the sink.
+    sink_inflow = sum(flow_dict[pred][sink] for pred in graph.predecessors(sink))
+    sink_outflow = sum(flow_dict[sink][succ] for succ in graph.successors(sink))
+    assert flow_value == sink_inflow - sink_outflow
+
+    # Property 5: max-flow value equals min-cut value.
+    assert flow_value == networkx.minimum_cut_value(graph, source, sink)
+
+
+# End program
+```

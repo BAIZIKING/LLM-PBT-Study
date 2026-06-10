@@ -1,0 +1,152 @@
+```python
+from hypothesis import given, strategies as st
+import numpy
+
+_FLOATS = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+    allow_subnormal=False,
+    width=32,
+)
+
+
+def _size(shape):
+    out = 1
+    for dim in shape:
+        out *= dim
+    return out
+
+
+def _draw_array(data, shape):
+    values = data.draw(st.lists(_FLOATS, min_size=_size(shape), max_size=_size(shape)))
+    return numpy.array(values, dtype=float).reshape(shape)
+
+
+def _draw_shape(data, ndim, min_dim=1, max_dim=4):
+    return tuple(
+        data.draw(st.integers(min_value=min_dim, max_value=max_dim))
+        for _ in range(ndim)
+    )
+
+
+@given(st.data())
+def test_numpy_linalg_norm_nonnegative_and_zero_input_property(data):
+    ndim = data.draw(st.integers(min_value=1, max_value=2))
+    shape = _draw_shape(data, ndim)
+    x = _draw_array(data, shape)
+
+    if ndim == 1:
+        ord_value = data.draw(
+            st.sampled_from([None, numpy.inf, -numpy.inf, 0, 1, -1, 2, -2, 3, -3])
+        )
+    else:
+        ord_value = data.draw(
+            st.sampled_from([None, "fro", "nuc", numpy.inf, -numpy.inf, 1, -1, 2, -2])
+        )
+
+    result = numpy.linalg.norm(x, ord=ord_value)
+    assert numpy.all(numpy.asarray(result) >= -1e-7)
+
+    zero_result = numpy.linalg.norm(numpy.zeros_like(x), ord=ord_value)
+    assert numpy.allclose(zero_result, 0.0, rtol=0.0, atol=1e-12)
+
+
+@given(st.data())
+def test_numpy_linalg_norm_default_is_flattened_euclidean_norm_property(data):
+    ndim = data.draw(st.integers(min_value=1, max_value=3))
+    shape = _draw_shape(data, ndim)
+    x = _draw_array(data, shape)
+
+    result = numpy.linalg.norm(x)
+    expected = numpy.sqrt(numpy.sum(numpy.abs(x.ravel()) ** 2))
+
+    assert numpy.allclose(result, expected, rtol=1e-10, atol=1e-10)
+
+
+@given(st.data())
+def test_numpy_linalg_norm_absolute_homogeneity_property(data):
+    ndim = data.draw(st.integers(min_value=1, max_value=2))
+    shape = _draw_shape(data, ndim)
+    x = _draw_array(data, shape)
+    scalar = data.draw(
+        st.floats(
+            min_value=-10.0,
+            max_value=10.0,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+            width=32,
+        )
+    )
+
+    if ndim == 1:
+        ord_value = data.draw(st.sampled_from([None, 1, 2, 3, numpy.inf, -numpy.inf]))
+    else:
+        ord_value = data.draw(
+            st.sampled_from([None, "fro", "nuc", 1, 2, numpy.inf, -numpy.inf])
+        )
+
+    result = numpy.linalg.norm(scalar * x, ord=ord_value)
+    expected = abs(scalar) * numpy.linalg.norm(x, ord=ord_value)
+
+    assert numpy.allclose(result, expected, rtol=1e-7, atol=1e-7)
+
+
+@given(st.data())
+def test_numpy_linalg_norm_vector_special_orders_property(data):
+    shape = _draw_shape(data, 2)
+    x = _draw_array(data, shape)
+    axis = data.draw(st.sampled_from([0, 1]))
+
+    result_inf = numpy.linalg.norm(x, ord=numpy.inf, axis=axis)
+    expected_inf = numpy.max(numpy.abs(x), axis=axis)
+    assert numpy.allclose(result_inf, expected_inf, rtol=0.0, atol=0.0)
+
+    result_neg_inf = numpy.linalg.norm(x, ord=-numpy.inf, axis=axis)
+    expected_neg_inf = numpy.min(numpy.abs(x), axis=axis)
+    assert numpy.allclose(result_neg_inf, expected_neg_inf, rtol=0.0, atol=0.0)
+
+    result_zero = numpy.linalg.norm(x, ord=0, axis=axis)
+    expected_zero = numpy.sum(x != 0, axis=axis)
+    assert numpy.array_equal(result_zero, expected_zero)
+
+
+@given(st.data())
+def test_numpy_linalg_norm_output_shape_respects_axis_and_keepdims_property(data):
+    ndim = data.draw(st.integers(min_value=1, max_value=3))
+    shape = _draw_shape(data, ndim)
+    x = _draw_array(data, shape)
+    keepdims = data.draw(st.booleans())
+
+    possible_axes = [None]
+    possible_axes.extend(range(ndim))
+    if ndim >= 2:
+        for first_axis in range(ndim):
+            for second_axis in range(first_axis + 1, ndim):
+                possible_axes.append((first_axis, second_axis))
+
+    axis = data.draw(st.sampled_from(possible_axes))
+
+    result = numpy.linalg.norm(x, axis=axis, keepdims=keepdims)
+
+    if axis is None:
+        expected_shape = (1,) * ndim if keepdims else ()
+    else:
+        normed_axes = axis if isinstance(axis, tuple) else (axis,)
+        if keepdims:
+            expected_shape = tuple(
+                1 if axis_index in normed_axes else dim
+                for axis_index, dim in enumerate(shape)
+            )
+        else:
+            expected_shape = tuple(
+                dim
+                for axis_index, dim in enumerate(shape)
+                if axis_index not in normed_axes
+            )
+
+    assert numpy.shape(result) == expected_shape
+# End program
+```

@@ -1,0 +1,92 @@
+from hypothesis import given, strategies as st
+
+# Summary: Generate empty and non-empty finite numeric iterables, covering lists,
+# tuples, and one-shot iterators. Non-empty data is homogeneous across several
+# supported numeric types: int, float, Fraction, and Decimal. The test checks that
+# empty input raises StatisticsError, and otherwise that mean(data) equals the
+# arithmetic sum divided by the number of data points.
+@given(st.data())
+def test_statistics_mean(data):
+    import math
+    import statistics
+    from decimal import Decimal
+    from fractions import Fraction
+
+    numeric_strategy = data.draw(
+        st.sampled_from(["int", "float", "fraction", "decimal"]),
+        label="numeric_strategy",
+    )
+
+    if numeric_strategy == "int":
+        values = data.draw(
+            st.lists(st.integers(min_value=-10**6, max_value=10**6), max_size=50),
+            label="int_values",
+        )
+    elif numeric_strategy == "float":
+        values = data.draw(
+            st.lists(
+                st.floats(
+                    min_value=-10**6,
+                    max_value=10**6,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                max_size=50,
+            ),
+            label="float_values",
+        )
+    elif numeric_strategy == "fraction":
+        values = data.draw(
+            st.lists(
+                st.builds(
+                    Fraction,
+                    st.integers(min_value=-10**6, max_value=10**6),
+                    st.integers(min_value=1, max_value=10**6),
+                ),
+                max_size=50,
+            ),
+            label="fraction_values",
+        )
+    else:
+        values = data.draw(
+            st.lists(
+                st.decimals(
+                    min_value=Decimal("-1000000"),
+                    max_value=Decimal("1000000"),
+                    allow_nan=False,
+                    allow_infinity=False,
+                    places=6,
+                ),
+                max_size=50,
+            ),
+            label="decimal_values",
+        )
+
+    iterable_kind = data.draw(
+        st.sampled_from(["list", "tuple", "iterator"]),
+        label="iterable_kind",
+    )
+
+    if iterable_kind == "list":
+        input_data = list(values)
+    elif iterable_kind == "tuple":
+        input_data = tuple(values)
+    else:
+        input_data = iter(values)
+
+    if not values:
+        try:
+            statistics.mean(input_data)
+            assert False, "statistics.mean() should raise StatisticsError for empty data"
+        except statistics.StatisticsError:
+            pass
+    else:
+        result = statistics.mean(input_data)
+        expected = sum(values) / len(values)
+
+        if numeric_strategy == "float":
+            assert math.isclose(result, expected, rel_tol=1e-12, abs_tol=1e-12)
+        else:
+            assert result == expected
+
+# End program

@@ -1,0 +1,9 @@
+1. If the function returns normally, the returned value is a non-empty list of edge tuples.
+
+2. Every returned edge tuple corresponds to an edge that exists in `G`; for multigraphs, the returned key must identify an existing parallel edge.
+
+3. The returned edges form a closed cyclic walk: the head reached by each edge traversal is the tail used by the next edge traversal, and the final edge connects back to the start of the first edge.
+
+4. The shape of each returned edge matches the graph type and `orientation`: `(u, v)` for graphs, `(u, v, key)` for multigraphs, with an additional final traversal-direction field when `orientation` is not `None`.
+
+5. For directed graphs, the reported traversal directions are consistent with `orientation`: `original` follows edge direction, `reverse` traverses edges backward, and `ignore` may traverse edges in either direction while marking each as `"forward"` or `"reverse"`.

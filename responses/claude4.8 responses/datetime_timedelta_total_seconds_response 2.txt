@@ -1,0 +1,48 @@
+## Generation Strategy
+
+To generate a wide variety of inputs for `timedelta.total_seconds()`, I'll use Hypothesis's built-in `st.timedeltas()` strategy. This strategy generates `timedelta` objects across the full valid range (`timedelta.min` to `timedelta.max`), and Hypothesis is biased toward edge cases such as zero durations, minimum/maximum values, negative durations, and durations with microsecond components. This covers:
+- Zero (`timedelta(0)`)
+- Positive and negative durations
+- Sub-second precision (microseconds)
+- Very large intervals (testing the documented precision-loss boundary)
+- Boundary values (`timedelta.min`, `timedelta.max`)
+
+## Properties to Check
+
+Based on the API documentation:
+1. **Equivalence to division form**: `td.total_seconds()` should equal `td / timedelta(seconds=1)`. This is the explicitly stated defining property of the method.
+2. **Type guarantee**: The result is always a `float` (as seen in `31536000.0`).
+3. **Sign consistency**: A positive duration yields a positive total, zero yields zero, and a negative duration yields a negative total (the sign of the result matches the sign of the duration).
+
+I focus the equality check on the documented equivalence `td / timedelta(seconds=1)`, while being mindful that for very large intervals (>270 years) microsecond accuracy is lost — but since *both* expressions compute the same underlying value, they should still match exactly.
+
+```python
+from hypothesis import given, strategies as st
+from datetime import timedelta
+
+# Summary: Generate arbitrary timedelta objects across the full valid range
+# (including zero, negatives, microsecond precision, and min/max boundaries)
+# using st.timedeltas(), then verify total_seconds() matches its documented
+# definition (td / timedelta(seconds=1)), returns a float, and is sign-consistent.
+@given(st.data())
+def test_datetime_timedelta_total_seconds():
+    data = st.data()
+    td = data.draw(st.timedeltas())
+
+    result = td.total_seconds()
+
+    # Property 1: Equivalent to division by timedelta(seconds=1)
+    assert result == td / timedelta(seconds=1)
+
+    # Property 2: Result is always a float
+    assert isinstance(result, float)
+
+    # Property 3: Sign consistency with the duration
+    if td > timedelta(0):
+        assert result > 0
+    elif td < timedelta(0):
+        assert result < 0
+    else:
+        assert result == 0.0
+# End program
+```

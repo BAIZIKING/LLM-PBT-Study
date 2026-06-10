@@ -1,0 +1,9 @@
+1. If the function returns a value other than `default`, that value is a node in `G`.
+
+2. If the function returns a value other than `default`, that value is a common ancestor of `node1` and `node2`: there are directed paths from it to both nodes, allowing zero-length paths.
+
+3. The function returns `default` exactly when `node1` and `node2` have no common ancestor in `G`.
+
+4. If the function returns a common ancestor, it is “lowest”: no other common ancestor is a proper descendant of the returned node.
+
+5. The result is symmetric in the two queried nodes: `lowest_common_ancestor(G, node1, node2, default)` should equal `lowest_common_ancestor(G, node2, node1, default)`.

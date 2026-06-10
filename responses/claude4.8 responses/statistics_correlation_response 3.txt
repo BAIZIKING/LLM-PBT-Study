@@ -1,0 +1,68 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.correlation(x, y, method=...)`, I will:
+
+1. **Generate paired lists of equal length**: Since both inputs must be the same length (≥ 2), I'll first draw a length `n` (≥ 2), then generate two lists `x` and `y` of that exact length.
+
+2. **Use realistic numeric values**: I'll draw floats that are finite (no NaN/infinity) and within a bounded range to avoid overflow issues during the variance/covariance computations. I'll also allow integers by mixing strategies.
+
+3. **Ensure non-constant data**: The API raises `StatisticsError` if either input is constant. To reliably exercise the *valid* code path (and check numeric properties), I'll ensure both `x` and `y` are non-constant by requiring that each list contains at least two distinct values (using an `assume` filter or by construction).
+
+4. **Vary the `method` parameter**: I'll randomly select between `'linear'` (Pearson) and `'ranked'` (Spearman) to cover both code paths.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Bounded range**: The returned correlation coefficient `r` must satisfy `-1 <= r <= +1` (allowing a tiny floating-point tolerance).
+
+2. **Symmetry**: Correlation is symmetric, so `correlation(x, y) == correlation(y, x)` (within floating-point tolerance) for the same method.
+
+3. **Perfect self-correlation**: For a non-constant input, `correlation(x, x)` should equal `1.0` (perfect positive correlation), within tolerance.
+
+These properties hold for both Pearson and Spearman correlation.
+
+```python
+from hypothesis import given, assume, strategies as st
+import math
+import statistics
+
+# Summary: Generate a length n >= 2, then build two equal-length lists of finite,
+# bounded numbers. Ensure both lists are non-constant (>=2 distinct values) so the
+# valid (non-error) code path is exercised. Randomly pick method in {'linear','ranked'}.
+# Check that the result is in [-1, 1], is symmetric in its arguments, and that
+# self-correlation equals 1.0.
+@given(st.data())
+def test_statistics_correlation(data):
+    n = data.draw(st.integers(min_value=2, max_value=50))
+
+    number = st.one_of(
+        st.integers(min_value=-1000, max_value=1000),
+        st.floats(min_value=-1e6, max_value=1e6,
+                  allow_nan=False, allow_infinity=False),
+    )
+
+    x = data.draw(st.lists(number, min_size=n, max_size=n))
+    y = data.draw(st.lists(number, min_size=n, max_size=n))
+    method = data.draw(st.sampled_from(['linear', 'ranked']))
+
+    # Inputs must be non-constant, otherwise StatisticsError is raised.
+    assume(len(set(x)) >= 2)
+    assume(len(set(y)) >= 2)
+
+    tol = 1e-9
+
+    r = statistics.correlation(x, y, method=method)
+
+    # Property 1: result is bounded in [-1, 1]
+    assert -1.0 - tol <= r <= 1.0 + tol
+
+    # Property 2: symmetry
+    r_swapped = statistics.correlation(y, x, method=method)
+    assert math.isclose(r, r_swapped, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 3: perfect self-correlation equals 1.0
+    r_self = statistics.correlation(x, x, method=method)
+    assert math.isclose(r_self, 1.0, rel_tol=1e-9, abs_tol=1e-9)
+# End program
+```

@@ -1,0 +1,9 @@
+1. For any valid input token, the returned value is `bytes` containing a URL-safe base64-encoded Fernet token.
+
+2. Decrypting the rotated token with the same `MultiFernet` instance yields the same plaintext as decrypting the original token.
+
+3. The rotated token preserves the original token’s timestamp exactly.
+
+4. The rotated token is encrypted/authenticated under the `MultiFernet` instance’s primary key, meaning it can be decrypted by the first `Fernet` key in the list.
+
+5. Rotating a token multiple times preserves its plaintext and original timestamp each time, even though the returned token bytes may differ because Fernet encryption is randomized.

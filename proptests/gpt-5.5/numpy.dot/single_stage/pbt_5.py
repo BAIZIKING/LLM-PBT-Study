@@ -1,0 +1,167 @@
+from hypothesis import given, strategies as st
+import math
+import numpy as np
+import numpy.testing as npt
+
+# Summary: Generate scalar/0-D, 1-D vector, 2-D matrix, and higher-dimensional
+# arrays with small integer, float, and complex values; include compatible and
+# incompatible contraction dimensions, zero-length axes, and valid C-contiguous
+# out arrays. Check that numpy.dot follows the documented scalar multiplication,
+# vector inner product without conjugation, matrix multiplication, ND sum-product
+# semantics, shape rules, ValueError behavior on dimension mismatch, and out
+# parameter behavior.
+@given(st.data())
+def test_numpy_dot(data):
+    def draw_dtype():
+        return np.dtype(
+            data.draw(st.sampled_from([np.int64, np.float64, np.complex128]))
+        )
+
+    def element_strategy(dtype):
+        if dtype == np.dtype(np.int64):
+            return st.integers(-5, 5)
+        if dtype == np.dtype(np.float64):
+            return st.floats(
+                min_value=-5,
+                max_value=5,
+                allow_nan=False,
+                allow_infinity=False,
+                width=32,
+            )
+        return st.builds(
+            complex,
+            st.integers(-5, 5),
+            st.integers(-5, 5),
+        )
+
+    def draw_shape(rank, max_side=4):
+        return tuple(
+            data.draw(
+                st.lists(
+                    st.integers(0, max_side),
+                    min_size=rank,
+                    max_size=rank,
+                )
+            )
+        )
+
+    def draw_array(shape, dtype):
+        size = math.prod(shape)
+        values = data.draw(
+            st.lists(
+                element_strategy(dtype),
+                min_size=size,
+                max_size=size,
+            )
+        )
+        return np.array(values, dtype=dtype).reshape(shape)
+
+    def different_size(n, max_side=4):
+        return data.draw(st.sampled_from([i for i in range(max_side + 1) if i != n]))
+
+    def expected_dot(a, b):
+        aa = np.asarray(a)
+        bb = np.asarray(b)
+
+        if aa.ndim == 0 or bb.ndim == 0:
+            return np.multiply(aa, bb)
+
+        if bb.ndim == 1:
+            return np.sum(aa * bb, axis=-1)
+
+        return np.tensordot(aa, bb, axes=([-1], [-2]))
+
+    dtype = draw_dtype()
+    case = data.draw(
+        st.sampled_from(
+            [
+                "scalar_or_0d",
+                "vector_vector",
+                "matrix_matrix",
+                "nd_vector",
+                "nd_md",
+            ]
+        )
+    )
+
+    compatible = True
+
+    if case == "scalar_or_0d":
+        scalar_array = draw_array((), dtype)
+        scalar = scalar_array.item() if data.draw(st.booleans()) else scalar_array
+
+        rank = data.draw(st.integers(0, 4))
+        other = draw_array(draw_shape(rank), dtype)
+
+        if data.draw(st.booleans()):
+            a, b = scalar, other
+        else:
+            a, b = other, scalar
+
+    elif case == "vector_vector":
+        n = data.draw(st.integers(0, 4))
+        compatible = data.draw(st.booleans())
+        m = n if compatible else different_size(n)
+
+        a = draw_array((n,), dtype)
+        b = draw_array((m,), dtype)
+
+    elif case == "matrix_matrix":
+        rows = data.draw(st.integers(0, 4))
+        k = data.draw(st.integers(0, 4))
+        cols = data.draw(st.integers(0, 4))
+
+        compatible = data.draw(st.booleans())
+        b_k = k if compatible else different_size(k)
+
+        a = draw_array((rows, k), dtype)
+        b = draw_array((b_k, cols), dtype)
+
+    elif case == "nd_vector":
+        rank = data.draw(st.integers(2, 4))
+        prefix = draw_shape(rank - 1)
+        k = data.draw(st.integers(0, 4))
+
+        compatible = data.draw(st.booleans())
+        b_k = k if compatible else different_size(k)
+
+        a = draw_array(prefix + (k,), dtype)
+        b = draw_array((b_k,), dtype)
+
+    else:
+        a_rank = data.draw(st.integers(1, 4))
+        b_rank = data.draw(st.integers(2, 4))
+
+        a_prefix = draw_shape(a_rank - 1)
+        b_prefix = draw_shape(b_rank - 2)
+
+        k = data.draw(st.integers(0, 4))
+        last_b = data.draw(st.integers(0, 4))
+
+        compatible = data.draw(st.booleans())
+        b_k = k if compatible else different_size(k)
+
+        a = draw_array(a_prefix + (k,), dtype)
+        b = draw_array(b_prefix + (b_k, last_b), dtype)
+
+    if not compatible:
+        try:
+            np.dot(a, b)
+        except ValueError:
+            return
+        raise AssertionError("numpy.dot should raise ValueError for mismatched axes")
+
+    result = np.dot(a, b)
+    expected = expected_dot(a, b)
+
+    assert np.shape(result) == np.shape(expected)
+    npt.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
+
+    out = np.empty(np.shape(result), dtype=np.asarray(result).dtype, order="C")
+    returned = np.dot(a, b, out=out)
+
+    assert returned is out
+    assert out.flags.c_contiguous
+    npt.assert_allclose(out, result, rtol=1e-12, atol=1e-12)
+
+# End program

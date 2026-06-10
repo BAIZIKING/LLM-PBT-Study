@@ -1,0 +1,152 @@
+```python
+from hypothesis import given, settings, strategies as st
+import hypothesis.extra.numpy as hnp
+import numpy
+
+# Strategy for "safe" floating point arrays that avoid overflow / NaN / inf issues.
+# We use float64 with bounded magnitudes so that sums remain finite and comparable.
+def safe_float_arrays(min_dims=0, max_dims=4, max_side=6):
+    elements = st.floats(
+        min_value=-1e6,
+        max_value=1e6,
+        allow_nan=False,
+        allow_infinity=False,
+        width=64,
+    )
+    shape = hnp.array_shapes(min_dims=min_dims, max_dims=max_dims, max_side=max_side)
+    return hnp.arrays(dtype=numpy.float64, shape=shape, elements=elements)
+
+
+# Strategy for non-empty safe float arrays (needed when we want at least one axis).
+def safe_nonempty_float_arrays(min_dims=1, max_dims=4, max_side=6):
+    elements = st.floats(
+        min_value=-1e6,
+        max_value=1e6,
+        allow_nan=False,
+        allow_infinity=False,
+        width=64,
+    )
+    shape = hnp.array_shapes(
+        min_dims=min_dims, max_dims=max_dims, min_side=1, max_side=max_side
+    )
+    return hnp.arrays(dtype=numpy.float64, shape=shape, elements=elements)
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_initial_value_added():
+    pass  # placeholder, real tests below
+# End program
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_initial_property(data=None):
+    """Property 1: np.sum(a, initial=k) == np.sum(a) + k (within tolerance)."""
+    a = data.draw(safe_float_arrays())
+    k = data.draw(
+        st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False)
+    )
+    with_initial = numpy.sum(a, initial=k)
+    without_initial = numpy.sum(a) + k
+    assert numpy.allclose(with_initial, without_initial, rtol=1e-9, atol=1e-6)
+# End program
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_empty_neutral_element(data):
+    """Property 2: sum of empty array is 0 (or initial if given)."""
+    # Build an empty array (at least one zero-length dimension).
+    shape = data.draw(
+        hnp.array_shapes(min_dims=1, max_dims=3, min_side=0, max_side=4)
+    )
+    # Force at least one dimension to be zero so the array is empty.
+    shape = list(shape)
+    idx = data.draw(st.integers(min_value=0, max_value=len(shape) - 1))
+    shape[idx] = 0
+    a = numpy.zeros(tuple(shape), dtype=numpy.float64)
+
+    assert numpy.sum(a) == 0.0
+
+    k = data.draw(
+        st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False)
+    )
+    assert numpy.sum(a, initial=k) == k
+# End program
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_shape_reduction(data):
+    """Property 3: output shape with axis removed, or kept (size 1) with keepdims."""
+    a = data.draw(safe_nonempty_float_arrays())
+    ndim = a.ndim
+    axis = data.draw(st.integers(min_value=0, max_value=ndim - 1))
+
+    # Without keepdims: that axis is removed.
+    res = numpy.sum(a, axis=axis)
+    expected_shape = a.shape[:axis] + a.shape[axis + 1:]
+    assert res.shape == expected_shape
+
+    # With keepdims: that axis remains with size 1.
+    res_keep = numpy.sum(a, axis=axis, keepdims=True)
+    expected_keep_shape = a.shape[:axis] + (1,) + a.shape[axis + 1:]
+    assert res_keep.shape == expected_keep_shape
+    assert res_keep.ndim == a.ndim
+# End program
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_decomposed_axes(data):
+    """Property 4: summing over a tuple of axes == summing those axes one at a time."""
+    a = data.draw(safe_nonempty_float_arrays(min_dims=2))
+    ndim = a.ndim
+
+    # Choose a non-empty subset of distinct axes.
+    num_axes = data.draw(st.integers(min_value=1, max_value=ndim))
+    axes = data.draw(
+        st.lists(
+            st.integers(min_value=0, max_value=ndim - 1),
+            min_size=num_axes,
+            max_size=num_axes,
+            unique=True,
+        )
+    )
+    axes_tuple = tuple(axes)
+
+    # Sum over the whole tuple at once.
+    res_tuple = numpy.sum(a, axis=axes_tuple)
+
+    # Sum over axes one at a time (in descending order so indices stay valid).
+    res_iter = a
+    for ax in sorted(axes_tuple, reverse=True):
+        res_iter = numpy.sum(res_iter, axis=ax)
+
+    assert numpy.allclose(res_tuple, res_iter, rtol=1e-9, atol=1e-6)
+
+    # Also check axis=None equals summing all axes.
+    res_all = numpy.sum(a, axis=None)
+    res_full = numpy.sum(a, axis=tuple(range(ndim)))
+    assert numpy.allclose(res_all, res_full, rtol=1e-9, atol=1e-6)
+# End program
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum_where_masking(data):
+    """Property 5: np.sum(a, where=mask) == np.sum(a with masked elements set to 0)."""
+    a = data.draw(safe_nonempty_float_arrays())
+    mask = data.draw(
+        hnp.arrays(dtype=numpy.bool_, shape=a.shape, elements=st.booleans())
+    )
+
+    # where requires an initial value when the masked sum could be empty;
+    # use initial=0 for well-defined behavior.
+    res_where = numpy.sum(a, where=mask, initial=0.0)
+    res_manual = numpy.sum(numpy.where(mask, a, 0.0))
+
+    assert numpy.allclose(res_where, res_manual, rtol=1e-9, atol=1e-6)
+# End program
+```

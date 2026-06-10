@@ -1,0 +1,107 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.median`, I'll:
+
+1. **Use numeric types**: Generate lists of `integers` and `floats` (and mix them). I'll filter out NaN values since NaN breaks ordering comparisons and makes the median ill-defined.
+2. **Vary list size**: Use `min_size=1` to avoid empty lists (which raise `StatisticsError`), and allow large lists. I'll deliberately test both odd-length and even-length lists since the median is computed differently for each.
+3. **Cover edge cases**: Single-element lists, lists with duplicates, lists with negative numbers, very large/small floats, and lists already sorted or reversed.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Bounds**: The median always lies between the minimum and maximum of the data (`min(data) <= median <= max(data)`).
+2. **Order independence**: The median does not depend on the order of input — sorting the data first gives the same result.
+3. **Odd-length lists**: The median equals the exact middle element of the sorted list.
+4. **Even-length lists**: The median equals the average of the two middle elements of the sorted list.
+5. **Single element**: The median of a one-element list is that element.
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+# Summary: Generate non-empty lists of finite numeric values (ints and floats,
+# excluding NaN/inf) of varying sizes, covering odd/even lengths, duplicates,
+# negatives, and single-element edge cases. Verify median lies within bounds,
+# is order-independent, and matches the manual middle/mean-of-middle definition.
+@given(st.data())
+def test_statistics_median():
+    numbers = st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+    )
+    data = st.lists(numbers, min_size=1)
+    values = data.example() if False else None  # placeholder, use data below
+
+    values = st.lists(numbers, min_size=1)
+    values = st.data  # not used
+    data_list = st.lists(numbers, min_size=1)
+    values = None
+
+    lst = st.lists(numbers, min_size=1).example() if False else None
+
+    # Draw the actual list
+    xs = (lambda d: d)(None)
+    xs = st.lists(numbers, min_size=1)
+
+    actual = st.lists(numbers, min_size=1)
+    sample = test_statistics_median  # no-op
+
+    # Real draw:
+    drawn = (yield) if False else None
+
+    real = st.lists(numbers, min_size=1)
+    data_drawn = real
+    lst = None
+
+    # Use the data() fixture properly:
+    import hypothesis
+    # (the proper draw happens below)
+    raise NotImplementedError
+```
+
+Let me provide the correct, clean version:
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of finite numeric values (ints and floats,
+# excluding NaN/inf) of varying sizes, covering odd/even lengths, duplicates,
+# negatives, and single-element edge cases. Verify the median lies within
+# [min, max], is order-independent, and matches the manual definition
+# (middle element for odd length, mean of two middle elements for even length).
+@given(st.data())
+def test_statistics_median(data):
+    numbers = st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+    )
+    values = data.draw(st.lists(numbers, min_size=1))
+
+    result = statistics.median(values)
+
+    # Property 1: median is within the bounds of the data
+    assert min(values) <= result <= max(values)
+
+    # Property 2: order independence
+    assert result == statistics.median(sorted(values))
+    assert result == statistics.median(list(reversed(values)))
+
+    # Properties 3 & 4: matches manual definition
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 1:
+        # odd length: exact middle element
+        assert result == s[mid]
+    else:
+        # even length: average of two middle values
+        assert result == (s[mid - 1] + s[mid]) / 2
+
+    # Property 5 (special case of 3): single element
+    if n == 1:
+        assert result == values[0]
+# End program
+```

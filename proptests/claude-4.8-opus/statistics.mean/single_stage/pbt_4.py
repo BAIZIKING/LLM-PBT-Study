@@ -1,0 +1,73 @@
+from hypothesis import given, strategies as st
+from statistics import mean
+from fractions import Fraction
+from decimal import Decimal
+import math
+
+# Summary: Pick one of several homogeneous numeric strategies (int, finite float,
+# Fraction, Decimal), draw a non-empty list, then verify the mean lies within
+# [min, max], equals the constant for constant lists, matches sum/len, and
+# equals the sole element for singletons. Exact types use exact equality;
+# floats use a tolerance.
+@given(st.data())
+def test_statistics_mean(data):
+    # Choose a numeric type branch and build a non-empty list strategy.
+    int_strategy = st.lists(
+        st.integers(min_value=-10**9, max_value=10**9), min_size=1, max_size=50
+    )
+    float_strategy = st.lists(
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e9, max_value=1e9),
+        min_size=1, max_size=50,
+    )
+    fraction_strategy = st.lists(
+        st.fractions(max_denominator=1000), min_size=1, max_size=50
+    )
+    decimal_strategy = st.lists(
+        st.decimals(allow_nan=False, allow_infinity=False,
+                    min_value=Decimal("-1e6"), max_value=Decimal("1e6"),
+                    places=4),
+        min_size=1, max_size=50,
+    )
+
+    kind = data.draw(st.sampled_from(["int", "float", "fraction", "decimal"]))
+    if kind == "int":
+        values = data.draw(int_strategy)
+    elif kind == "float":
+        values = data.draw(float_strategy)
+    elif kind == "fraction":
+        values = data.draw(fraction_strategy)
+    else:
+        values = data.draw(decimal_strategy)
+
+    is_float = (kind == "float")
+    result = mean(values)
+
+    # Property 1: mean is within [min(data), max(data)].
+    lo, hi = min(values), max(values)
+    if is_float:
+        tol = 1e-6 * (1 + abs(lo) + abs(hi))
+        assert lo - tol <= result <= hi + tol
+    else:
+        assert lo <= result <= hi
+
+    # Property 2: constant list -> mean equals the constant.
+    if all(v == values[0] for v in values):
+        if is_float:
+            assert math.isclose(result, values[0], rel_tol=1e-9, abs_tol=1e-9)
+        else:
+            assert result == values[0]
+
+    # Property 3: mean(data) * len(data) == sum(data).
+    n = len(values)
+    total = sum(values)
+    if is_float:
+        scale = 1 + abs(total)
+        assert math.isclose(result * n, total, rel_tol=1e-6, abs_tol=1e-6 * scale)
+    else:
+        assert result * n == total
+
+    # Property 4: single-element list -> mean equals that element.
+    if n == 1:
+        assert result == values[0]
+# End program

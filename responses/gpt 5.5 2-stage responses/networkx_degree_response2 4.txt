@@ -1,0 +1,107 @@
+```python
+from hypothesis import given, strategies as st
+import networkx
+
+
+@st.composite
+def small_weighted_undirected_graphs(draw, min_nodes=0, max_nodes=8):
+    node_count = draw(st.integers(min_value=min_nodes, max_value=max_nodes))
+    graph = networkx.Graph()
+    graph.add_nodes_from(range(node_count))
+
+    possible_edges = [
+        (u, v)
+        for u in range(node_count)
+        for v in range(u, node_count)
+    ]
+
+    if possible_edges:
+        edges = draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                unique=True,
+                max_size=min(len(possible_edges), 20),
+            )
+        )
+
+        for u, v in edges:
+            weight = draw(st.one_of(st.none(), st.integers(min_value=-1000, max_value=1000)))
+            if weight is None:
+                graph.add_edge(u, v)
+            else:
+                graph.add_edge(u, v, w=weight)
+
+    return graph
+
+
+@given(st.data())
+def test_networkx_degree_all_nodes_when_nbunch_omitted(data):
+    graph = data.draw(small_weighted_undirected_graphs())
+
+    degrees = dict(networkx.degree(graph))
+
+    assert set(degrees.keys()) == set(graph.nodes)
+
+
+@given(st.data())
+def test_networkx_degree_iterable_nbunch_only_returns_nodes_in_graph_and_nbunch(data):
+    graph = data.draw(small_weighted_undirected_graphs())
+    node_count = graph.number_of_nodes()
+
+    candidates = list(range(-3, node_count + 3))
+    nbunch = data.draw(
+        st.lists(
+            st.sampled_from(candidates),
+            unique=True,
+            max_size=len(candidates),
+        )
+    )
+
+    degrees = dict(networkx.degree(graph, nbunch=nbunch))
+
+    assert set(degrees.keys()) == set(nbunch) & set(graph.nodes)
+
+
+@given(st.data())
+def test_networkx_degree_single_node_matches_full_degree_view(data):
+    graph = data.draw(small_weighted_undirected_graphs(min_nodes=1))
+    node = data.draw(st.sampled_from(list(graph.nodes)))
+
+    single_node_degree = networkx.degree(graph, nbunch=node)
+    all_degrees = dict(networkx.degree(graph))
+
+    assert single_node_degree == all_degrees[node]
+
+
+@given(st.data())
+def test_networkx_degree_unweighted_values_are_non_negative_integers(data):
+    graph = data.draw(small_weighted_undirected_graphs())
+
+    for node, degree in networkx.degree(graph):
+        assert isinstance(degree, int)
+        assert degree >= 0
+
+        if len(list(graph.neighbors(node))) == 0:
+            assert degree == 0
+
+
+@given(st.data())
+def test_networkx_degree_weighted_values_equal_sum_of_incident_edge_weights(data):
+    graph = data.draw(small_weighted_undirected_graphs())
+
+    expected_degrees = {node: 0 for node in graph.nodes}
+
+    for u, v, attrs in graph.edges(data=True):
+        weight = attrs.get("w", 1)
+
+        if u == v:
+            expected_degrees[u] += 2 * weight
+        else:
+            expected_degrees[u] += weight
+            expected_degrees[v] += weight
+
+    actual_degrees = dict(networkx.degree(graph, weight="w"))
+
+    assert actual_degrees == expected_degrees
+# End program
+```

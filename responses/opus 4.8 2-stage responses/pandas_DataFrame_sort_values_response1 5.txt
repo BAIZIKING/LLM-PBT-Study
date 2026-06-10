@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `DataFrame.sort_values`:
+
+1. **Length and content preservation**: The output DataFrame has the same shape (number of rows and columns) as the input, and contains exactly the same set of rows (as a multiset/permutation) as the input — sorting only reorders rows without adding, removing, or altering any data.
+
+2. **Sortedness of the `by` column(s)**: After sorting, the values in the specified `by` column(s) are in the correct order according to `ascending` (non-decreasing if `ascending=True`, non-increasing if `ascending=False`), with ties broken in order by subsequent columns when `by` is a list. If a `key` function is provided, this ordering holds with respect to the key-transformed values rather than the raw values.
+
+3. **NaN placement**: All NaN values in the `by` column appear at the end of the result when `na_position='last'` and at the beginning when `na_position='first'`, regardless of the `ascending` setting.
+
+4. **Index labeling with `ignore_index`**: When `ignore_index=True`, the resulting DataFrame's index is exactly `0, 1, ..., n-1`; when `ignore_index=False`, the original index labels are preserved (just reordered) and travel with their corresponding rows.
+
+5. **Inplace return behavior and idempotence**: When `inplace=True`, the function returns `None` and modifies the original DataFrame; when `inplace=False`, it returns a new DataFrame and leaves the input unchanged. Additionally, sorting an already-sorted DataFrame again with the same arguments yields an equivalent result (idempotence).

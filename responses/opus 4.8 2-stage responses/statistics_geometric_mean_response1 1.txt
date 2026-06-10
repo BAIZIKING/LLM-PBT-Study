@@ -1,0 +1,9 @@
+1. The geometric mean is always positive (greater than zero) for any valid input, since all inputs must be positive.
+
+2. The geometric mean of a list is bounded between the minimum and maximum values of the data (i.e., min(data) ≤ geometric_mean(data) ≤ max(data)).
+
+3. For a list where all elements are equal to some value `v`, the geometric mean equals `v`.
+
+4. Scaling every element in the data by a positive constant `c` multiplies the geometric mean by `c` (i.e., geometric_mean([c*x for x in data]) == c * geometric_mean(data)).
+
+5. The geometric mean is invariant under permutation of the input data, since multiplication is commutative (i.e., reordering the elements yields the same result).

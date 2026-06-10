@@ -1,0 +1,9 @@
+1. The output of `decrypt(token)` is always of type `bytes`.
+
+2. Decrypting a token produced by `encrypt(data)` with the same Fernet key returns exactly the original plaintext `data` (round-trip property).
+
+3. Decrypting a token whose age exceeds the provided `ttl` raises an `InvalidToken` exception rather than returning plaintext.
+
+4. Decrypting a malformed, tampered, or invalidly-signed token (including tokens encrypted with a different key) raises an `InvalidToken` exception.
+
+5. Passing a token that is not of type `bytes` or `str` raises a `TypeError`.

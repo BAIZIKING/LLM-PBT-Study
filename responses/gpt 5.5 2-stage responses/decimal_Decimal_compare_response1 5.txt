@@ -1,0 +1,9 @@
+1. The result is always a `Decimal` instance.
+
+2. If either operand is `NaN`, the result is a `Decimal('NaN')`.
+
+3. If neither operand is `NaN`, the result is always one of `Decimal('-1')`, `Decimal('0')`, or `Decimal('1')`.
+
+4. If neither operand is `NaN`, the result is `Decimal('-1')` exactly when the first operand is numerically less than the second.
+
+5. If neither operand is `NaN`, comparing in the opposite order negates the result: `a.compare(b) == -b.compare(a)`.

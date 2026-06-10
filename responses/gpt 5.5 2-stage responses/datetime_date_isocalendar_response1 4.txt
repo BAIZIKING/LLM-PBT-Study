@@ -1,0 +1,9 @@
+1. The result has three named components: `year`, `week`, and `weekday`.
+
+2. `weekday` is always an integer from `1` to `7`, where Monday is `1` and Sunday is `7`.
+
+3. `week` is always an integer from `1` to `53`.
+
+4. The ISO `year` is always either the same as the Gregorian year of the input date, the previous year, or the next year.
+
+5. Reconstructing the date from the returned ISO values should produce the original date: `date.fromisocalendar(year, week, weekday)` equals the input date.

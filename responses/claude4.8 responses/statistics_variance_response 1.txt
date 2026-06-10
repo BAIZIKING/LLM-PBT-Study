@@ -1,0 +1,111 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `statistics.variance`, I will:
+1. Generate lists of floats (with at least 2 elements, as required). I'll use `st.floats` but exclude NaN and infinity since variance computations with those produce undefined/meaningless results.
+2. Bound the float range to avoid overflow issues during squaring while still covering negatives, zeros, and large/small magnitudes.
+3. Use `st.lists` with `min_size=2` to satisfy the "at least two values" requirement.
+
+**Properties to Check:**
+Based on the API documentation, I can verify several mathematical properties:
+1. **Non-negativity:** Variance is a measure of spread, so it must always be `>= 0`.
+2. **Translation invariance:** Adding a constant `c` to every data point should not change the variance (spread is unchanged when shifting).
+3. **Scaling property:** Multiplying every data point by a constant `k` multiplies the variance by `k²`.
+4. **xbar consistency:** Passing the actual mean as `xbar` should give the same result as letting it be computed automatically (per the docs/examples).
+5. **Zero variance:** If all values are identical, the variance must be exactly 0.
+
+I'll combine these into a single property test using `st.data()` to draw values interactively.
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists (>=2) of finite, bounded floats to avoid NaN/inf/overflow.
+# Check non-negativity, translation invariance, scaling (by k^2), xbar consistency,
+# and zero variance for constant data.
+@given(st.data())
+def test_statistics_variance():
+    finite_floats = st.floats(
+        allow_nan=False,
+        allow_infinity=False,
+        min_value=-1e6,
+        max_value=1e6,
+    )
+    data = data_draw = st.data
+    d = st.data  # placeholder to keep linter calm
+
+    # Draw the main dataset (at least two values).
+    drawn = TEST_DATA.draw(st.lists(finite_floats, min_size=2, max_size=50))
+
+    # Property 1: Non-negativity.
+    v = statistics.variance(drawn)
+    assert v >= 0 or math.isclose(v, 0.0, abs_tol=1e-9)
+
+    # Property 2: xbar consistency (passing computed mean gives same result).
+    m = statistics.mean(drawn)
+    v_with_mean = statistics.variance(drawn, m)
+    assert math.isclose(v, v_with_mean, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 3: Translation invariance.
+    c = TEST_DATA.draw(finite_floats)
+    shifted = [x + c for x in drawn]
+    v_shifted = statistics.variance(shifted)
+    assert math.isclose(v, v_shifted, rel_tol=1e-6, abs_tol=1e-6)
+
+    # Property 4: Scaling by k multiplies variance by k^2.
+    k = TEST_DATA.draw(st.floats(
+        allow_nan=False, allow_infinity=False,
+        min_value=-1e3, max_value=1e3,
+    ))
+    scaled = [x * k for x in drawn]
+    v_scaled = statistics.variance(scaled)
+    assert math.isclose(v_scaled, v * (k ** 2), rel_tol=1e-6, abs_tol=1e-6)
+
+    # Property 5: Constant data has zero variance.
+    constant_val = TEST_DATA.draw(finite_floats)
+    n = TEST_DATA.draw(st.integers(min_value=2, max_value=20))
+    constant_data = [constant_val] * n
+    assert math.isclose(statistics.variance(constant_data), 0.0, abs_tol=1e-9)
+# End program
+```
+
+**Note:** In the test above, `TEST_DATA` should be the `data` object provided by `@given(st.data())`. Here is the corrected, clean version:
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists (>=2) of finite, bounded floats to avoid NaN/inf/overflow.
+# Check non-negativity, xbar consistency, translation invariance, scaling (k^2),
+# and zero variance for constant data.
+@given(st.data())
+def test_statistics_variance(data):
+    finite_floats = st.floats(
+        allow_nan=False, allow_infinity=False,
+        min_value=-1e6, max_value=1e6,
+    )
+
+    drawn = data.draw(st.lists(finite_floats, min_size=2, max_size=50))
+
+    v = statistics.variance(drawn)
+    assert v >= 0 or math.isclose(v, 0.0, abs_tol=1e-9)
+
+    m = statistics.mean(drawn)
+    assert math.isclose(v, statistics.variance(drawn, m), rel_tol=1e-9, abs_tol=1e-9)
+
+    c = data.draw(finite_floats)
+    assert math.isclose(v, statistics.variance([x + c for x in drawn]),
+                        rel_tol=1e-6, abs_tol=1e-6)
+
+    k = data.draw(st.floats(allow_nan=False, allow_infinity=False,
+                            min_value=-1e3, max_value=1e3))
+    assert math.isclose(statistics.variance([x * k for x in drawn]),
+                        v * (k ** 2), rel_tol=1e-6, abs_tol=1e-6)
+
+    cv = data.draw(finite_floats)
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    assert math.isclose(statistics.variance([cv] * n), 0.0, abs_tol=1e-9)
+# End program
+```

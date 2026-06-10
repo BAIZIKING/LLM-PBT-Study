@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `statistics.correlation`:
+
+1. **Bounded output:** The returned correlation coefficient is always a float between -1 and +1, inclusive, for any valid input.
+
+2. **Symmetry in arguments:** Swapping the order of the two inputs does not change the result; `correlation(x, y)` equals `correlation(y, x)` for both methods.
+
+3. **Perfect positive linear correlation:** When `y` is a strictly increasing affine transformation of `x` (i.e., `y = a*x + b` with `a > 0`), the result equals 1.0 (for the `linear` method); likewise, `correlation(x, x)` equals 1.0.
+
+4. **Perfect negative linear correlation:** When `y` is a strictly decreasing affine transformation of `x` (i.e., `y = a*x + b` with `a < 0`), the result equals -1.0 (for the `linear` method).
+
+5. **Perfect monotonic (ranked) correlation:** When `y` is any strictly increasing (monotonic) transformation of `x`, the `ranked` method returns 1.0, and when `y` is any strictly decreasing transformation of `x`, the `ranked` method returns -1.0.

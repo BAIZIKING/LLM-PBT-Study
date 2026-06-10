@@ -1,0 +1,9 @@
+1. The output DataFrame has no duplicate rows when considering the relevant columns (those specified in `subset`, or all columns by default); i.e., calling `drop_duplicates` again on the result yields an identical DataFrame.
+
+2. The output DataFrame is a subset of the input rows—every row in the output appears in the input (the function only removes rows, never adds or alters them), and the number of output rows is less than or equal to the number of input rows.
+
+3. The output preserves the original relative ordering of the rows that are retained, and the set of column labels is identical to that of the input.
+
+4. When `keep='first'`, each retained row corresponds to the first occurrence of its (subset) value combination in the input; when `keep='last'`, it corresponds to the last occurrence; when `keep=False`, no row whose (subset) value combination appears more than once in the input is retained.
+
+5. When `ignore_index=True`, the output index is exactly 0, 1, …, n-1; otherwise the index labels of retained rows match their original index labels. When `inplace=True`, the function returns `None` and modifies the original DataFrame to equal what the non-inplace version would return.

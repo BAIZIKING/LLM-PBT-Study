@@ -1,0 +1,84 @@
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+import pytest
+
+# Strategy for positive floats that avoid overflow/underflow issues
+positive_floats = st.floats(
+    min_value=1e-6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+# Non-empty lists of positive floats
+positive_data = st.lists(positive_floats, min_size=1, max_size=50)
+
+
+@given(data=positive_data)
+def test_statistics_geometric_mean_bounded_by_min_and_max():
+    result = statistics.geometric_mean(data)
+    lo = min(data)
+    hi = max(data)
+    # Allow a small relative tolerance for floating-point rounding.
+    tol = 1e-9 * max(1.0, hi)
+    assert lo - tol <= result <= hi + tol
+# End program
+
+
+@given(data=positive_data)
+def test_statistics_geometric_mean_at_most_arithmetic_mean():
+    gm = statistics.geometric_mean(data)
+    am = statistics.fmean(data)
+    # AM-GM inequality: GM <= AM, with small tolerance for rounding.
+    tol = 1e-9 * max(1.0, am)
+    assert gm <= am + tol
+# End program
+
+
+@given(
+    value=st.floats(
+        min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False
+    ),
+    n=st.integers(min_value=1, max_value=50),
+)
+def test_statistics_geometric_mean_constant_input():
+    data = [value] * n
+    result = statistics.geometric_mean(data)
+    assert math.isclose(result, value, rel_tol=1e-9, abs_tol=1e-12)
+# End program
+
+
+@given(
+    data=positive_data,
+    k=st.floats(
+        min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False
+    ),
+)
+def test_statistics_geometric_mean_scaling():
+    original = statistics.geometric_mean(data)
+    scaled = statistics.geometric_mean([x * k for x in data])
+    expected = original * k
+    assert math.isclose(scaled, expected, rel_tol=1e-9, abs_tol=1e-12)
+# End program
+
+
+@given(
+    data=st.lists(
+        st.floats(
+            min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+        ),
+        max_size=50,
+    )
+)
+def test_statistics_geometric_mean_error_on_invalid_input():
+    is_invalid = (len(data) == 0) or any(x <= 0 for x in data)
+    if is_invalid:
+        with pytest.raises(statistics.StatisticsError):
+            statistics.geometric_mean(data)
+    else:
+        # Valid input should not raise StatisticsError.
+        statistics.geometric_mean(data)
+# End program
+```

@@ -1,0 +1,9 @@
+1. The output of `html.unescape(s)` is always a string.
+
+2. If the input string `s` contains no character references (no `&` followed by a valid named or numeric reference), the output equals the input unchanged (idempotence on reference-free strings).
+
+3. Applying `html.unescape` to a string that has already been fully unescaped (containing no further valid character references) returns that string unchanged — i.e., the function is idempotent when the result contains no decodable references.
+
+4. The output of `html.unescape(s)` never contains any of the valid HTML5 character references that appear in the input; all recognized named and numeric references are replaced (no resolvable reference remains in the output).
+
+5. For any known named reference (e.g. `&amp;`, `&lt;`, `&gt;`), `html.unescape` of that reference produces exactly the corresponding Unicode character defined by the HTML5 standard, and concatenations of references unescape to the concatenation of their corresponding characters.

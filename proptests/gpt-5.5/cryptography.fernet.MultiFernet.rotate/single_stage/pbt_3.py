@@ -1,0 +1,103 @@
+from hypothesis import given, strategies as st
+import base64
+import pytest
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+
+# Summary: Generate a mix of valid Fernet tokens, invalid bytes/str tokens, and non-bytes/str values.
+# Valid tokens vary plaintext, timestamp, input type bytes vs str, and which key originally encrypted them.
+# Properties: valid tokens rotate to bytes, decrypt to the same plaintext under the primary key, and preserve
+# the original timestamp. Invalid tokens raise InvalidToken. Non-bytes/str inputs raise TypeError.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate(data):
+    keys = [
+        base64.urlsafe_b64encode(bytes([0]) * 32),
+        base64.urlsafe_b64encode(bytes([1]) * 32),
+        base64.urlsafe_b64encode(bytes([2]) * 32),
+    ]
+    fernets = [Fernet(key) for key in keys]
+    primary = fernets[0]
+    multi = MultiFernet(fernets)
+
+    case = data.draw(
+        st.sampled_from(
+            [
+                "valid_bytes",
+                "valid_str",
+                "invalid_bytes",
+                "invalid_str",
+                "wrong_type",
+            ]
+        )
+    )
+
+    if case in {"valid_bytes", "valid_str"}:
+        plaintext = data.draw(st.binary(max_size=1024))
+        timestamp = data.draw(st.integers(min_value=0, max_value=2**32 - 1))
+        original_key_index = data.draw(st.integers(min_value=0, max_value=2))
+
+        token = fernets[original_key_index].encrypt_at_time(plaintext, timestamp)
+        msg = token if case == "valid_bytes" else token.decode("ascii")
+
+        rotated = multi.rotate(msg)
+
+        assert isinstance(rotated, bytes)
+        assert multi.decrypt(rotated) == plaintext
+        assert primary.decrypt(rotated) == plaintext
+        assert primary.extract_timestamp(rotated) == timestamp
+
+        if original_key_index != 0:
+            with pytest.raises(InvalidToken):
+                fernets[original_key_index].decrypt(rotated)
+
+    elif case == "invalid_bytes":
+        msg = data.draw(
+            st.one_of(
+                st.just(b""),
+                st.binary(max_size=128).map(lambda b: b"%" + b),
+                st.binary(max_size=128).map(
+                    lambda b: base64.urlsafe_b64encode(b"\x00" + b)
+                ),
+                st.binary(max_size=128).map(
+                    lambda b: base64.urlsafe_b64encode(b"\x80" + b)
+                ),
+            )
+        )
+
+        with pytest.raises(InvalidToken):
+            multi.rotate(msg)
+
+    elif case == "invalid_str":
+        msg = data.draw(
+            st.one_of(
+                st.just(""),
+                st.text(
+                    alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "abcdefghijklmnopqrstuvwxyz"
+                    "0123456789-_=",
+                    max_size=128,
+                ).map(lambda s: "A" + s),
+                st.binary(max_size=128).map(
+                    lambda b: base64.urlsafe_b64encode(b"\x00" + b).decode("ascii")
+                ),
+            )
+        )
+
+        with pytest.raises(InvalidToken):
+            multi.rotate(msg)
+
+    else:
+        msg = data.draw(
+            st.one_of(
+                st.none(),
+                st.integers(),
+                st.floats(allow_nan=False, allow_infinity=False),
+                st.lists(st.integers(), max_size=5),
+                st.dictionaries(st.text(max_size=3), st.integers(), max_size=3),
+                st.tuples(st.binary(max_size=3)),
+            )
+        )
+
+        with pytest.raises(TypeError):
+            multi.rotate(msg)
+
+# End program

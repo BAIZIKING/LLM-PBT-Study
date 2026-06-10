@@ -1,0 +1,9 @@
+1. The exponent of the result is always equal to the exponent of the second operand (`exp`), unless an error/exception is raised.
+
+2. The result is numerically equal to the first operand when no rounding is required (i.e., when the first operand can be represented exactly at the target exponent), and otherwise differs from it by less than one unit in the last place of the target exponent.
+
+3. The number of significant digits in the result's coefficient never exceeds the context's precision; if it would, an InvalidOperation is signaled instead of returning a value.
+
+4. When the target exponent is larger than the first operand's exponent (requiring rounding), the result respects the specified rounding mode (from the rounding argument, then context, then current thread's context).
+
+5. An error is raised (rather than a value returned) whenever the resulting exponent would be greater than Emax or less than Etiny(); notably, Underflow is never signaled even when the result is subnormal and inexact.

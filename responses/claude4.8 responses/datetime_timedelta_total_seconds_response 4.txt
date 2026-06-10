@@ -1,0 +1,59 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `timedelta`, I'll use Hypothesis's `st.timedeltas()` strategy, which directly generates `timedelta` objects spanning the full valid range (from `timedelta.min` to `timedelta.max`). This naturally covers:
+- Zero duration (`timedelta(0)`)
+- Positive and negative durations
+- Very small durations (microseconds)
+- Very large durations (near the 270-year boundary mentioned in the docs where microsecond accuracy is lost)
+- Extreme min/max values
+
+This gives broad coverage including the documented edge cases about large intervals losing microsecond accuracy.
+
+**Properties to Check (based on API documentation):**
+
+1. **Equivalence to division form:** The docs explicitly state `total_seconds()` is "Equivalent to `td / timedelta(seconds=1)`". So `td.total_seconds() == td / timedelta(seconds=1)` should hold.
+
+2. **Return type:** The example shows the result is a float (e.g., `31536000.0`), so the return value should be a `float`.
+
+3. **Sign consistency:** A positive duration yields a positive (or zero) result, a negative duration yields a negative result, and zero yields zero. The sign of the total seconds should match the sign of the timedelta.
+
+4. **Reconstruction (with tolerance):** For durations within the safe range, reconstructing `timedelta(seconds=total)` should approximately recover the original (allowing for documented microsecond accuracy loss on large intervals).
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import timedelta
+
+# Summary: Generate arbitrary timedelta objects across the full valid range
+# (including zero, negative, microsecond-scale, and extreme min/max values)
+# using st.timedeltas(), then verify total_seconds() matches the documented
+# division-form equivalence, returns a float, preserves sign, and reconstructs.
+@given(st.data())
+def test_datetime_timedelta_total_seconds(data):
+    td = data.draw(st.timedeltas())
+
+    result = td.total_seconds()
+
+    # Property 1: documented equivalence to td / timedelta(seconds=1)
+    assert result == td / timedelta(seconds=1)
+
+    # Property 2: return type is float (per examples like 31536000.0)
+    assert isinstance(result, float)
+
+    # Property 3: sign consistency with the duration
+    if td > timedelta(0):
+        assert result > 0
+    elif td < timedelta(0):
+        assert result < 0
+    else:
+        assert result == 0.0
+
+    # Property 4: reconstruction within microsecond tolerance for safe ranges
+    # (docs note microsecond accuracy may be lost beyond ~270 years)
+    if abs(td) < timedelta(days=270 * 365):
+        reconstructed = timedelta(seconds=result)
+        assert abs(reconstructed - td) <= timedelta(microseconds=1)
+# End program
+```

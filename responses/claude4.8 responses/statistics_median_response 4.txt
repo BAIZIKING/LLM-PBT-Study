@@ -1,0 +1,83 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `statistics.median`, I'll use Hypothesis's `st.lists` strategy combined with numeric strategies. The key considerations:
+
+1. **Numeric variety**: Use `st.one_of` to mix integers, floats, and fractions to test different numeric types. I'll avoid NaN/infinity initially since they break ordering comparisons in undefined ways.
+2. **Non-empty lists**: Since empty data raises `StatisticsError`, I'll constrain `min_size=1` for the main property tests (and could separately test the empty case).
+3. **Edge cases**: Single-element lists, odd vs. even lengths, lists with duplicate values, negative numbers, and zeros are naturally covered by allowing a broad range of values and sizes.
+
+**Properties to Check (from the API documentation):**
+
+1. **Bounds property**: The median must always lie between the minimum and maximum of the data (`min(data) <= median <= max(data)`), since it's a measure of central location.
+2. **Order independence**: The median should be invariant under permutation/shuffling of the input, since it depends only on sorted position.
+3. **Odd-length exactness**: For odd-length data, the median equals the middle element of the sorted data and is an actual data point.
+4. **Even-length interpolation**: For even-length data, the median equals the average of the two middle sorted values.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of numeric values (ints and finite floats),
+# mixing types and sizes to cover odd/even lengths, duplicates, negatives, and
+# single-element edge cases. Check that the median lies within [min, max], is
+# invariant under shuffling, and matches the sorted-middle definition for both
+# odd-length (exact middle element) and even-length (average of two middles) data.
+@given(st.data())
+def test_statistics_median():
+    numeric = st.one_of(
+        st.integers(min_value=-10**9, max_value=10**9),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e9, max_value=1e9),
+    )
+    data = st.data().example() if False else None  # placeholder, unused
+    values = st.data  # unused placeholder to satisfy structure
+
+    # Draw the actual input list
+    data_list = st.lists(numeric, min_size=1, max_size=50)
+    drawn = test_statistics_median.hypothesis_draw  # not used; real draw below
+
+# End program
+```
+
+Let me provide the corrected, clean version that properly uses the `st.data()` draw mechanism:
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of numeric values (ints and finite floats),
+# mixing types and sizes to cover odd/even lengths, duplicates, negatives, and
+# single-element edge cases. Check that the median lies within [min, max], is
+# invariant under shuffling, and matches the sorted-middle definition for both
+# odd-length (exact middle element) and even-length (average of two middles) data.
+@given(st.data())
+def test_statistics_median(data):
+    numeric = st.one_of(
+        st.integers(min_value=-10**9, max_value=10**9),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e9, max_value=1e9),
+    )
+    values = data.draw(st.lists(numeric, min_size=1, max_size=50))
+
+    result = statistics.median(values)
+
+    # Property 1: median lies within [min, max]
+    assert min(values) <= result <= max(values)
+
+    # Property 2: order independence (invariant under shuffling)
+    shuffled = data.draw(st.permutations(values))
+    assert statistics.median(shuffled) == result
+
+    # Properties 3 & 4: matches sorted-middle definition
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        assert result == s[n // 2]
+    else:
+        expected = (s[n // 2 - 1] + s[n // 2]) / 2
+        assert result == expected
+# End program
+```

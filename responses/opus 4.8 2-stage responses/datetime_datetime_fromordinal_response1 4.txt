@@ -1,0 +1,9 @@
+1. The returned object's `hour`, `minute`, `second`, and `microsecond` attributes are all 0.
+
+2. The returned object's `tzinfo` attribute is None.
+
+3. Calling `.toordinal()` on the returned datetime yields back the original input ordinal (round-trip consistency).
+
+4. A `ValueError` is raised when the ordinal is less than 1 or greater than `datetime.max.toordinal()`.
+
+5. For ordinal 1, the result corresponds to January 1 of year 1 (i.e., year=1, month=1, day=1).

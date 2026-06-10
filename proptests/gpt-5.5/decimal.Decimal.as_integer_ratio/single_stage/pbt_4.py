@@ -1,0 +1,75 @@
+from hypothesis import given, strategies as st
+from decimal import Decimal
+from math import gcd
+import pytest
+
+# Summary: Generate a mix of finite Decimals built from random signs, digit tuples, and bounded exponents, plus explicit edge cases such as signed zero, large/small powers of ten, ordinary decimals, infinities, quiet NaNs, and signaling NaNs. For finite values, check that as_integer_ratio returns integers, the denominator is positive, the fraction is in lowest terms, and the ratio exactly matches the Decimal's tuple representation. For infinities, check OverflowError; for NaNs, check ValueError.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio(data):
+    finite_from_tuple = st.builds(
+        lambda sign, digits, exponent: Decimal((sign, tuple(digits), exponent)),
+        st.integers(min_value=0, max_value=1),
+        st.lists(st.integers(min_value=0, max_value=9), min_size=1, max_size=50),
+        st.integers(min_value=-100, max_value=100),
+    )
+
+    explicit_edges = st.sampled_from(
+        [
+            Decimal("0"),
+            Decimal("-0"),
+            Decimal("1"),
+            Decimal("-1"),
+            Decimal("3.14"),
+            Decimal("-3.14"),
+            Decimal("1E-100"),
+            Decimal("-1E-100"),
+            Decimal("1E+100"),
+            Decimal("-1E+100"),
+            Decimal("Infinity"),
+            Decimal("-Infinity"),
+            Decimal("NaN"),
+            Decimal("-NaN"),
+            Decimal("sNaN"),
+            Decimal("-sNaN"),
+        ]
+    )
+
+    x = data.draw(st.one_of(finite_from_tuple, explicit_edges))
+
+    if x.is_infinite():
+        with pytest.raises(OverflowError):
+            x.as_integer_ratio()
+        return
+
+    if x.is_nan():
+        with pytest.raises(ValueError):
+            x.as_integer_ratio()
+        return
+
+    n, d = x.as_integer_ratio()
+
+    assert isinstance(n, int)
+    assert isinstance(d, int)
+    assert d > 0
+    assert gcd(abs(n), d) == 1
+
+    decimal_tuple = x.as_tuple()
+    coefficient = int("".join(map(str, decimal_tuple.digits)))
+
+    if decimal_tuple.sign:
+        coefficient = -coefficient
+
+    exponent = decimal_tuple.exponent
+
+    if exponent >= 0:
+        expected_n = coefficient * (10**exponent)
+        expected_d = 1
+    else:
+        expected_n = coefficient
+        expected_d = 10 ** (-exponent)
+        common = gcd(abs(expected_n), expected_d)
+        expected_n //= common
+        expected_d //= common
+
+    assert (n, d) == (expected_n, expected_d)
+# End program

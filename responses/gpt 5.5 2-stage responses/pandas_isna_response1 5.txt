@@ -1,0 +1,9 @@
+1. For any scalar input, the output is a single Python boolean indicating whether that scalar is missing.
+
+2. For any array-like input, the output has the same shape and element positions as the input, with each element replaced by a boolean missing-value indicator.
+
+3. For `Series` and `DataFrame` inputs, the output preserves the same pandas type, index, and columns as the input, while containing only boolean values.
+
+4. Values considered missing, such as `None`, `NaN`, `NaT`, and `pd.NA`, are marked as `True` in the output.
+
+5. Values not considered missing, including ordinary strings, numbers, booleans, and valid datetime values, are marked as `False` in the output.

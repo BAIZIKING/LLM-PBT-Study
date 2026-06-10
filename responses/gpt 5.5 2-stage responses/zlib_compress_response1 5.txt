@@ -1,0 +1,9 @@
+1. The returned value is always a `bytes` object.
+
+2. For any valid `data`, `level`, and `wbits`, decompressing the output with a compatible `wbits` setting reproduces the original `data` exactly.
+
+3. The function is deterministic: calling `zlib.compress` multiple times with the same `data`, `level`, and `wbits` produces identical byte output.
+
+4. The output format matches `wbits`: positive `wbits` produces a zlib-wrapped stream, negative `wbits` produces a raw deflate stream with no wrapper, and `wbits` from `25` to `31` produces a gzip-wrapped stream.
+
+5. For gzip-wrapped output, where `wbits` is between `25` and `31`, the compressed bytes begin with the gzip magic header bytes `0x1f 0x8b`.

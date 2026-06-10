@@ -1,0 +1,148 @@
+from hypothesis import given, strategies as st
+import networkx
+
+def _draw_graph(data):
+    node_count = data.draw(st.integers(min_value=0, max_value=8), label="node_count")
+    graph = networkx.Graph()
+    graph.add_nodes_from(range(node_count))
+
+    possible_edges = [
+        (u, v)
+        for u in range(node_count)
+        for v in range(u + 1, node_count)
+    ]
+
+    if possible_edges:
+        edges = data.draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                unique=True,
+                max_size=len(possible_edges),
+            ),
+            label="edges",
+        )
+        graph.add_edges_from(edges)
+
+    return graph
+
+def _is_clique(graph, nodes):
+    if len(nodes) != len(set(nodes)):
+        return False
+
+    if any(node not in graph for node in nodes):
+        return False
+
+    return all(
+        graph.has_edge(u, v)
+        for i, u in enumerate(nodes)
+        for v in nodes[i + 1:]
+    )
+
+def _is_maximal_clique(graph, clique):
+    clique_set = set(clique)
+
+    if not _is_clique(graph, list(clique_set)):
+        return False
+
+    return all(
+        any(not graph.has_edge(node, clique_node) for clique_node in clique_set)
+        for node in graph
+        if node not in clique_set
+    )
+
+def _brute_force_maximal_cliques(graph, required_nodes=None):
+    nodes = list(graph.nodes)
+    required_nodes = set(required_nodes or [])
+
+    if not nodes:
+        return set()
+
+    maximal_cliques = set()
+
+    for mask in range(1, 1 << len(nodes)):
+        candidate = [
+            nodes[index]
+            for index in range(len(nodes))
+            if mask & (1 << index)
+        ]
+
+        candidate_set = frozenset(candidate)
+
+        if (
+            required_nodes.issubset(candidate_set)
+            and _is_clique(graph, candidate)
+            and _is_maximal_clique(graph, candidate)
+        ):
+            maximal_cliques.add(candidate_set)
+
+    return maximal_cliques
+
+@given(st.data())
+def test_networkx_find_cliques_property(data):
+    graph = _draw_graph(data)
+
+    cliques = list(networkx.find_cliques(graph))
+    normalized_cliques = [frozenset(clique) for clique in cliques]
+
+    assert all(isinstance(clique, list) for clique in cliques)
+
+    assert all(
+        len(clique) == len(set(clique)) and all(node in graph for node in clique)
+        for clique in cliques
+    )
+
+    assert all(_is_clique(graph, clique) for clique in cliques)
+
+    assert all(_is_maximal_clique(graph, clique) for clique in cliques)
+
+    assert len(normalized_cliques) == len(set(normalized_cliques))
+
+    assert set(normalized_cliques) == _brute_force_maximal_cliques(graph)
+
+    node_count = graph.number_of_nodes()
+
+    if node_count == 0:
+        required_nodes = []
+    else:
+        required_nodes = data.draw(
+            st.lists(
+                st.integers(min_value=0, max_value=node_count - 1),
+                unique=True,
+                max_size=node_count,
+            ),
+            label="required_nodes",
+        )
+
+    try:
+        filtered_cliques = list(networkx.find_cliques(graph, nodes=required_nodes))
+    except ValueError:
+        assert not _is_clique(graph, required_nodes)
+    else:
+        assert _is_clique(graph, required_nodes)
+
+        normalized_filtered_cliques = [
+            frozenset(clique)
+            for clique in filtered_cliques
+        ]
+
+        assert all(
+            set(required_nodes).issubset(set(clique))
+            for clique in filtered_cliques
+        )
+
+        assert all(_is_clique(graph, clique) for clique in filtered_cliques)
+
+        assert all(
+            _is_maximal_clique(graph, clique)
+            for clique in filtered_cliques
+        )
+
+        assert len(normalized_filtered_cliques) == len(
+            set(normalized_filtered_cliques)
+        )
+
+        assert set(normalized_filtered_cliques) == _brute_force_maximal_cliques(
+            graph,
+            required_nodes,
+        )
+# End program

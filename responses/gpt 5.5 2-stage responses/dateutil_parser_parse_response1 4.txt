@@ -1,0 +1,9 @@
+1. For any successful parse with `fuzzy_with_tokens` unset or `False`, the output is a `datetime.datetime` object.
+
+2. If `fuzzy_with_tokens=True`, the output is a 2-tuple whose first element is a `datetime.datetime` object and whose second element is a tuple of ignored string tokens.
+
+3. If `ignoretz=True`, the returned datetime is naive: its `tzinfo` is `None`, regardless of any timezone text in the input or any `tzinfos` argument.
+
+4. If a non-`None` `default` datetime is provided, fields explicitly present in the input string replace the corresponding fields from `default`, while unspecified fields are inherited from `default`.
+
+5. For ambiguous three-integer dates, the returned year/month/day ordering is determined consistently by the `dayfirst` and `yearfirst` arguments.

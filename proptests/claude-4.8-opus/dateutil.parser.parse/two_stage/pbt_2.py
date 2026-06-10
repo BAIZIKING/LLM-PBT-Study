@@ -1,0 +1,116 @@
+from hypothesis import given, strategies as st, assume, settings
+import datetime
+import string
+from dateutil.parser import parse, ParserError
+
+
+# Strategy for "safe" datetimes that won't trigger overflow and avoid
+# problematic edge cases. We restrict the year range well within C int limits.
+safe_datetimes = st.datetimes(
+    min_value=datetime.datetime(1, 1, 1, 0, 0, 0),
+    max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+)
+
+# Naive datetimes only (no tzinfo) for round-trip simplicity.
+naive_datetimes = st.datetimes(
+    min_value=datetime.datetime(1900, 1, 1, 0, 0, 0),
+    max_value=datetime.datetime(2100, 12, 31, 23, 59, 59),
+)
+
+
+# Property 1: Return type consistency.
+@given(st.data())
+@settings(max_examples=200)
+def test_dateutil_parser_parse_return_type():
+    data = st.data().example  # placeholder; real draws below
+    inner = test_property_1
+    inner()
+# End program
+
+
+# We restructure to follow the strict single-function format per property.
+# Property 1: Return type consistency.
+@given(dt=naive_datetimes, fuzzy_tokens=st.booleans())
+@settings(max_examples=200)
+def test_dateutil_parser_parse_return_type_consistency(dt, fuzzy_tokens):
+    timestr = dt.isoformat()
+    if fuzzy_tokens:
+        result = parse(timestr, fuzzy_with_tokens=True)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], datetime.datetime)
+        assert isinstance(result[1], tuple)
+        assert all(isinstance(tok, str) for tok in result[1])
+    else:
+        result = parse(timestr)
+        assert isinstance(result, datetime.datetime)
+
+
+# Property 2: Round-trip / idempotence on ISO formatting.
+@given(dt=naive_datetimes)
+@settings(max_examples=200)
+def test_dateutil_parser_parse_roundtrip(dt):
+    # Drop microseconds since plain isoformat round-trips them but we keep it simple.
+    dt = dt.replace(microsecond=0)
+    timestr = dt.isoformat()
+    parsed = parse(timestr)
+    assert parsed == dt
+
+
+# Property 3: Timezone naivety under ignoretz.
+@given(
+    dt=naive_datetimes,
+    tzname=st.sampled_from(["UTC", "GMT", "EST", "+0500", "-0300", "Z"]),
+)
+@settings(max_examples=200)
+def test_dateutil_parser_parse_ignoretz_naive(dt, tzname):
+    dt = dt.replace(microsecond=0)
+    timestr = dt.isoformat() + " " + tzname
+    try:
+        parsed = parse(timestr, ignoretz=True)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    assert parsed.tzinfo is None
+
+
+# Property 4: Default object substitution.
+@given(default=naive_datetimes)
+@settings(max_examples=200)
+def test_dateutil_parser_parse_default_substitution(default):
+    default = default.replace(microsecond=0)
+    # Provide only a time, so the date components should come from default.
+    timestr = "14:30:00"
+    parsed = parse(timestr, default=default)
+    # Date components taken from default
+    assert parsed.year == default.year
+    assert parsed.month == default.month
+    assert parsed.day == default.day
+    # Time components taken from the string
+    assert parsed.hour == 14
+    assert parsed.minute == 30
+    assert parsed.second == 0
+
+
+# Property 5: Fuzzy token reconstruction.
+@given(
+    dt=naive_datetimes,
+    prefix=st.text(alphabet=string.ascii_letters + " ", min_size=1, max_size=20),
+    suffix=st.text(alphabet=string.ascii_letters + " ", min_size=1, max_size=20),
+)
+@settings(max_examples=200)
+def test_dateutil_parser_parse_fuzzy_tokens(dt, prefix, suffix):
+    dt = dt.replace(microsecond=0)
+    # Build an input with fuzzy surrounding text.
+    core = dt.strftime("%B %d, %Y %H:%M:%S")
+    timestr = prefix + " " + core + " " + suffix
+    try:
+        result = parse(timestr, fuzzy_with_tokens=True)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    _, tokens = result
+    # Each ignored token must be a substring of the original input.
+    for tok in tokens:
+        assert tok in timestr
+# End program

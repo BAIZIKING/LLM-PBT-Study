@@ -1,0 +1,91 @@
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+import math
+
+# Summary: Generate valid inputs accepted by Decimal.from_float: a mix of ints and
+# floats. Ints include small values, zero, values around float precision limits,
+# and very large magnitudes. Floats include ordinary finite values plus explicit
+# edge cases such as 0.1, signed zero, infinities, NaN, min/max normal floats,
+# and subnormal floats. Properties checked: ints convert exactly; finite floats
+# convert to the exact decimal value of their binary float via as_integer_ratio;
+# signed zero is preserved; infinities and NaN become the corresponding Decimal
+# special values.
+@given(st.data())
+def test_decimal_Decimal_from_float(data):
+    float_edge_cases = st.sampled_from([
+        0.1,
+        -0.1,
+        0.0,
+        -0.0,
+        float("inf"),
+        float("-inf"),
+        float("nan"),
+        float.fromhex("0x1.0000000000000p-1022"),   # min normal positive float
+        -float.fromhex("0x1.0000000000000p-1022"),
+        float.fromhex("0x0.0000000000001p-1022"),   # min subnormal positive float
+        -float.fromhex("0x0.0000000000001p-1022"),
+        float.fromhex("0x1.fffffffffffffp1023"),    # max finite positive float
+        -float.fromhex("0x1.fffffffffffffp1023"),
+    ])
+
+    random_floats = st.floats(
+        allow_nan=True,
+        allow_infinity=True,
+        width=64,
+    )
+
+    int_edge_cases = st.sampled_from([
+        0,
+        1,
+        -1,
+        2**53 - 1,
+        2**53,
+        2**53 + 1,
+        -(2**53 - 1),
+        -(2**53),
+        -(2**53 + 1),
+        10**100,
+        -(10**100),
+    ])
+
+    random_ints = st.integers(
+        min_value=-(10**200),
+        max_value=10**200,
+    )
+
+    f = data.draw(st.one_of(
+        float_edge_cases,
+        random_floats,
+        int_edge_cases,
+        random_ints,
+    ))
+
+    result = Decimal.from_float(f)
+
+    assert isinstance(result, Decimal)
+
+    if isinstance(f, int):
+        assert result == Decimal(f)
+        assert result.as_integer_ratio() == (f, 1)
+
+    elif math.isnan(f):
+        assert result.is_nan()
+        assert not result.is_snan()
+
+    elif math.isinf(f):
+        assert result.is_infinite()
+        assert result.is_signed() == (f < 0.0)
+
+    else:
+        assert result.is_finite()
+        assert result.as_integer_ratio() == f.as_integer_ratio()
+        assert float(result) == f
+
+        if f == 0.0:
+            assert result.is_zero()
+            assert result.is_signed() == (math.copysign(1.0, f) < 0.0)
+        else:
+            assert result.is_signed() == (f < 0.0)
+# End program
+```

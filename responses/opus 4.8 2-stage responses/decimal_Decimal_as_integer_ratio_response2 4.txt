@@ -1,0 +1,75 @@
+```python
+from hypothesis import given, strategies as st
+from math import gcd
+import decimal
+from decimal import Decimal
+
+# Strategy for finite, valid Decimal values (avoiding NaN and Infinity).
+# We build Decimals from finite floats and from integers/strings to get variety,
+# while keeping magnitudes bounded to avoid overflow issues.
+finite_decimals = st.one_of(
+    st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+    st.floats(allow_nan=False, allow_infinity=False,
+              min_value=-1e12, max_value=1e12).map(lambda f: Decimal(repr(f))),
+    st.decimals(allow_nan=False, allow_infinity=False,
+                min_value=Decimal('-1e12'), max_value=Decimal('1e12')),
+)
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_returns_pair_of_ints(data):
+    # Property 1: result is a tuple of exactly two integers
+    d = data.draw(finite_decimals)
+    result = d.as_integer_ratio()
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    n, den = result
+    assert isinstance(n, int)
+    assert isinstance(den, int)
+# End program
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_positive_denominator(data):
+    # Property 2: denominator is strictly positive
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    assert den > 0
+# End program
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_lowest_terms(data):
+    # Property 3: fraction is in lowest terms (gcd of |n| and den is 1)
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    assert gcd(abs(n), den) == 1
+# End program
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_exact_value(data):
+    # Property 4: n/d exactly equals the original Decimal value
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    # Reconstruct the exact rational equality: d == n/den  <=>  d * den == n
+    # Use Decimal arithmetic with enough precision to be exact.
+    with decimal.localcontext() as ctx:
+        ctx.prec = max(len(d.as_tuple().digits) + 50, 100)
+        assert d * Decimal(den) == Decimal(n)
+# End program
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_sign_matches(data):
+    # Property 5: sign of numerator matches sign of the original Decimal value
+    d = data.draw(finite_decimals)
+    n, den = d.as_integer_ratio()
+    if d > 0:
+        assert n > 0
+    elif d < 0:
+        assert n < 0
+    else:
+        assert n == 0
+# End program
+```

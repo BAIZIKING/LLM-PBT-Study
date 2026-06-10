@@ -1,0 +1,83 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.from_float`, I will use a composite strategy that draws from:
+
+1. **`st.floats()`** — including special values like `nan`, `inf`, `-inf`, subnormals, very large/small magnitudes, and signed zeros. This covers the full spectrum of float inputs.
+2. **`st.integers()`** — since the documentation states the constructor accepts `int` as well as `float`. This ensures we test the integer-acceptance behavior.
+
+By using `st.one_of(...)`, hypothesis will explore both numeric types and all relevant edge cases.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The result is always a `Decimal` instance.
+2. **NaN handling**: `from_float(float('nan'))` returns `Decimal('NaN')` (the result is NaN).
+3. **Infinity handling**: `from_float(float('inf'))` and `from_float(float('-inf'))` return infinite Decimals with the correct sign.
+4. **Exact representation**: For finite floats, the resulting `Decimal` should be *exactly equal* to the float's true binary value — meaning converting the `Decimal` back to `float` should yield the original float (round-trip property), since `from_float` stores the exact representable value.
+5. **Integer inputs**: For `int` inputs, the resulting `Decimal` should equal the integer exactly.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+import math
+
+# Summary: Generate a wide variety of floats (including nan, inf, -inf, subnormals,
+# signed zeros, extreme magnitudes) and integers, since from_float accepts both.
+# Check return type is Decimal, correct NaN/Infinity handling, exact float
+# round-tripping for finite floats, and exact equality for integers.
+@given(st.data())
+def test_decimal_Decimal_from_float():
+    f = st.data  # placeholder to keep signature; actual draw below
+    data = f  # not used
+
+# End program
+```
+
+Let me correct the format to properly use `st.data()` for drawing values inside the test:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+import math
+
+# Summary: Generate a wide variety of floats (including nan, inf, -inf, subnormals,
+# signed zeros, extreme magnitudes) and integers, since from_float accepts both.
+# Check return type is Decimal, correct NaN/Infinity handling, exact float
+# round-tripping for finite floats, and exact equality for integers.
+@given(st.data())
+def test_decimal_Decimal_from_float(data):
+    value = data.draw(st.one_of(
+        st.floats(),  # includes nan, inf, -inf, subnormals, signed zeros
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e308, max_value=1e308),
+        st.integers(),
+    ))
+
+    result = Decimal.from_float(value)
+
+    # Property 1: result is always a Decimal
+    assert isinstance(result, Decimal)
+
+    if isinstance(value, float):
+        if math.isnan(value):
+            # Property 2: NaN floats produce NaN Decimals
+            assert result.is_nan()
+        elif math.isinf(value):
+            # Property 3: Infinity preserved with correct sign
+            assert result.is_infinite()
+            assert (result < 0) == (value < 0)
+        else:
+            # Property 4: finite floats round-trip exactly back to the float
+            assert float(result) == value
+            # signed zero: sign should be preserved
+            if value == 0.0:
+                assert math.copysign(1.0, float(result)) == math.copysign(1.0, value)
+    else:
+        # Property 5: integer inputs map to an exactly equal Decimal
+        assert result == Decimal(value)
+        assert result.is_finite()
+# End program
+```

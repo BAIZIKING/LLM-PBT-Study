@@ -1,0 +1,9 @@
+1. The output is always a bytes object.
+
+2. Decompressing the output (with a matching wbits/format) yields back the original input data (round-trip property).
+
+3. When wbits is in the +9 to +15 range, the output begins with a valid zlib header; when wbits is in the +25 to +31 range, the output begins with a valid gzip header; and when wbits is negative, the output contains no header or trailing checksum.
+
+4. Higher compression levels produce output that is less than or equal to in size compared to lower levels for the same input data (level 0 produces the largest, never-smaller output).
+
+5. Compressing the same input data with the same level and wbits arguments always produces identical output (deterministic).

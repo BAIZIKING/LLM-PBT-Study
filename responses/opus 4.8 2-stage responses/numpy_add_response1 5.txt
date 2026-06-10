@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `numpy.add`:
+
+1. **Commutativity**: The result of `np.add(x1, x2)` should be element-wise equal to `np.add(x2, x1)`, since addition is commutative.
+
+2. **Identity element**: Adding zero should leave the input unchanged, i.e., `np.add(x, 0)` should equal `x` element-wise (for any array `x`).
+
+3. **Equivalence to the `+` operator**: The output of `np.add(x1, x2)` should be element-wise equal to `x1 + x2` for array inputs, as stated in the documentation.
+
+4. **Output shape matches broadcast shape**: The shape of the result should equal the broadcasted shape of `x1` and `x2`; if both inputs are scalars, the result should be a scalar.
+
+5. **Associativity**: For three inputs, `np.add(np.add(x1, x2), x3)` should be element-wise (approximately, for floats) equal to `np.add(x1, np.add(x2, x3))`.

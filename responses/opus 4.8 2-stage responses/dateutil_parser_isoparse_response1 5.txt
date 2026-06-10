@@ -1,0 +1,11 @@
+Here are five properties on the output of `parser.isoparse(dt_str)`:
+
+1. **Return type invariant:** For any valid ISO-8601 input string, the output is always an instance of `datetime.datetime`.
+
+2. **Round-trip consistency:** For any `datetime.datetime` object, formatting it as an ISO-8601 string (e.g., via `.isoformat()`) and parsing the result with `isoparse` yields a `datetime.datetime` equal to the original.
+
+3. **Default-to-lowest-value property:** When components are unspecified in the input (e.g., only `YYYY-MM` is given), the corresponding fields of the output default to their lowest valid value (month and day default to 1, hour/minute/second/microsecond default to 0).
+
+4. **UTC timezone normalization:** When the input contains a UTC-equivalent offset (such as `Z`, `+00:00`, `+0000`, or `+00`), the `tzinfo` of the output is a `dateutil.tz.tzutc` instance; non-UTC offsets produce a `dateutil.tz.tzoffset` instance whose `utcoffset` matches the offset encoded in the string.
+
+5. **Naive vs. aware correspondence:** The output has a non-`None` `tzinfo` if and only if the input string contains a time zone offset component; otherwise the output is timezone-naive (`tzinfo is None`).

@@ -1,0 +1,118 @@
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _product(shape):
+    size = 1
+    for dim in shape:
+        size *= dim
+    return size
+
+
+def _draw_array(data, shape):
+    size = _product(shape)
+    values = data.draw(
+        st.lists(
+            st.integers(min_value=-1_000_000, max_value=1_000_000),
+            min_size=size,
+            max_size=size,
+        )
+    )
+    return numpy.array(values, dtype=numpy.int64).reshape(shape)
+
+
+def _draw_broadcastable_arrays(data):
+    rank = data.draw(st.integers(min_value=0, max_value=3))
+    base_shape = tuple(
+        data.draw(st.integers(min_value=1, max_value=4))
+        for _ in range(rank)
+    )
+
+    shape1 = []
+    shape2 = []
+    for dim in base_shape:
+        shape1.append(data.draw(st.sampled_from([1, dim])))
+        shape2.append(data.draw(st.sampled_from([1, dim])))
+
+    drop1 = data.draw(st.integers(min_value=0, max_value=rank))
+    drop2 = data.draw(st.integers(min_value=0, max_value=rank))
+
+    shape1 = tuple(shape1[drop1:])
+    shape2 = tuple(shape2[drop2:])
+
+    x1 = _draw_array(data, shape1)
+    x2 = _draw_array(data, shape2)
+    return x1, x2
+
+
+@given(st.data())
+def test_numpy_add_elementwise_sum_property(data):
+    x1, x2 = _draw_broadcastable_arrays(data)
+
+    result = numpy.add(x1, x2)
+    result_array = numpy.asarray(result)
+    broadcast_x1, broadcast_x2 = numpy.broadcast_arrays(x1, x2)
+
+    for index in numpy.ndindex(result_array.shape):
+        expected = int(broadcast_x1[index]) + int(broadcast_x2[index])
+        assert int(result_array[index]) == expected
+
+
+@given(st.data())
+def test_numpy_add_broadcast_output_shape_property(data):
+    x1, x2 = _draw_broadcastable_arrays(data)
+
+    result = numpy.add(x1, x2)
+    expected_shape = numpy.broadcast(x1, x2).shape
+
+    assert numpy.shape(result) == expected_shape
+
+
+@given(st.integers(min_value=-1_000_000, max_value=1_000_000),
+       st.integers(min_value=-1_000_000, max_value=1_000_000))
+def test_numpy_add_scalar_output_property(x1, x2):
+    result = numpy.add(x1, x2)
+
+    assert numpy.isscalar(result)
+    assert result == x1 + x2
+
+
+@given(st.data())
+def test_numpy_add_commutative_property(data):
+    x1, x2 = _draw_broadcastable_arrays(data)
+
+    result1 = numpy.add(x1, x2)
+    result2 = numpy.add(x2, x1)
+
+    assert numpy.array_equal(result1, result2)
+
+
+@given(st.data())
+def test_numpy_add_where_out_property(data):
+    x1, x2 = _draw_broadcastable_arrays(data)
+    result_shape = numpy.broadcast(x1, x2).shape
+
+    out = _draw_array(data, result_shape)
+    original_out = out.copy()
+
+    mask_values = data.draw(
+        st.lists(
+            st.booleans(),
+            min_size=_product(result_shape),
+            max_size=_product(result_shape),
+        )
+    )
+    where = numpy.array(mask_values, dtype=bool).reshape(result_shape)
+
+    result = numpy.add(x1, x2, out=out, where=where)
+
+    broadcast_x1, broadcast_x2 = numpy.broadcast_arrays(x1, x2)
+    for index in numpy.ndindex(result_shape):
+        if where[index]:
+            expected = int(broadcast_x1[index]) + int(broadcast_x2[index])
+            assert int(result[index]) == expected
+        else:
+            assert int(result[index]) == int(original_out[index])
+
+
+# End program

@@ -1,0 +1,52 @@
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate empty strings, targeted HTML-sensitive edge cases, entity-like text, repeated special-character fragments, and arbitrary Unicode text; check documented escaping of &, <, >, default quote=True behavior, quote=False leaving quotes unchanged, and round-tripping through html.unescape.
+@given(st.data())
+def test_html_escape(data):
+    edge_cases = st.sampled_from([
+        "",
+        "&",
+        "<",
+        ">",
+        '"',
+        "'",
+        "&<>\"'",
+        "&&&&",
+        "<<>>",
+        'already &amp; escaped',
+        "&#x27;",
+        "<a href=\"x&y\">'text'</a>",
+        "\n\t\r",
+    ])
+
+    fragment = st.one_of(
+        st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=0, max_size=20),
+        st.sampled_from(["&", "<", ">", '"', "'", "&amp;", "&lt;", "&gt;", "&quot;", "&#x27;", "<tag>", "</tag>"]),
+    )
+
+    s = data.draw(
+        st.one_of(
+            edge_cases,
+            st.lists(fragment, min_size=0, max_size=30).map("".join),
+        ),
+        label="s",
+    )
+
+    expected_without_quotes = (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+    )
+
+    expected_with_quotes = (
+        expected_without_quotes
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
+
+    assert html.escape(s, quote=False) == expected_without_quotes
+    assert html.escape(s, quote=True) == expected_with_quotes
+    assert html.escape(s) == expected_with_quotes
+    assert html.unescape(html.escape(s, quote=True)) == s
+# End program

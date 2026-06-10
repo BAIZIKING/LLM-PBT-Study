@@ -1,0 +1,9 @@
+1. For any successful call, the returned value is a `bytes` object.
+
+2. For any byte string compressed using a compatible zlib format and window size, `zlib.decompress()` returns exactly the original uncompressed bytes.
+
+3. For the same valid compressed input and `wbits` value, changing `bufsize` does not change the decompressed output.
+
+4. For valid gzip data, using a gzip-compatible `wbits` value returns exactly the original uncompressed bytes.
+
+5. For valid zlib or gzip data, using an auto-detecting `wbits` value returns the same decompressed bytes as using the corresponding explicit zlib or gzip `wbits` value.

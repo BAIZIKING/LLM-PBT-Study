@@ -1,0 +1,205 @@
+from hypothesis import given, strategies as st
+import math
+import numpy as np
+
+# Summary: Generate one of the API-documented dot-product situations: scalar
+# multiplication, 1-D inner products, 2-D matrix products, N-D-by-1-D sum
+# products, N-D-by-M-D sum products, and invalid shape pairs. Shapes include
+# zero-length dimensions, small dimensions, scalars, Python-list inputs, ndarray
+# inputs, contiguous arrays, and some non-contiguous views. Values use int64,
+# float64, and complex128 with small finite components so expected results are
+# stable. For valid cases, check numpy.dot against the documented mathematical
+# rule, including complex multiplication without conjugation, and sometimes check
+# the valid `out` parameter is filled and returned. For invalid aligned axes,
+# check that ValueError is raised.
+@given(st.data())
+def test_numpy_dot(data):
+    def draw_shape(max_rank=4, max_dim=4):
+        rank = data.draw(st.integers(min_value=0, max_value=max_rank))
+        return tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=max_dim),
+                    min_size=rank,
+                    max_size=rank,
+                )
+            )
+        )
+
+    def draw_array(shape, dtype):
+        size = math.prod(shape)
+        dtype = np.dtype(dtype)
+
+        if dtype.kind == "c":
+            elem = st.builds(
+                complex,
+                st.integers(min_value=-3, max_value=3),
+                st.integers(min_value=-3, max_value=3),
+            )
+        elif dtype.kind == "f":
+            elem = st.integers(min_value=-5, max_value=5).map(float)
+        else:
+            elem = st.integers(min_value=-5, max_value=5)
+
+        flat = data.draw(st.lists(elem, min_size=size, max_size=size))
+        arr = np.array(flat, dtype=dtype).reshape(shape)
+
+        # Sometimes pass a non-contiguous view.
+        if arr.ndim > 0 and arr.shape[0] > 1 and data.draw(st.booleans()):
+            arr = arr[::-1]
+
+        # Sometimes pass an array_like Python list/scalar. Avoid lists for
+        # zero-sized multidimensional arrays because tolist() cannot preserve
+        # trailing zero-length dimensions.
+        if all(dim > 0 for dim in shape) and data.draw(st.booleans()):
+            inp = arr.tolist()
+            canonical = np.asarray(inp)
+        else:
+            inp = arr
+            canonical = np.asarray(arr)
+
+        return inp, canonical
+
+    def assert_same(actual, expected):
+        assert np.shape(actual) == np.shape(expected)
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+    dtype = data.draw(st.sampled_from([np.int64, np.float64, np.complex128]))
+    case = data.draw(
+        st.sampled_from(
+            [
+                "scalar",
+                "either_scalar",
+                "vector_vector",
+                "matrix_matrix",
+                "nd_vector",
+                "nd_md",
+                "invalid_shape",
+            ]
+        )
+    )
+
+    if case == "invalid_shape":
+        a_rank = data.draw(st.integers(min_value=1, max_value=4))
+        b_rank = data.draw(st.integers(min_value=2, max_value=4))
+
+        a_prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=3),
+                    min_size=a_rank - 1,
+                    max_size=a_rank - 1,
+                )
+            )
+        )
+        b_prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=3),
+                    min_size=b_rank - 2,
+                    max_size=b_rank - 2,
+                )
+            )
+        )
+
+        a_contract = data.draw(st.integers(min_value=0, max_value=4))
+        b_contract = data.draw(
+            st.integers(min_value=0, max_value=4).filter(lambda x: x != a_contract)
+        )
+        b_last = data.draw(st.integers(min_value=0, max_value=3))
+
+        a_in, _ = draw_array(a_prefix + (a_contract,), dtype)
+        b_in, _ = draw_array(b_prefix + (b_contract, b_last), dtype)
+
+        try:
+            np.dot(a_in, b_in)
+        except ValueError:
+            return
+        raise AssertionError("np.dot did not raise ValueError for misaligned axes")
+
+    if case == "scalar":
+        a_in, a = draw_array((), dtype)
+        b_in, b = draw_array((), dtype)
+        expected = np.multiply(a, b)
+
+    elif case == "either_scalar":
+        other_shape = draw_shape(max_rank=4, max_dim=4)
+        if data.draw(st.booleans()):
+            a_in, a = draw_array((), dtype)
+            b_in, b = draw_array(other_shape, dtype)
+        else:
+            a_in, a = draw_array(other_shape, dtype)
+            b_in, b = draw_array((), dtype)
+        expected = np.multiply(a, b)
+
+    elif case == "vector_vector":
+        n = data.draw(st.integers(min_value=0, max_value=5))
+        a_in, a = draw_array((n,), dtype)
+        b_in, b = draw_array((n,), dtype)
+        # Inner product of vectors, explicitly without complex conjugation.
+        expected = np.sum(a * b, axis=0)
+
+    elif case == "matrix_matrix":
+        m = data.draw(st.integers(min_value=0, max_value=4))
+        n = data.draw(st.integers(min_value=0, max_value=4))
+        p = data.draw(st.integers(min_value=0, max_value=4))
+        a_in, a = draw_array((m, n), dtype)
+        b_in, b = draw_array((n, p), dtype)
+        expected = np.einsum("ik,kj->ij", a, b)
+
+    elif case == "nd_vector":
+        prefix_rank = data.draw(st.integers(min_value=1, max_value=3))
+        prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=3),
+                    min_size=prefix_rank,
+                    max_size=prefix_rank,
+                )
+            )
+        )
+        n = data.draw(st.integers(min_value=0, max_value=5))
+        a_in, a = draw_array(prefix + (n,), dtype)
+        b_in, b = draw_array((n,), dtype)
+        expected = np.sum(a * b, axis=-1)
+
+    else:  # case == "nd_md"
+        a_prefix_rank = data.draw(st.integers(min_value=0, max_value=3))
+        b_prefix_rank = data.draw(st.integers(min_value=0, max_value=3))
+        a_prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=3),
+                    min_size=a_prefix_rank,
+                    max_size=a_prefix_rank,
+                )
+            )
+        )
+        b_prefix = tuple(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=3),
+                    min_size=b_prefix_rank,
+                    max_size=b_prefix_rank,
+                )
+            )
+        )
+        n = data.draw(st.integers(min_value=0, max_value=5))
+        q = data.draw(st.integers(min_value=0, max_value=4))
+        a_in, a = draw_array(a_prefix + (n,), dtype)
+        b_in, b = draw_array(b_prefix + (n, q), dtype)
+        expected = np.tensordot(a, b, axes=([-1], [-2]))
+
+    result = np.dot(a_in, b_in)
+    assert_same(result, expected)
+
+    # Exercise the documented valid `out` behavior for non-scalar outputs:
+    # exact dtype, exact shape, and C-contiguous storage.
+    if np.asarray(result).ndim > 0 and data.draw(st.booleans()):
+        out = np.empty(np.shape(result), dtype=np.asarray(result).dtype, order="C")
+        returned = np.dot(a_in, b_in, out=out)
+        assert returned is out
+        assert out.flags.c_contiguous
+        assert_same(out, expected)
+
+# End program

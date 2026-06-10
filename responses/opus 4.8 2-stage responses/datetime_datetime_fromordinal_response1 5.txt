@@ -1,0 +1,9 @@
+1. The returned object is a `datetime` instance whose hour, minute, second, and microsecond are all 0.
+
+2. The `tzinfo` of the returned datetime is `None`.
+
+3. Calling `.toordinal()` on the returned datetime yields the original `ordinal` input (round-trip consistency).
+
+4. For inputs outside the valid range (ordinal < 1 or ordinal > datetime.max.toordinal()), a `ValueError` is raised.
+
+5. The result is monotonically increasing with respect to the ordinal: a larger valid ordinal produces a later datetime, and consecutive ordinals differ by exactly one day.

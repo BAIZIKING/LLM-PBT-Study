@@ -1,0 +1,69 @@
+from hypothesis import given, strategies as st
+import datetime
+
+# Strategy for generating valid dates within the supported range
+date_strategy = st.dates(
+    min_value=datetime.date.min,
+    max_value=datetime.date.max,
+)
+
+
+@given(d=date_strategy)
+def test_datetime_date_isocalendar_three_components(d):
+    # Property 1: The output is a named tuple with exactly three
+    # components: year, week, and weekday.
+    result = d.isocalendar()
+    assert len(result) == 3
+    assert hasattr(result, "year")
+    assert hasattr(result, "week")
+    assert hasattr(result, "weekday")
+    # Confirm named tuple fields match positional access
+    assert result.year == result[0]
+    assert result.week == result[1]
+    assert result.weekday == result[2]
+
+
+@given(d=date_strategy)
+def test_datetime_date_isocalendar_week_range(d):
+    # Property 2: The week component is always an integer between
+    # 1 and 53 inclusive.
+    result = d.isocalendar()
+    assert isinstance(result.week, int)
+    assert 1 <= result.week <= 53
+
+
+@given(d=date_strategy)
+def test_datetime_date_isocalendar_weekday_range(d):
+    # Property 3: The weekday component is always an integer between
+    # 1 and 7 inclusive.
+    result = d.isocalendar()
+    assert isinstance(result.weekday, int)
+    assert 1 <= result.weekday <= 7
+
+
+@given(d=date_strategy)
+def test_datetime_date_isocalendar_year_within_one(d):
+    # Property 4: The ISO year is always within one year of the
+    # date's Gregorian year.
+    result = d.isocalendar()
+    assert abs(result.year - d.year) <= 1
+
+
+@given(d=date_strategy)
+def test_datetime_date_isocalendar_weekday_cycle(d):
+    # Property 5: Two dates exactly 7 days apart yield the same weekday,
+    # and consecutive dates yield weekdays cycling through 1-7.
+    weekday = d.isocalendar().weekday
+
+    # Date 7 days later (if within range) has the same weekday.
+    if d <= datetime.date.max - datetime.timedelta(days=7):
+        later = d + datetime.timedelta(days=7)
+        assert later.isocalendar().weekday == weekday
+
+    # Consecutive next day increments weekday by 1, wrapping 7 -> 1.
+    if d < datetime.date.max:
+        next_day = d + datetime.timedelta(days=1)
+        next_weekday = next_day.isocalendar().weekday
+        expected = weekday % 7 + 1
+        assert next_weekday == expected
+# End program

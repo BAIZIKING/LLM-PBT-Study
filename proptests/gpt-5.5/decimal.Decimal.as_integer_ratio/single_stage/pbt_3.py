@@ -1,0 +1,59 @@
+from hypothesis import given, strategies as st
+from decimal import Decimal
+from math import gcd
+import pytest
+
+# Summary: Generate Decimals from explicit sign/digit/exponent tuples to cover positive/negative values, zeros, leading/trailing zeros, and very small/large finite exponents; also sample NaNs and infinities to check documented exceptions.
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio(data):
+    finite_decimals = st.builds(
+        lambda sign, digits, exponent: Decimal((sign, tuple(digits), exponent)),
+        st.integers(min_value=0, max_value=1),
+        st.lists(st.integers(min_value=0, max_value=9), min_size=1, max_size=60),
+        st.integers(min_value=-100, max_value=100),
+    )
+
+    special_decimals = st.sampled_from(
+        [
+            Decimal("Infinity"),
+            Decimal("-Infinity"),
+            Decimal("NaN"),
+            Decimal("-NaN"),
+            Decimal("sNaN"),
+            Decimal("-sNaN"),
+        ]
+    )
+
+    value = data.draw(st.one_of(finite_decimals, special_decimals))
+
+    if value.is_infinite():
+        with pytest.raises(OverflowError):
+            value.as_integer_ratio()
+        return
+
+    if value.is_nan():
+        with pytest.raises(ValueError):
+            value.as_integer_ratio()
+        return
+
+    n, d = value.as_integer_ratio()
+
+    assert isinstance(n, int)
+    assert isinstance(d, int)
+    assert d > 0
+    assert gcd(abs(n), d) == 1
+
+    sign, digits, exponent = value.as_tuple()
+    coefficient = int("".join(map(str, digits)))
+    if sign:
+        coefficient = -coefficient
+
+    if exponent >= 0:
+        expected_numerator = coefficient * (10**exponent)
+        expected_denominator = 1
+    else:
+        expected_numerator = coefficient
+        expected_denominator = 10 ** (-exponent)
+
+    assert n * expected_denominator == expected_numerator * d
+# End program

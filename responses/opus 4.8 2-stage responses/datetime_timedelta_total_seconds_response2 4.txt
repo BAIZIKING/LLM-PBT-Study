@@ -1,0 +1,81 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+import math
+
+# timedelta is internally bounded; valid range is roughly
+# timedelta.min to timedelta.max. We generate via days/seconds/microseconds
+# within safe bounds to avoid OverflowError on construction.
+# timedelta.max is days=999999999, so we cap days well within that and
+# scale down to keep arithmetic (addition/scaling) from overflowing.
+
+safe_days = st.integers(min_value=-100_000_000, max_value=100_000_000)
+safe_seconds = st.integers(min_value=-86_400, max_value=86_400)
+safe_micros = st.integers(min_value=-1_000_000, max_value=1_000_000)
+
+def timedelta_strategy():
+    return st.builds(
+        datetime.timedelta,
+        days=safe_days,
+        seconds=safe_seconds,
+        microseconds=safe_micros,
+    )
+
+# Smaller deltas for additivity/scaling to avoid float precision blowups
+# and overflow when combined.
+small_days = st.integers(min_value=-1_000_000, max_value=1_000_000)
+
+def small_timedelta_strategy():
+    return st.builds(
+        datetime.timedelta,
+        days=small_days,
+        seconds=safe_seconds,
+        microseconds=safe_micros,
+    )
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_property(data):
+    # Property 1: Return type is float
+    td = data.draw(timedelta_strategy())
+    result = td.total_seconds()
+    assert isinstance(result, float)
+
+    # Property 2: Equivalence to division form
+    td2 = data.draw(timedelta_strategy())
+    div_form = td2 / datetime.timedelta(seconds=1)
+    ts = td2.total_seconds()
+    assert math.isclose(ts, div_form, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Property 3: Sign consistency
+    td3 = data.draw(timedelta_strategy())
+    ts3 = td3.total_seconds()
+    zero = datetime.timedelta(0)
+    if td3 > zero:
+        assert ts3 > 0
+    elif td3 < zero:
+        assert ts3 < 0
+    else:
+        assert ts3 == 0.0
+
+    # Property 4: Component-based computation
+    td4 = data.draw(timedelta_strategy())
+    expected = td4.days * 86400 + td4.seconds + td4.microseconds / 1_000_000
+    ts4 = td4.total_seconds()
+    assert math.isclose(ts4, expected, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Property 5a: Additivity
+    a = data.draw(small_timedelta_strategy())
+    b = data.draw(small_timedelta_strategy())
+    combined = (a + b).total_seconds()
+    summed = a.total_seconds() + b.total_seconds()
+    assert math.isclose(combined, summed, rel_tol=1e-9, abs_tol=1e-3)
+
+    # Property 5b: Scaling by an integer factor
+    c = data.draw(small_timedelta_strategy())
+    n = data.draw(st.integers(min_value=-100, max_value=100))
+    scaled = (c * n).total_seconds()
+    expected_scaled = c.total_seconds() * n
+    assert math.isclose(scaled, expected_scaled, rel_tol=1e-9, abs_tol=1e-3)
+# End program
+```

@@ -1,0 +1,94 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `lowest_common_ancestor`, I'll build random **directed graphs** using the following approach:
+
+1. **Generate a random set of nodes**: Use integer-labeled nodes to keep things simple and to allow easy edge construction.
+
+2. **Generate random edges**: To exercise the LCA algorithm meaningfully, I'll create edges that tend to form a **DAG** (Directed Acyclic Graph). The LCA concept is well-defined on DAGs; to ensure acyclicity, I only add edges `(u, v)` where `u < v`. This naturally produces directed acyclic graphs while still allowing rich ancestor structures (diamonds, chains, multiple paths, disconnected components).
+
+3. **Pick the two query nodes** (`node1`, `node2`) from the existing nodes using `st.sampled_from`, so they are always valid nodes in the graph. This covers edge cases like:
+   - `node1 == node2` (same node)
+   - nodes with a shared ancestor
+   - nodes with no common ancestor (disconnected/distinct roots)
+
+4. **Provide a sentinel default** value so we can detect the "no common ancestor" case unambiguously.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return value validity**: The result is either the `default` sentinel, or a node that is an ancestor (or equal) of *both* `node1` and `node2`. (An ancestor of a node `x` includes `x` itself, since a node is its own LCA candidate when reachable.)
+
+2. **"Lowest" property**: The returned LCA must be a *common ancestor*, and there must be **no other common ancestor that is a descendant of the LCA** (i.e., no common ancestor strictly "lower"/closer to the queried nodes). This validates the "lowest" semantics.
+
+3. **Reflexivity / Symmetry**: `lowest_common_ancestor(G, a, b) == lowest_common_ancestor(G, b, a)` since the LCA relation is symmetric.
+
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate random DAGs by creating integer nodes and only adding
+# edges (u, v) with u < v to guarantee acyclicity. Query nodes are sampled
+# from existing nodes so they are always valid, covering equal-node, shared-
+# ancestor, and no-common-ancestor cases. A unique sentinel marks "no ancestor".
+@given(st.data())
+def test_networkx_lowest_common_ancestor(data):
+    # Generate nodes
+    n = data.draw(st.integers(min_value=1, max_value=12))
+    nodes = list(range(n))
+
+    # Generate edges (u, v) with u < v to ensure a DAG (acyclic)
+    possible_edges = [(u, v) for u in nodes for v in nodes if u < v]
+    edges = data.draw(
+        st.lists(st.sampled_from(possible_edges), unique=True)
+        if possible_edges else st.just([])
+    )
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+
+    # Pick two query nodes (may be equal)
+    node1 = data.draw(st.sampled_from(nodes))
+    node2 = data.draw(st.sampled_from(nodes))
+
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, node1, node2, default=sentinel)
+
+    # Helper: ancestors of x including x itself
+    def anc_incl(x):
+        return nx.ancestors(G, x) | {x}
+
+    anc1 = anc_incl(node1)
+    anc2 = anc_incl(node2)
+    common = anc1 & anc2
+
+    if result is sentinel:
+        # Property 1: default returned only when there is no common ancestor
+        assert len(common) == 0
+    else:
+        # Property 2: result must be a node in the graph
+        assert result in G
+
+        # Property 3: result is a common ancestor of both nodes
+        assert result in common
+
+        # Property 4 ("lowest"): no other common ancestor is a
+        # descendant of the result (none strictly lower than the LCA)
+        descendants_of_lca = nx.descendants(G, result)
+        for c in common:
+            if c == result:
+                continue
+            # c must NOT be strictly below the chosen LCA
+            assert c not in descendants_of_lca
+
+    # Property 5: symmetry of the LCA relation
+    result_sym = nx.lowest_common_ancestor(G, node2, node1, default=sentinel)
+    if result is sentinel:
+        assert result_sym is sentinel
+    else:
+        assert result == result_sym
+# End program
+```

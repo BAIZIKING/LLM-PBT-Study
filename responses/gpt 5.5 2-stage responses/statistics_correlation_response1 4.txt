@@ -1,0 +1,9 @@
+1. For any valid, non-constant inputs of equal length, the returned correlation coefficient is always between `-1.0` and `1.0`, inclusive.
+
+2. Correlation is symmetric: `correlation(x, y, method=m)` equals `correlation(y, x, method=m)` for both `"linear"` and `"ranked"` methods.
+
+3. For `"linear"` correlation, adding a constant to either input does not change the result, and multiplying one input by a positive constant does not change the result.
+
+4. For `"linear"` correlation, if `y` is an exact affine transformation of `x`, then the result is `1.0` when the slope is positive and `-1.0` when the slope is negative.
+
+5. For `"ranked"` correlation, the result depends only on the ranks of the inputs: applying a strictly increasing transformation to either input leaves the result unchanged.

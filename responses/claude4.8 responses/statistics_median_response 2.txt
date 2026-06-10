@@ -1,0 +1,99 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.median`, I'll create lists of numeric values. The strategy should cover:
+
+1. **Numeric variety**: Use integers and floats (avoiding NaN, which breaks ordering invariants). I'll use `st.integers()` and `st.floats(allow_nan=False, allow_infinity=False)` to keep arithmetic well-defined.
+2. **Size variety**: Use `min_size=1` (since empty data raises `StatisticsError`, which we test separately) and allow large lists to test both odd and even-length cases.
+3. **Edge cases**: Single-element lists, lists with duplicates, negative numbers, and lists already at boundary sizes (1, 2, 3).
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Bounds property**: The median must lie between the minimum and maximum of the data (`min(data) <= median <= max(data)`), since it is a measure of central location.
+2. **Order invariance**: The median is invariant under reordering of the data (sorting/shuffling shouldn't change the result).
+3. **Odd-length property**: When the number of points is odd, the median is the exact middle value of the sorted data and is a member of the data.
+4. **Even-length property**: When the number of points is even, the median equals the average of the two middle sorted values.
+5. **Empty input**: Empty data raises `StatisticsError`.
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of finite ints/floats (no NaN/inf) covering
+# odd/even sizes, duplicates, negatives, and single elements; also test the empty case.
+@given(st.data())
+def test_statistics_median():
+    numbers = st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+    )
+    data = st.data().example() if False else None  # placeholder, unused
+
+    # Empty input must raise StatisticsError
+    try:
+        statistics.median([])
+        assert False, "Expected StatisticsError for empty data"
+    except statistics.StatisticsError:
+        pass
+
+    data = st.lists(numbers, min_size=1, max_size=50)
+    values = st.data  # not used; actual draw below
+
+    drawn = st.data().example() if False else None  # placeholder, unused
+
+    # Draw a concrete list using the data() strategy
+    lst = (yield_value := None)
+    lst = st.lists(numbers, min_size=1, max_size=50)
+
+    # Use the provided data() to draw the actual list
+    actual = st.data
+    sample = (lambda d: d.draw(st.lists(numbers, min_size=1, max_size=50)))
+
+    # Real draw:
+    import_data = None
+# End program
+```
+
+Let me rewrite this cleanly, as the draft above got tangled:
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of finite ints/floats (no NaN/inf) of varying
+# sizes (odd/even, single element, duplicates, negatives); verify median is bounded
+# by min/max, order-invariant, equals middle (odd) or mean-of-middle-two (even),
+# and that empty data raises StatisticsError.
+@given(st.data())
+def test_statistics_median():
+    # Empty input must raise StatisticsError
+    try:
+        statistics.median([])
+        assert False, "Expected StatisticsError for empty data"
+    except statistics.StatisticsError:
+        pass
+
+    numbers = st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+    )
+    data = st.data().draw(st.lists(numbers, min_size=1, max_size=50))
+
+    result = statistics.median(data)
+    s = sorted(data)
+    n = len(s)
+
+    # Property 1: median lies within [min, max]
+    assert s[0] <= result <= s[-1]
+
+    # Property 2: order invariance
+    assert statistics.median(list(reversed(data))) == result
+
+    # Property 3 & 4: exact value for odd vs even length
+    if n % 2 == 1:
+        assert result == s[n // 2]
+    else:
+        assert result == (s[n // 2 - 1] + s[n // 2]) / 2
+# End program
+```

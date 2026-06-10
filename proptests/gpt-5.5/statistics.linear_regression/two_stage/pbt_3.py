@@ -1,0 +1,151 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+_FLOAT = st.floats(
+    min_value=-1_000.0,
+    max_value=1_000.0,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+_SMALL_FLOAT = st.floats(
+    min_value=-100.0,
+    max_value=100.0,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+
+def _draw_nonconstant_x(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    start = data.draw(_SMALL_FLOAT)
+    step_size = data.draw(
+        st.floats(
+            min_value=0.1,
+            max_value=10.0,
+            allow_nan=False,
+            allow_infinity=False,
+            width=64,
+        )
+    )
+    sign = data.draw(st.sampled_from((-1.0, 1.0)))
+    return [start + sign * step_size * i for i in range(n)]
+
+
+def _draw_xy(data):
+    x = _draw_nonconstant_x(data)
+    y = data.draw(st.lists(_FLOAT, min_size=len(x), max_size=len(x)))
+    return x, y
+
+
+@given(st.data())
+def test_statistics_linear_regression_residuals_sum_to_zero(data):
+    x, y = _draw_xy(data)
+
+    model = statistics.linear_regression(x, y)
+    residuals = [yi - (model.slope * xi + model.intercept) for xi, yi in zip(x, y)]
+
+    residual_sum = math.fsum(residuals)
+    scale = 1.0 + math.fsum(
+        abs(yi) + abs(model.slope * xi + model.intercept)
+        for xi, yi in zip(x, y)
+    )
+
+    assert math.isclose(residual_sum, 0.0, rel_tol=0.0, abs_tol=1e-8 * scale)
+
+
+@given(st.data())
+def test_statistics_linear_regression_line_passes_through_means(data):
+    x, y = _draw_xy(data)
+
+    model = statistics.linear_regression(x, y)
+
+    mean_x = statistics.fmean(x)
+    mean_y = statistics.fmean(y)
+    fitted_mean_y = model.slope * mean_x + model.intercept
+
+    scale = 1.0 + abs(mean_y) + abs(fitted_mean_y)
+    assert math.isclose(mean_y, fitted_mean_y, rel_tol=1e-9, abs_tol=1e-8 * scale)
+
+
+@given(st.data())
+def test_statistics_linear_regression_exact_line_returns_original_parameters(data):
+    x = _draw_nonconstant_x(data)
+    expected_slope = data.draw(_SMALL_FLOAT)
+    expected_intercept = data.draw(_SMALL_FLOAT)
+    y = [expected_slope * xi + expected_intercept for xi in x]
+
+    model = statistics.linear_regression(x, y)
+
+    assert math.isclose(
+        model.slope,
+        expected_slope,
+        rel_tol=1e-9,
+        abs_tol=1e-7,
+    )
+    assert math.isclose(
+        model.intercept,
+        expected_intercept,
+        rel_tol=1e-9,
+        abs_tol=1e-6,
+    )
+
+
+@given(st.data())
+def test_statistics_linear_regression_proportional_formula_and_zero_intercept(data):
+    x, y = _draw_xy(data)
+
+    model = statistics.linear_regression(x, y, proportional=True)
+
+    expected_slope = math.fsum(xi * yi for xi, yi in zip(x, y)) / math.fsum(
+        xi * xi for xi in x
+    )
+
+    scale = 1.0 + abs(model.slope) + abs(expected_slope)
+    assert model.intercept == 0.0
+    assert math.isclose(
+        model.slope,
+        expected_slope,
+        rel_tol=1e-9,
+        abs_tol=1e-8 * scale,
+    )
+
+
+@given(st.data())
+def test_statistics_linear_regression_scaling_y_scales_parameters(data):
+    x, y = _draw_xy(data)
+    factor = data.draw(
+        st.floats(
+            min_value=-10.0,
+            max_value=10.0,
+            allow_nan=False,
+            allow_infinity=False,
+            width=64,
+        )
+    )
+
+    original = statistics.linear_regression(x, y)
+    scaled = statistics.linear_regression(x, [factor * yi for yi in y])
+
+    expected_slope = factor * original.slope
+    expected_intercept = factor * original.intercept
+
+    slope_scale = 1.0 + abs(scaled.slope) + abs(expected_slope)
+    intercept_scale = 1.0 + abs(scaled.intercept) + abs(expected_intercept)
+
+    assert math.isclose(
+        scaled.slope,
+        expected_slope,
+        rel_tol=1e-9,
+        abs_tol=1e-8 * slope_scale,
+    )
+    assert math.isclose(
+        scaled.intercept,
+        expected_intercept,
+        rel_tol=1e-9,
+        abs_tol=1e-8 * intercept_scale,
+    )
+# End program

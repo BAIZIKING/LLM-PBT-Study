@@ -1,0 +1,88 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+SAFE_INT = st.integers(min_value=-1000, max_value=1000)
+SMALL_INT = st.integers(min_value=-100, max_value=100)
+
+
+def assert_close(actual, expected):
+    assert math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-7)
+
+
+def draw_nonconstant_xs(data, n):
+    return data.draw(
+        st.lists(SAFE_INT, min_size=n, max_size=n, unique=True)
+    )
+
+
+@given(st.data())
+def test_statistics_linear_regression_exact_linear_data_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    xs = draw_nonconstant_xs(data, n)
+    slope = data.draw(SMALL_INT)
+    intercept = data.draw(SMALL_INT)
+
+    ys = [slope * x + intercept for x in xs]
+
+    model = statistics.linear_regression(xs, ys)
+
+    assert_close(model.slope, slope)
+    assert_close(model.intercept, intercept)
+
+
+@given(st.data())
+def test_statistics_linear_regression_proportional_exact_data_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    xs = draw_nonconstant_xs(data, n)
+    slope = data.draw(SMALL_INT)
+
+    ys = [slope * x for x in xs]
+
+    model = statistics.linear_regression(xs, ys, proportional=True)
+
+    assert model.intercept == 0.0
+    assert_close(model.slope, slope)
+
+
+@given(st.data())
+def test_statistics_linear_regression_line_passes_through_mean_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    xs = draw_nonconstant_xs(data, n)
+    ys = data.draw(st.lists(SAFE_INT, min_size=n, max_size=n))
+
+    model = statistics.linear_regression(xs, ys)
+
+    mean_x = statistics.fmean(xs)
+    mean_y = statistics.fmean(ys)
+
+    assert_close(mean_y, model.slope * mean_x + model.intercept)
+
+
+@given(st.data())
+def test_statistics_linear_regression_y_translation_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    xs = draw_nonconstant_xs(data, n)
+    ys = data.draw(st.lists(SAFE_INT, min_size=n, max_size=n))
+    shift = data.draw(SMALL_INT)
+
+    original = statistics.linear_regression(xs, ys)
+    translated = statistics.linear_regression(xs, [y + shift for y in ys])
+
+    assert_close(translated.slope, original.slope)
+    assert_close(translated.intercept, original.intercept + shift)
+
+
+@given(st.data())
+def test_statistics_linear_regression_x_translation_property(data):
+    n = data.draw(st.integers(min_value=2, max_value=20))
+    xs = draw_nonconstant_xs(data, n)
+    ys = data.draw(st.lists(SAFE_INT, min_size=n, max_size=n))
+    shift = data.draw(SMALL_INT)
+
+    original = statistics.linear_regression(xs, ys)
+    translated = statistics.linear_regression([x + shift for x in xs], ys)
+
+    assert_close(translated.slope, original.slope)
+    assert_close(translated.intercept, original.intercept - original.slope * shift)
+# End program

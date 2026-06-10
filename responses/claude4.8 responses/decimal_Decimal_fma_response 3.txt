@@ -1,0 +1,112 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+
+To generate a wide variety of inputs for `fma(self, other, third)`, I want to cover:
+
+1. **Normal numbers**: Use `st.decimals()` with finite values, allowing a range of magnitudes and varying numbers of significant digits/exponents.
+2. **Edge cases**: Include zeros (positive and negative), very small and very large numbers, and integers.
+3. **Special values**: Optionally include infinities (e.g., `Infinity`, `-Infinity`). I'll allow infinities but avoid NaN to keep arithmetic-equality checks meaningful (NaN != NaN would break equality assertions and `fma` with NaN produces NaN).
+4. To make the strategy robust, I'll generate `self`, `other`, and `third` independently from a strategy producing valid `Decimal` instances (finite + infinite, no NaN), so we test combinations including mixed magnitudes and signs.
+
+**Properties to Check (from the documentation):**
+
+The key property is that `fma` computes `self*other + third` with **no rounding of the intermediate product**. This means:
+
+- `self.fma(other, third)` should equal computing the product `self * other` *without rounding* and then adding `third`. 
+- To verify "no intermediate rounding", I compare `fma` against a high-precision (or exact) computation: I compute `self * other + third` using a context with very high precision (large enough that the exact product is representable), which simulates the unrounded intermediate product, then compare to `fma`'s result. The two must be equal.
+- I must guard against NaN results and undefined operations (e.g., `0 * Infinity`, `Infinity + (-Infinity)`), which raise `InvalidOperation`; in those cases both computations should raise the same exception.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext, InvalidOperation, Overflow
+
+# Summary: Generate three Decimal values (finite values with varied magnitude/sign,
+# plus signed infinities, excluding NaN to keep equality meaningful). Verify that
+# fma(other, third) == self*other + third computed at very high precision (so the
+# intermediate product is unrounded). Handle InvalidOperation/Overflow consistently.
+@given(st.data())
+def test_decimal_Decimal_fma():
+    decimal_strategy = st.one_of(
+        st.decimals(allow_nan=False, allow_infinity=True, places=None),
+        st.integers(min_value=-10**6, max_value=10**6).map(Decimal),
+        st.sampled_from([
+            Decimal(0), Decimal("-0"),
+            Decimal("Infinity"), Decimal("-Infinity"),
+            Decimal("1E+10"), Decimal("1E-10"),
+        ]),
+    )
+
+    data = st.data()
+
+    self_val = data  # placeholder; actual draws below
+    s = (yield) if False else None  # no-op to keep structure clear
+
+    a = st_draw = None  # placeholders removed below
+
+    # Proper draws using the data() object passed via st.data()
+    # (re-fetch since st.data() must be drawn from the given-provided object)
+    # NOTE: the @given(st.data()) injects a single data object as argument.
+    raise NotImplementedError  # replaced below
+# End program
+```
+
+Let me provide the correct, clean version:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext, InvalidOperation, Overflow
+
+# Summary: Generate three Decimal values (finite values with varied magnitude/sign,
+# plus signed infinities, excluding NaN to keep equality meaningful). Verify that
+# fma(other, third) == self*other + third computed at very high precision (so the
+# intermediate product is unrounded). Handle InvalidOperation/Overflow consistently.
+@given(st.data())
+def test_decimal_Decimal_fma(data):
+    decimal_strategy = st.one_of(
+        st.decimals(allow_nan=False, allow_infinity=True),
+        st.integers(min_value=-10**6, max_value=10**6).map(Decimal),
+        st.sampled_from([
+            Decimal(0), Decimal("-0"),
+            Decimal("Infinity"), Decimal("-Infinity"),
+            Decimal("1E+10"), Decimal("1E-10"),
+        ]),
+    )
+
+    self_val = data.draw(decimal_strategy, label="self")
+    other = data.draw(decimal_strategy, label="other")
+    third = data.draw(decimal_strategy, label="third")
+
+    # Compute fma; capture any exception.
+    fma_exc = None
+    try:
+        fma_result = self_val.fma(other, third)
+    except (InvalidOperation, Overflow) as e:
+        fma_exc = type(e)
+
+    # Compute reference: self*other (unrounded) + third using very high precision.
+    ref_exc = None
+    try:
+        with localcontext() as ctx:
+            ctx.prec = 100000  # large enough so the intermediate product is unrounded
+            ref_result = self_val * other + third
+    except (InvalidOperation, Overflow) as e:
+        ref_exc = type(e)
+
+    # If either raised, both should raise the same category of exception.
+    if fma_exc is not None or ref_exc is not None:
+        assert fma_exc == ref_exc, (
+            f"Exception mismatch: fma={fma_exc}, ref={ref_exc}"
+        )
+        return
+
+    # Otherwise results must be exactly equal (no intermediate rounding in fma).
+    # Use compare to handle signed zero / infinities; Decimal '==' treats 0 == -0 True.
+    assert fma_result == ref_result, (
+        f"fma({self_val!r}, {other!r}, {third!r}) = {fma_result!r}, "
+        f"expected {ref_result!r}"
+    )
+# End program
+```

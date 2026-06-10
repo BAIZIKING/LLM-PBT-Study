@@ -1,0 +1,90 @@
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+MAX_INPUT_SIZE = 65536
+
+valid_wbits = st.one_of(
+    st.integers(min_value=9, max_value=15),
+    st.integers(min_value=-15, max_value=-9),
+    st.integers(min_value=25, max_value=31),
+)
+
+compression_levels = st.integers(min_value=-1, max_value=9)
+
+
+@given(st.data())
+def test_zlib_compress_returns_bytes(hyp_data):
+    payload = hyp_data.draw(st.binary(max_size=MAX_INPUT_SIZE))
+    level = hyp_data.draw(compression_levels)
+    wbits = hyp_data.draw(valid_wbits)
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert isinstance(compressed, bytes)
+
+
+@given(st.data())
+def test_zlib_compress_round_trips_with_compatible_wbits(hyp_data):
+    payload = hyp_data.draw(st.binary(max_size=MAX_INPUT_SIZE))
+    level = hyp_data.draw(compression_levels)
+    wbits = hyp_data.draw(valid_wbits)
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+    decompressed = zlib.decompress(compressed, wbits=wbits)
+
+    assert decompressed == payload
+
+
+@given(st.data())
+def test_zlib_compress_is_deterministic(hyp_data):
+    payload = hyp_data.draw(st.binary(max_size=MAX_INPUT_SIZE))
+    level = hyp_data.draw(compression_levels)
+    wbits = hyp_data.draw(valid_wbits)
+
+    compressed_once = zlib.compress(payload, level=level, wbits=wbits)
+    compressed_twice = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert compressed_once == compressed_twice
+
+
+@given(st.data())
+def test_zlib_compress_wbits_selects_documented_wrapper(hyp_data):
+    payload = hyp_data.draw(st.binary(max_size=MAX_INPUT_SIZE))
+    level = hyp_data.draw(compression_levels)
+    window_bits = hyp_data.draw(st.integers(min_value=9, max_value=15))
+
+    raw_stream = zlib.compress(payload, level=level, wbits=-window_bits)
+    zlib_stream = zlib.compress(payload, level=level, wbits=window_bits)
+    gzip_stream = zlib.compress(payload, level=level, wbits=16 + window_bits)
+
+    assert zlib_stream[2:-4] == raw_stream
+    assert gzip_stream[10:-8] == raw_stream
+
+    cmf = zlib_stream[0]
+    flg = zlib_stream[1]
+    assert cmf & 0x0F == 8
+    assert (cmf >> 4) + 8 == window_bits
+    assert ((cmf << 8) + flg) % 31 == 0
+    assert flg & 0x20 == 0
+    assert int.from_bytes(zlib_stream[-4:], "big") == zlib.adler32(payload) & 0xFFFFFFFF
+
+    assert gzip_stream[:2] == b"\x1f\x8b"
+    assert gzip_stream[2] == 8
+    assert int.from_bytes(gzip_stream[-8:-4], "little") == zlib.crc32(payload) & 0xFFFFFFFF
+    assert int.from_bytes(gzip_stream[-4:], "little") == len(payload) & 0xFFFFFFFF
+
+
+@given(st.data())
+def test_zlib_compress_gzip_output_starts_with_magic_header(hyp_data):
+    payload = hyp_data.draw(st.binary(max_size=MAX_INPUT_SIZE))
+    level = hyp_data.draw(compression_levels)
+    wbits = hyp_data.draw(st.integers(min_value=25, max_value=31))
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert compressed.startswith(b"\x1f\x8b")
+
+
+# End program
+```

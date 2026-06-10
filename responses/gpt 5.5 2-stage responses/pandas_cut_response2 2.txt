@@ -1,0 +1,163 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+_safe_float = st.floats(
+    min_value=-1_000_000,
+    max_value=1_000_000,
+    allow_nan=False,
+    allow_infinity=False,
+    width=32,
+)
+
+_edges = st.lists(
+    st.integers(min_value=-1000, max_value=1000),
+    min_size=2,
+    max_size=10,
+    unique=True,
+).map(sorted)
+
+
+def _interval_contains(interval, value):
+    if interval.closed_left:
+        left_ok = value >= interval.left
+    else:
+        left_ok = value > interval.left
+
+    if interval.closed_right:
+        right_ok = value <= interval.right
+    else:
+        right_ok = value < interval.right
+
+    return left_ok and right_ok
+
+
+@given(st.data())
+def test_pandas_cut_preserves_length_and_series_index(data):
+    values = data.draw(st.lists(_safe_float, min_size=1, max_size=50))
+    bins = data.draw(st.integers(min_value=1, max_value=20))
+
+    index = [f"row_{i}" for i in range(len(values))]
+    series = pandas.Series(values, index=index)
+
+    result = pandas.cut(series, bins)
+
+    assert isinstance(result, pandas.Series)
+    assert len(result) == len(series)
+    assert result.index.equals(series.index)
+
+
+@given(st.data())
+def test_pandas_cut_missing_and_out_of_bounds_values_are_na(data):
+    edges = data.draw(_edges)
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    values = [
+        float("nan"),
+        float(edges[0] - 1),
+        float(edges[-1] + 1),
+    ]
+
+    result = pandas.cut(
+        values,
+        bins=edges,
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    assert all(pandas.isna(result))
+
+
+@given(st.data())
+def test_pandas_cut_non_missing_outputs_contain_original_values(data):
+    edges = data.draw(_edges)
+    values = data.draw(st.lists(_safe_float, min_size=1, max_size=50))
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    result = pandas.cut(
+        values,
+        bins=edges,
+        right=right,
+        include_lowest=include_lowest,
+        precision=12,
+    )
+
+    for value, interval in zip(values, result):
+        if pandas.isna(interval):
+            continue
+        assert _interval_contains(interval, value)
+
+
+@given(st.data())
+def test_pandas_cut_labels_false_and_explicit_labels_are_valid(data):
+    edges = data.draw(_edges)
+    values = data.draw(st.lists(_safe_float, min_size=1, max_size=50))
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    numeric_result = pandas.cut(
+        values,
+        bins=edges,
+        right=right,
+        include_lowest=include_lowest,
+        labels=False,
+    )
+
+    number_of_bins = len(edges) - 1
+    for value in numeric_result:
+        if pandas.isna(value):
+            continue
+        assert int(value) == value
+        assert 0 <= value < number_of_bins
+
+    labels = [f"label_{i}" for i in range(number_of_bins)]
+    labelled_result = pandas.cut(
+        values,
+        bins=edges,
+        right=right,
+        include_lowest=include_lowest,
+        labels=labels,
+    )
+
+    label_set = set(labels)
+    for value in labelled_result:
+        if pandas.isna(value):
+            continue
+        assert value in label_set
+
+
+@given(st.data())
+def test_pandas_cut_retbins_reflects_effective_bins(data):
+    base_edges = data.draw(_edges)
+
+    duplicated_edges = []
+    for edge in base_edges:
+        repeat_count = data.draw(st.integers(min_value=1, max_value=3))
+        duplicated_edges.extend([edge] * repeat_count)
+
+    values = data.draw(st.lists(_safe_float, min_size=0, max_size=50))
+
+    _, returned_bins = pandas.cut(
+        values,
+        bins=duplicated_edges,
+        labels=False,
+        retbins=True,
+        duplicates="drop",
+    )
+
+    assert list(returned_bins) == base_edges
+
+    interval_bins = pandas.IntervalIndex.from_breaks(base_edges, closed="right")
+    _, returned_interval_bins = pandas.cut(
+        values,
+        bins=interval_bins,
+        retbins=True,
+    )
+
+    assert returned_interval_bins.equals(interval_bins)
+
+
+# End program
+```

@@ -1,0 +1,97 @@
+```python
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+import base64
+import struct
+
+
+# Strategy to generate a MultiFernet instance with a random number of keys (1 to 5)
+def multifernet_strategy():
+    return st.integers(min_value=1, max_value=5).map(
+        lambda n: MultiFernet([Fernet(Fernet.generate_key()) for _ in range(n)])
+    )
+
+
+# Strategy to generate plaintext messages as bytes
+plaintext_strategy = st.binary(min_size=0, max_size=1024)
+
+
+# Helper to extract the timestamp from a Fernet token
+def extract_timestamp(token):
+    # token is URL-safe base64-encoded. Decode it.
+    if isinstance(token, str):
+        token = token.encode("ascii")
+    decoded = base64.urlsafe_b64decode(token)
+    # Format: version (1 byte) | timestamp (8 bytes) | IV (16 bytes) | ciphertext | HMAC (32 bytes)
+    version = decoded[0]
+    timestamp = struct.unpack(">Q", decoded[1:9])[0]
+    return version, timestamp
+
+
+# Property 1: The rotated token must be valid and decryptable, yielding the same plaintext.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_decrypts_to_original_property():
+    data = st.data()
+
+@given(mf=multifernet_strategy(), plaintext=plaintext_strategy)
+def test_rotate_decrypts_to_original(mf, plaintext):
+    token = mf.encrypt(plaintext)
+    original_plaintext = mf.decrypt(token)
+    rotated = mf.rotate(token)
+    assert mf.decrypt(rotated) == original_plaintext
+
+
+# Property 2: The rotated token preserves the original timestamp.
+@given(mf=multifernet_strategy(), plaintext=plaintext_strategy)
+def test_rotate_preserves_timestamp(mf, plaintext):
+    token = mf.encrypt(plaintext)
+    _, original_ts = extract_timestamp(token)
+    rotated = mf.rotate(token)
+    _, rotated_ts = extract_timestamp(rotated)
+    assert original_ts == rotated_ts
+
+
+# Property 3: The rotated token is always returned as bytes (input str or bytes).
+@given(mf=multifernet_strategy(), plaintext=plaintext_strategy, as_str=st.booleans())
+def test_rotate_returns_bytes(mf, plaintext, as_str):
+    token = mf.encrypt(plaintext)
+    msg = token.decode("ascii") if as_str else token
+    rotated = mf.rotate(msg)
+    assert isinstance(rotated, bytes)
+
+
+# Property 4: The rotated token is URL-safe base64-encoded.
+@given(mf=multifernet_strategy(), plaintext=plaintext_strategy)
+def test_rotate_is_urlsafe_base64(mf, plaintext):
+    token = mf.encrypt(plaintext)
+    rotated = mf.rotate(token)
+    # Should decode without error using urlsafe base64.
+    decoded = base64.urlsafe_b64decode(rotated)
+    # Re-encoding should reproduce the token (allowing for padding).
+    assert base64.urlsafe_b64encode(decoded) == rotated
+
+
+# Property 5: The rotated token is decryptable by a Fernet of solely the primary key.
+@given(st.integers(min_value=2, max_value=5), plaintext_strategy)
+def test_rotate_uses_primary_key(num_keys, plaintext):
+    keys = [Fernet(Fernet.generate_key()) for _ in range(num_keys)]
+    mf = MultiFernet(keys)
+    primary_key = keys[0]
+    # Encrypt with a non-primary key to ensure rotation changes the encrypting key.
+    secondary_mf = MultiFernet(keys[1:])
+    token = secondary_mf.encrypt(plaintext)
+    rotated = mf.rotate(token)
+    # Primary key alone must be able to decrypt the rotated token.
+    assert primary_key.decrypt(rotated) == plaintext
+
+
+# Run all tests
+if __name__ == "__main__":
+    test_rotate_decrypts_to_original()
+    test_rotate_preserves_timestamp()
+    test_rotate_returns_bytes()
+    test_rotate_is_urlsafe_base64()
+    test_rotate_uses_primary_key()
+# End program
+```

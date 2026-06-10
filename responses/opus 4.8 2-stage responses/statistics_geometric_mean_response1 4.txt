@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `statistics.geometric_mean`:
+
+1. **Bounded by min and max:** For any valid input (all positive values), the output is always greater than or equal to the minimum value in the data and less than or equal to the maximum value in the data.
+
+2. **Equality with arithmetic mean comparison (AM-GM inequality):** The geometric mean is always less than or equal to the arithmetic mean of the same data, with equality holding only when all values are identical.
+
+3. **Constant input yields that constant:** If all values in the data are equal to some positive value `c`, then the output equals `c` (within floating-point tolerance).
+
+4. **Scaling property:** If every value in the data is multiplied by a positive constant `k`, the resulting geometric mean equals the original geometric mean multiplied by `k`.
+
+5. **Error on invalid input:** The function raises a `StatisticsError` whenever the input is empty, contains a zero, or contains any negative value.

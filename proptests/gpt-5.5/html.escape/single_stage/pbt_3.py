@@ -1,0 +1,57 @@
+from hypothesis import given, strategies as st
+import html
+
+# Summary: Generate edge-case strings such as empty text, only escapable characters,
+# pre-existing HTML entities, quoted attribute-like text, repeated metacharacters,
+# and arbitrary Unicode text biased toward &, <, >, ", and '. Also generate both
+# values of quote. Check that html.escape always replaces &, <, and >, and only
+# replaces " and ' when quote=True, using the documented HTML-safe sequences.
+@given(st.data())
+def test_html_escape(data):
+    edge_case_strings = st.sampled_from([
+        "",
+        "&",
+        "<",
+        ">",
+        '"',
+        "'",
+        "&<>\"'",
+        "&&&&",
+        "<<>>",
+        '""""',
+        "''''",
+        '<a href="x&y">it\'s ok</a>',
+        "&amp;&lt;&gt;&quot;&#x27;",
+        "normal text",
+        "emoji: 😀 & snowman: ☃",
+    ])
+
+    arbitrary_strings = st.text(
+        alphabet=st.one_of(
+            st.characters(),
+            st.sampled_from(["&", "<", ">", '"', "'"]),
+        ),
+        min_size=0,
+        max_size=300,
+    )
+
+    s = data.draw(st.one_of(edge_case_strings, arbitrary_strings))
+    quote = data.draw(st.booleans())
+
+    escaped = html.escape(s, quote=quote)
+
+    expected = (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+    )
+    if quote:
+        expected = expected.replace('"', "&quot;").replace("'", "&#x27;")
+
+    assert escaped == expected
+    assert "<" not in escaped
+    assert ">" not in escaped
+    if quote:
+        assert '"' not in escaped
+        assert "'" not in escaped
+# End program

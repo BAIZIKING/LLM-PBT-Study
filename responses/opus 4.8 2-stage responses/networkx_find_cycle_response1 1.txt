@@ -1,0 +1,9 @@
+1. The returned cycle is a non-empty list of edges, and consecutive edges in the list are connected (the head/destination node of each edge matches the tail/source node of the next edge, and the cycle closes back to the start), forming a valid closed path.
+
+2. Every edge in the returned cycle corresponds to an actual edge present in graph G (respecting the orientation setting: with 'original' edges must follow their directed orientation, with 'reverse' they correspond to reversed edges, and with 'ignore' or undirected graphs either direction is allowed).
+
+3. When orientation is not None, each returned edge tuple includes a final direction indicator that is either 'forward' or 'reverse'; when orientation is None, the edge tuples contain no such direction indicator.
+
+4. If source is specified and a cycle is returned, the cycle is reachable/discoverable via depth-first traversal starting from that source (the traversal respects the source as a starting point).
+
+5. If the function returns successfully (no exception), then the graph genuinely contains a cycle under the given orientation semantics; conversely, if no cycle exists under those semantics, a NetworkXNoCycle exception is raised rather than returning an empty or invalid result.

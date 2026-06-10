@@ -1,0 +1,9 @@
+1. The mean of the data is always greater than or equal to the minimum value and less than or equal to the maximum value in the data.
+
+2. The mean of a list containing a single repeated value (or just one element) equals that value.
+
+3. Adding a constant c to every element in the data increases the mean by exactly c (translation invariance).
+
+4. Multiplying every element in the data by a constant k multiplies the mean by exactly k (scaling).
+
+5. The sum of all data points equals the mean multiplied by the number of data points.

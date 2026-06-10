@@ -1,0 +1,9 @@
+1. For finite, NaN-free inputs, the returned norm is always non-negative; for true norm orders, it is zero if and only if all normed elements are zero.
+
+2. With `axis=None`, the result is a scalar; with `axis` specified, the normed axis or axes are removed from the output shape unless `keepdims=True`, in which case they remain with size 1 and the result broadcasts against `x`.
+
+3. Scaling property: for any scalar `c` and any homogeneous norm order except `ord=0`, `numpy.linalg.norm(c * x, ord=ord, axis=axis)` equals `abs(c) * numpy.linalg.norm(x, ord=ord, axis=axis)`.
+
+4. For vector norms, special orders match their definitions: `ord=np.inf` gives `max(abs(x))`, `ord=-np.inf` gives `min(abs(x))`, `ord=0` counts nonzero elements, and `ord=1` gives `sum(abs(x))` along the normed axis.
+
+5. For matrix norms, special orders match their definitions: `ord='fro'` equals `sqrt(sum(abs(x)**2))`, `ord=np.inf` equals the maximum absolute row sum, `ord=-np.inf` equals the minimum absolute row sum, `ord=1` equals the maximum absolute column sum, and `ord=-1` equals the minimum absolute column sum.

@@ -1,0 +1,9 @@
+1. For any non-cross merge on join keys, every output row corresponds to a valid pairing of a left row and a right row whose join key values are equal; null join keys match other null join keys.
+
+2. The number of output rows matches join multiplicity: for each key, matched rows contribute `left_count * right_count`; unmatched keys contribute according to `how` (`left`, `right`, or `outer`) and contribute nothing for `inner`.
+
+3. For `how='cross'`, the output has exactly `len(left) * len(right)` rows, representing every Cartesian pairing of one left row with one right row.
+
+4. The output columns contain the join key columns plus all non-key columns from both inputs; overlapping non-key column names are disambiguated using `suffixes`, unless suffix handling is explicitly invalid.
+
+5. If `indicator=True` or a string name is provided, the output contains an indicator column whose values are only `left_only`, `right_only`, or `both`, and those values correctly describe whether each output row came from the left input only, right input only, or a match in both.

@@ -1,0 +1,56 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+from decimal import Decimal
+import math
+
+
+# Property 1: Type preservation - output is always a Decimal
+@given(st.one_of(
+    st.floats(allow_nan=True, allow_infinity=True),
+    st.integers(min_value=-10**50, max_value=10**50),
+))
+def test_decimal_Decimal_from_float_type_preservation(f):
+    result = Decimal.from_float(f)
+    assert isinstance(result, Decimal)
+
+
+# Property 2: Exact value equivalence for finite floats
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_exact_value_equivalence(f):
+    result = Decimal.from_float(f)
+    num, den = f.as_integer_ratio()
+    # Use a context with enough precision to represent the exact ratio
+    with decimal.localcontext() as ctx:
+        ctx.prec = 200
+        expected = Decimal(num) / Decimal(den)
+        assert result == expected
+
+
+# Property 3: Round-trip back to float
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_round_trip(f):
+    result = Decimal.from_float(f)
+    assert float(result) == f
+
+
+# Property 4: Special value mapping
+@given(st.sampled_from([float('nan'), float('inf'), float('-inf')]))
+def test_decimal_Decimal_from_float_special_values(f):
+    result = Decimal.from_float(f)
+    if math.isnan(f):
+        assert result.is_nan()
+    elif f > 0:
+        assert result.is_infinite() and result > 0
+    else:
+        assert result.is_infinite() and result < 0
+
+
+# Property 5: Sign and zero preservation
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_sign_preservation(f):
+    result = Decimal.from_float(f)
+    # is_signed() returns True for negative numbers and negative zero
+    assert result.is_signed() == math.copysign(1.0, f) < 0
+# End program
+```

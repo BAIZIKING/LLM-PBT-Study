@@ -1,0 +1,11 @@
+Here are five properties of the output of `numpy.linalg.norm` suitable for property-based testing:
+
+1. **Non-negativity:** For any input array `x` and any valid `ord` that corresponds to a true norm (e.g., `ord` is `None`, `'fro'`, `'nuc'`, positive values, or `inf`), the output is always greater than or equal to zero. (For negative `ord` values on vectors, this need not hold, as the documentation shows negative or near-zero results.)
+
+2. **Zero vector / zero norm:** If the input array `x` consists entirely of zeros, the output norm is exactly `0.0` (for any norm order that is a true norm).
+
+3. **Absolute homogeneity (scaling):** For a scalar `c` and any true-norm `ord`, the norm of `c * x` equals `abs(c)` times the norm of `x` (within floating-point tolerance), i.e., `norm(c*x) == abs(c) * norm(x)`.
+
+4. **Triangle inequality:** For two arrays `x` and `y` of the same shape and any true-norm `ord`, the norm of their sum is less than or equal to the sum of their norms (within floating-point tolerance), i.e., `norm(x + y) <= norm(x) + norm(y)`.
+
+5. **Consistency with explicit formula for vectors:** For a 1-D input and a finite numeric `ord`, the output equals `sum(abs(x)**ord)**(1.0/ord)` (within floating-point tolerance); and for the default (`ord=None`), the output equals the square root of the sum of squares of the elements (the Euclidean 2-norm), independent of dimensionality after raveling.

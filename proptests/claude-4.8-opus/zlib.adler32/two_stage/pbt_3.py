@@ -1,0 +1,38 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Property 1: The output is always a non-negative integer in [0, 2^32 - 1].
+@given(data=st.binary(max_size=4096), value=st.integers(min_value=0, max_value=2**32 - 1))
+def test_zlib_adler32_output_is_unsigned_32bit(data, value):
+    result = zlib.adler32(data, value)
+    assert isinstance(result, int)
+    assert 0 <= result <= 2**32 - 1
+
+# Property 2: The function is deterministic for the same inputs.
+@given(data=st.binary(max_size=4096), value=st.integers(min_value=0, max_value=2**32 - 1))
+def test_zlib_adler32_deterministic(data, value):
+    result1 = zlib.adler32(data, value)
+    result2 = zlib.adler32(data, value)
+    assert result1 == result2
+
+# Property 3: Running checksum over concatenated inputs equals single-pass checksum.
+@given(data1=st.binary(max_size=4096), data2=st.binary(max_size=4096),
+       value=st.integers(min_value=0, max_value=2**32 - 1))
+def test_zlib_adler32_running_checksum(data1, data2, value):
+    running = zlib.adler32(data2, zlib.adler32(data1, value))
+    single = zlib.adler32(data1 + data2, value)
+    assert running == single
+
+# Property 4: Checksum of empty data with a given starting value equals that value (masked to 32 bits).
+@given(value=st.integers(min_value=0, max_value=2**32 - 1))
+def test_zlib_adler32_empty_data_returns_starting_value(value):
+    result = zlib.adler32(b"", value)
+    assert result == (value & 0xFFFFFFFF)
+
+# Property 5: Explicit starting value of 1 equals the default (no value argument).
+@given(data=st.binary(max_size=4096))
+def test_zlib_adler32_default_value_is_one(data):
+    result_default = zlib.adler32(data)
+    result_explicit = zlib.adler32(data, 1)
+    assert result_default == result_explicit
+# End program

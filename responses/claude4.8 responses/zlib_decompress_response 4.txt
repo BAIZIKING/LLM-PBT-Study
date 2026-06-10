@@ -1,0 +1,87 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To exercise `zlib.decompress` with a wide variety of inputs and edge cases, the most reliable approach is **round-trip testing**: generate random data, compress it with a known `wbits` value, then decompress it. This guarantees we feed valid compressed streams into `decompress` (rather than random bytes that almost always raise errors), while still covering edge cases.
+
+To achieve variety:
+
+1. **Original data**: Use `st.binary()` with a wide size range (including empty bytes `b""` and large payloads) so we cover boundary cases. Random bytes also stress the compressor (incompressible data) while repetitive bytes test compressible data.
+
+2. **wbits values**: The documentation describes distinct `wbits` regimes. We pair a compression `wbits` with a compatible decompression `wbits`:
+   - **zlib format**: compress with `+9..+15`, decompress with the same value, `0` (auto-detect window), or `+40..+47` (auto-accept zlib/gzip).
+   - **raw format**: compress with `−9..−15`, decompress with the matching negative value.
+   - **gzip format**: compress with `+25..+31`, decompress with the matching value or `+40..+47`.
+   
+   We must respect the rule that the decompression window must **not be smaller** than the compression window, so we pick a decompression `wbits` whose window log is `>=` the compression one.
+
+3. **bufsize**: Generate from small (e.g. `1`) up to larger values to test that buffer growth works regardless of initial size.
+
+## Properties to Check
+
+Based on the documentation:
+
+1. **Return type**: The result is a `bytes` object.
+2. **Round-trip correctness**: Decompressing a stream produced by compressing `original` recovers `original` exactly.
+3. **bufsize irrelevance to output**: Since `bufsize` only affects internal allocation (not correctness), the decompressed result must equal the original regardless of the chosen `bufsize`.
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random original data and compress it using a randomly chosen
+# format (raw / zlib / gzip) with a window-size log in [9,15]. Then decompress
+# using a `wbits` that is compatible with how it was compressed: the same value,
+# an auto-detect value (0 for zlib, 40+ for zlib/gzip), and whose window is never
+# smaller than the compression window. `bufsize` is varied from small to large
+# to ensure buffer-growth correctness. We then check that decompression returns
+# bytes and round-trips back to the original data.
+@given(st.data())
+def test_zlib_decompress(data):
+    original = data.draw(st.binary(min_size=0, max_size=2000))
+
+    # Choose a compression window-size logarithm in the valid [9, 15] range.
+    comp_log = data.draw(st.integers(min_value=9, max_value=15))
+
+    # Choose a format and build compatible (compress_wbits, decompress_wbits).
+    fmt = data.draw(st.sampled_from(["raw", "zlib", "gzip"]))
+
+    if fmt == "raw":
+        compress_wbits = -comp_log
+        # Raw must be decompressed as raw; window log must be >= comp_log.
+        decomp_log = data.draw(st.integers(min_value=comp_log, max_value=15))
+        decompress_wbits = -decomp_log
+    elif fmt == "zlib":
+        compress_wbits = comp_log
+        # Decompress with same/larger zlib window, auto-detect (0),
+        # or auto-accept zlib/gzip (32 + log).
+        decomp_log = data.draw(st.integers(min_value=comp_log, max_value=15))
+        decompress_wbits = data.draw(st.sampled_from([
+            decomp_log,        # explicit zlib window
+            0,                 # auto-detect window from zlib header
+            32 + decomp_log,   # auto-accept zlib/gzip
+        ]))
+    else:  # gzip
+        compress_wbits = 16 + comp_log
+        decomp_log = data.draw(st.integers(min_value=comp_log, max_value=15))
+        decompress_wbits = data.draw(st.sampled_from([
+            16 + decomp_log,   # explicit gzip window
+            32 + decomp_log,   # auto-accept zlib/gzip
+        ]))
+
+    # Produce a definitely-valid compressed stream for the chosen format.
+    compressor = zlib.compressobj(level=6, wbits=compress_wbits)
+    compressed = compressor.compress(original) + compressor.flush()
+
+    # Vary bufsize across small and larger values.
+    bufsize = data.draw(st.integers(min_value=1, max_value=4096))
+
+    result = zlib.decompress(compressed, decompress_wbits, bufsize)
+
+    # Property 1: result is a bytes object.
+    assert isinstance(result, bytes)
+
+    # Property 2 & 3: round-trip correctness, independent of bufsize.
+    assert result == original
+# End program
+```

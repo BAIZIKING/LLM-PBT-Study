@@ -1,0 +1,123 @@
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _product(shape):
+    result = 1
+    for size in shape:
+        result *= size
+    return result
+
+
+def _draw_broadcastable_arrays(data):
+    ndim = data.draw(st.integers(min_value=1, max_value=3))
+    broadcast_shape = tuple(
+        data.draw(st.integers(min_value=1, max_value=5)) for _ in range(ndim)
+    )
+
+    shape1 = tuple(
+        data.draw(st.sampled_from([1, size])) for size in broadcast_shape
+    )
+    shape2 = tuple(
+        data.draw(st.sampled_from([1, size])) for size in broadcast_shape
+    )
+
+    values = st.integers(min_value=-1_000_000, max_value=1_000_000)
+
+    x1_values = data.draw(
+        st.lists(values, min_size=_product(shape1), max_size=_product(shape1))
+    )
+    x2_values = data.draw(
+        st.lists(values, min_size=_product(shape2), max_size=_product(shape2))
+    )
+
+    x1 = numpy.array(x1_values, dtype=numpy.int64).reshape(shape1)
+    x2 = numpy.array(x2_values, dtype=numpy.int64).reshape(shape2)
+
+    return x1, x2, broadcast_shape
+
+
+@given(st.data())
+def test_numpy_add_output_has_broadcast_shape_or_scalar(data):
+    x1, x2, broadcast_shape = _draw_broadcastable_arrays(data)
+
+    result = numpy.add(x1, x2)
+
+    assert result.shape == broadcast_shape
+
+    scalar1 = data.draw(st.integers(min_value=-1_000_000, max_value=1_000_000))
+    scalar2 = data.draw(st.integers(min_value=-1_000_000, max_value=1_000_000))
+
+    scalar_result = numpy.add(scalar1, scalar2)
+
+    assert numpy.isscalar(scalar_result)
+
+
+@given(st.data())
+def test_numpy_add_values_are_elementwise_sums(data):
+    x1, x2, _ = _draw_broadcastable_arrays(data)
+
+    result = numpy.add(x1, x2)
+    expected = numpy.empty(numpy.broadcast_shapes(x1.shape, x2.shape), dtype=numpy.int64)
+
+    broadcast_x1 = numpy.broadcast_to(x1, expected.shape)
+    broadcast_x2 = numpy.broadcast_to(x2, expected.shape)
+
+    for index in numpy.ndindex(expected.shape):
+        expected[index] = broadcast_x1[index] + broadcast_x2[index]
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_add_matches_plus_operator(data):
+    x1, x2, _ = _draw_broadcastable_arrays(data)
+
+    result = numpy.add(x1, x2)
+    expected = x1 + x2
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_add_writes_to_out_and_returns_it(data):
+    x1, x2, broadcast_shape = _draw_broadcastable_arrays(data)
+
+    out = numpy.full(broadcast_shape, -999_999_999, dtype=numpy.int64)
+
+    result = numpy.add(x1, x2, out=out)
+    expected = x1 + x2
+
+    assert result is out
+    assert numpy.array_equal(out, expected)
+
+
+@given(st.data())
+def test_numpy_add_where_true_computes_and_where_false_retains_out(data):
+    x1, x2, broadcast_shape = _draw_broadcastable_arrays(data)
+
+    out_values = data.draw(
+        st.lists(
+            st.integers(min_value=-1_000_000, max_value=1_000_000),
+            min_size=_product(broadcast_shape),
+            max_size=_product(broadcast_shape),
+        )
+    )
+    out = numpy.array(out_values, dtype=numpy.int64).reshape(broadcast_shape)
+    original_out = out.copy()
+
+    mask_values = data.draw(
+        st.lists(
+            st.booleans(),
+            min_size=_product(broadcast_shape),
+            max_size=_product(broadcast_shape),
+        )
+    )
+    where = numpy.array(mask_values, dtype=bool).reshape(broadcast_shape)
+
+    result = numpy.add(x1, x2, out=out, where=where)
+    expected = numpy.where(where, x1 + x2, original_out)
+
+    assert result is out
+    assert numpy.array_equal(out, expected)
+# End program

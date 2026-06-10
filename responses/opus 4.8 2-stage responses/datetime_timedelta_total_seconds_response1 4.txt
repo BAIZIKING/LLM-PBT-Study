@@ -1,0 +1,11 @@
+Here are five properties of `timedelta.total_seconds()` suitable for property-based testing:
+
+1. **Return type is float**: The output of `total_seconds()` is always a floating-point number, regardless of the input timedelta.
+
+2. **Equivalence to division form**: The result equals `td / timedelta(seconds=1)`, meaning dividing the timedelta by a one-second timedelta yields the same value as calling `total_seconds()`.
+
+3. **Sign consistency**: The sign of the output matches the sign of the duration — a positive timedelta yields a positive value, a negative timedelta yields a negative value, and a zero timedelta yields exactly 0.0.
+
+4. **Component-based computation**: The output equals the sum of the timedelta's normalized components converted to seconds, i.e. `days * 86400 + seconds + microseconds / 1_000_000` (within floating-point precision tolerance).
+
+5. **Additivity/linearity**: For two timedeltas `a` and `b`, `(a + b).total_seconds()` is approximately equal to `a.total_seconds() + b.total_seconds()`, and scaling a timedelta by an integer factor `n` scales the total seconds by the same factor `n`.

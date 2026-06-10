@@ -1,0 +1,130 @@
+from hypothesis import given, strategies as st
+import dateutil
+import dateutil.parser
+import dateutil.tz
+import datetime as dt
+
+_MIN_DATE = dt.date(1, 1, 1)
+_MAX_DATE = dt.date(9999, 12, 31)
+
+
+def _format_date_extended(d):
+    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+
+
+def _format_date_basic(d):
+    return f"{d.year:04d}{d.month:02d}{d.day:02d}"
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_date_only_defaults_to_lowest_values(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+    fmt = data.draw(st.sampled_from(["year", "year_month_ext", "year_month_basic", "date_ext", "date_basic"]))
+
+    if fmt == "year":
+        dt_str = f"{d.year:04d}"
+        expected = dt.datetime(d.year, 1, 1)
+    elif fmt == "year_month_ext":
+        dt_str = f"{d.year:04d}-{d.month:02d}"
+        expected = dt.datetime(d.year, d.month, 1)
+    elif fmt == "year_month_basic":
+        dt_str = f"{d.year:04d}{d.month:02d}"
+        expected = dt.datetime(d.year, d.month, 1)
+    elif fmt == "date_ext":
+        dt_str = _format_date_extended(d)
+        expected = dt.datetime(d.year, d.month, d.day)
+    else:
+        dt_str = _format_date_basic(d)
+        expected = dt.datetime(d.year, d.month, d.day)
+
+    parsed = dateutil.parser.isoparse(dt_str)
+
+    assert parsed == expected
+    assert parsed.hour == 0
+    assert parsed.minute == 0
+    assert parsed.second == 0
+    assert parsed.microsecond == 0
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_basic_and_extended_representations_are_equivalent(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+
+    extended = f"{_format_date_extended(d)}T{hour:02d}:{minute:02d}:{second:02d}"
+    basic = f"{_format_date_basic(d)}T{hour:02d}{minute:02d}{second:02d}"
+
+    assert dateutil.parser.isoparse(extended) == dateutil.parser.isoparse(basic)
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_fractional_seconds_set_microseconds(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+    frac_len = data.draw(st.integers(min_value=1, max_value=6))
+    frac_num = data.draw(st.integers(min_value=0, max_value=(10 ** frac_len) - 1))
+    frac = f"{frac_num:0{frac_len}d}"
+
+    dot_string = f"{_format_date_extended(d)}T{hour:02d}:{minute:02d}:{second:02d}.{frac}"
+    comma_string = f"{_format_date_extended(d)}T{hour:02d}:{minute:02d}:{second:02d},{frac}"
+    expected_microsecond = int(frac.ljust(6, "0"))
+
+    parsed_dot = dateutil.parser.isoparse(dot_string)
+    parsed_comma = dateutil.parser.isoparse(comma_string)
+
+    assert parsed_dot.microsecond == expected_microsecond
+    assert parsed_comma.microsecond == expected_microsecond
+    assert parsed_dot == parsed_comma
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_timezone_offsets_are_reflected_in_output(data):
+    base = "2020-01-02T03:04:05"
+    kind = data.draw(st.sampled_from(["utc", "nonzero"]))
+
+    if kind == "utc":
+        tz_str = data.draw(st.sampled_from(["Z", "+00", "-00", "+0000", "-0000", "+00:00", "-00:00"]))
+        parsed = dateutil.parser.isoparse(base + tz_str)
+
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == dt.timedelta(0)
+        assert isinstance(parsed.tzinfo, dateutil.tz.tzutc)
+    else:
+        sign = data.draw(st.sampled_from(["+", "-"]))
+        fmt = data.draw(st.sampled_from(["HH", "HHMM", "HH:MM"]))
+
+        if fmt == "HH":
+            hour = data.draw(st.integers(min_value=1, max_value=23))
+            minute = 0
+            tz_str = f"{sign}{hour:02d}"
+        else:
+            total_minutes = data.draw(st.integers(min_value=1, max_value=(23 * 60) + 59))
+            hour, minute = divmod(total_minutes, 60)
+            if fmt == "HHMM":
+                tz_str = f"{sign}{hour:02d}{minute:02d}"
+            else:
+                tz_str = f"{sign}{hour:02d}:{minute:02d}"
+
+        expected_offset = dt.timedelta(minutes=(1 if sign == "+" else -1) * ((hour * 60) + minute))
+        parsed = dateutil.parser.isoparse(base + tz_str)
+
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == expected_offset
+        assert isinstance(parsed.tzinfo, dateutil.tz.tzoffset)
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_24_hour_midnight_rolls_to_next_day(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=dt.date(9999, 12, 30)))
+    time_str = data.draw(st.sampled_from(["24", "24:00", "2400", "24:00:00", "240000", "24:00:00.000000"]))
+
+    parsed = dateutil.parser.isoparse(f"{_format_date_extended(d)}T{time_str}")
+    expected = dt.datetime.combine(d + dt.timedelta(days=1), dt.time.min)
+
+    assert parsed == expected
+
+# End program

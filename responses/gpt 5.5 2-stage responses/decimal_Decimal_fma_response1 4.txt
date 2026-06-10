@@ -1,0 +1,9 @@
+1. For finite operands, the result is the correctly rounded value of the exact mathematical expression `self * other + third` under the given/current context.
+
+2. The intermediate product is not rounded separately; the output should match a single rounding of the exact fused expression, not necessarily `(self * other) + third` computed as two rounded operations.
+
+3. Swapping the two multiplicands does not change the result: `self.fma(other, third)` should equal `other.fma(self, third)` under the same context.
+
+4. If `third` is zero, the result should be the context-rounded exact product `self * other`.
+
+5. If one multiplicand is zero, the result should equal `third` rounded according to the active context, subject to Decimal’s normal signed-zero and special-value rules.

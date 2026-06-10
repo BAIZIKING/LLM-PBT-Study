@@ -1,0 +1,9 @@
+1. The output contains no literal `<` or `>` characters; all such input characters are replaced with `&lt;` and `&gt;`.
+
+2. Every literal `&` in the input is replaced with `&amp;`, including ampersands that are already part of an HTML entity.
+
+3. If `quote=True`, the output contains no literal double quote `"` or single quote `'`; they are replaced with `&quot;` and `&#x27;`.
+
+4. If `quote=False`, literal double quote `"` and single quote `'` characters are preserved unchanged in the output.
+
+5. Characters other than the escaped set are preserved in their original order, so the output is exactly the input with only the documented character replacements applied.

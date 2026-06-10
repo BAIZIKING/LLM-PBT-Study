@@ -1,0 +1,9 @@
+1. The output is always a float bounded within the range [-1, +1] for any valid input.
+
+2. The correlation is symmetric: correlation(x, y) equals correlation(y, x) for both methods.
+
+3. The correlation of a sequence with itself (x correlated with x) is exactly 1.0 for both methods, and the correlation of a sequence with its negation (x and -x) is exactly -1.0.
+
+4. The correlation is invariant under positive linear transformations of either input (e.g., scaling by a positive constant or adding a constant), and flips sign under negative scaling.
+
+5. For the "ranked" method, the output equals the "linear" correlation computed on the rank-transformed (with ties averaged) versions of the two inputs, and a strictly monotonic increasing relationship between x and y yields exactly 1.0.

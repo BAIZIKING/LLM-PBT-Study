@@ -1,0 +1,9 @@
+1. The function returns a result with two components, `slope` and `intercept`, both of which are finite floating-point numbers for valid (non-degenerate) inputs.
+
+2. When `proportional=True`, the returned `intercept` is always exactly `0.0`, regardless of the input data.
+
+3. The fitted line passes through the mean point of the data: for the non-proportional case, `mean(y)` should approximately equal `slope * mean(x) + intercept`.
+
+4. If the input data points lie exactly on a line `y = a*x + b` (with `b=0` when `proportional=True`), then the returned `slope` and `intercept` should approximately equal `a` and `b` respectively, and predicted values `slope*x + intercept` should approximately reproduce the original `y` values.
+
+5. The function raises a `StatisticsError` when the inputs have different lengths, when they contain fewer than two elements, or when the independent variable `x` is constant (all values equal).

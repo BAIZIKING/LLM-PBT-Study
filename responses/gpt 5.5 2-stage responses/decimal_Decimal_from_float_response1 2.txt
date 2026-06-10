@@ -1,0 +1,9 @@
+1. For any accepted input (`float` or `int`), the output is a `Decimal` instance.
+
+2. For any `int` input, the output represents exactly the same integer value, with no rounding or loss of precision.
+
+3. For any finite `float` input, the output represents the exact decimal value of the underlying binary floating-point number, not the shortest human-written decimal literal that may have produced it.
+
+4. For any finite `float` input, converting the resulting `Decimal` back to `float` should recover the original float value.
+
+5. Special floating-point values are preserved: positive infinity becomes `Decimal('Infinity')`, negative infinity becomes `Decimal('-Infinity')`, and NaN becomes a decimal NaN.

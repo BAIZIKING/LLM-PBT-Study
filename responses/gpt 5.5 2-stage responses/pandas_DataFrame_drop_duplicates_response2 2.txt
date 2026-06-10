@@ -1,0 +1,158 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+
+_VALUE_STRATEGY = st.one_of(
+    st.integers(min_value=-1000, max_value=1000),
+    st.text(alphabet="abcXYZ012", min_size=0, max_size=5),
+)
+
+
+def _draw_dataframe(data):
+    row_count = data.draw(st.integers(min_value=0, max_value=25))
+    column_count = data.draw(st.integers(min_value=1, max_value=5))
+    columns = [f"c{i}" for i in range(column_count)]
+
+    rows = data.draw(
+        st.lists(
+            st.lists(
+                _VALUE_STRATEGY,
+                min_size=column_count,
+                max_size=column_count,
+            ),
+            min_size=row_count,
+            max_size=row_count,
+        )
+    )
+
+    return pandas.DataFrame(rows, columns=columns)
+
+
+def _draw_subset(data, columns):
+    subset_kind = data.draw(st.sampled_from(["none", "scalar", "list"]))
+
+    if subset_kind == "none":
+        return None, list(columns)
+
+    if subset_kind == "scalar":
+        column = data.draw(st.sampled_from(columns))
+        return column, [column]
+
+    subset_size = data.draw(st.integers(min_value=1, max_value=len(columns)))
+    subset = data.draw(
+        st.lists(
+            st.sampled_from(columns),
+            min_size=subset_size,
+            max_size=subset_size,
+            unique=True,
+        )
+    )
+    return subset, list(subset)
+
+
+def _row_keys(df, key_columns):
+    return list(df.loc[:, key_columns].itertuples(index=False, name=None))
+
+
+def _expected_drop_duplicates(df, key_columns, keep, ignore_index):
+    keys = _row_keys(df, key_columns)
+
+    if keep == "first":
+        seen = set()
+        kept_positions = []
+        for position, key in enumerate(keys):
+            if key not in seen:
+                seen.add(key)
+                kept_positions.append(position)
+
+    elif keep == "last":
+        last_position = {}
+        for position, key in enumerate(keys):
+            last_position[key] = position
+        kept_positions = [
+            position
+            for position, key in enumerate(keys)
+            if last_position[key] == position
+        ]
+
+    else:
+        counts = {}
+        for key in keys:
+            counts[key] = counts.get(key, 0) + 1
+        kept_positions = [
+            position
+            for position, key in enumerate(keys)
+            if counts[key] == 1
+        ]
+
+    expected = df.iloc[kept_positions].copy()
+
+    if ignore_index:
+        expected = expected.reset_index(drop=True)
+
+    return expected
+
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_property(data):
+    df = _draw_dataframe(data)
+    subset, key_columns = _draw_subset(data, list(df.columns))
+
+    alternate_index = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=len(df),
+            max_size=len(df),
+        )
+    )
+    df_with_alternate_index = df.copy()
+    df_with_alternate_index.index = alternate_index
+
+    original_rows = list(df.itertuples(index=False, name=None))
+
+    for keep in ("first", "last", False):
+        for ignore_index in (False, True):
+            result = df.drop_duplicates(
+                subset=subset,
+                keep=keep,
+                ignore_index=ignore_index,
+            )
+
+            expected = _expected_drop_duplicates(
+                df,
+                key_columns,
+                keep,
+                ignore_index,
+            )
+
+            pandas.testing.assert_frame_equal(result, expected)
+
+            assert list(result.columns) == list(df.columns)
+
+            for row in result.itertuples(index=False, name=None):
+                assert row in original_rows
+
+            result_from_alternate_index = df_with_alternate_index.drop_duplicates(
+                subset=subset,
+                keep=keep,
+                ignore_index=ignore_index,
+            )
+
+            pandas.testing.assert_frame_equal(
+                result.reset_index(drop=True),
+                result_from_alternate_index.reset_index(drop=True),
+            )
+
+            if ignore_index:
+                assert list(result.index) == list(range(len(result)))
+
+            if keep is False:
+                input_keys = _row_keys(df, key_columns)
+                key_counts = {}
+                for key in input_keys:
+                    key_counts[key] = key_counts.get(key, 0) + 1
+
+                result_keys = _row_keys(result, key_columns)
+                assert all(key_counts[key] == 1 for key in result_keys)
+# End program
+```

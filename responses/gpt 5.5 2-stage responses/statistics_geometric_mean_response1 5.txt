@@ -1,0 +1,9 @@
+1. For any non-empty iterable of positive numbers, the result is a positive `float`.
+
+2. For a single positive value `x`, the result equals `float(x)`.
+
+3. For positive inputs, the result lies between the minimum and maximum input values, inclusive.
+
+4. The result is invariant under reordering of the input data.
+
+5. Scaling all input values by the same positive constant `c` scales the result by `c`, within normal floating-point tolerance.

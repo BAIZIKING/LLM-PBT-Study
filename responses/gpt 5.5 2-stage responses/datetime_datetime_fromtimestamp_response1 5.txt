@@ -1,0 +1,9 @@
+1. For a supported POSIX timestamp, the function returns an instance of `datetime.datetime`.
+
+2. If `tz` is `None` or omitted, the returned `datetime` is naive: its `tzinfo` attribute is `None`.
+
+3. If `tz` is provided, the returned `datetime` is timezone-aware: its `tzinfo` is not `None`, and it represents the same instant as the input timestamp.
+
+4. For valid timestamps, converting the returned `datetime` back with `.timestamp()` should reproduce the original timestamp, within reasonable floating-point precision.
+
+5. When `tz` is `datetime.timezone.utc`, the returned value should equal the Unix epoch `1970-01-01 00:00:00+00:00` plus the given number of seconds.

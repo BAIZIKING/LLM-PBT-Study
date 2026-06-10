@@ -1,0 +1,9 @@
+1. Every yielded clique is a list of distinct nodes that all belong to the input graph `G`.
+
+2. Every yielded clique is complete: for every pair of distinct nodes in the clique, an edge exists between them in `G`.
+
+3. Every yielded clique is maximal: no node outside the clique can be added while preserving the complete-subgraph property.
+
+4. The output contains each qualifying maximal clique exactly once, regardless of the arbitrary order in which cliques or nodes within cliques are returned.
+
+5. If `nodes` is provided and is itself a clique, every yielded maximal clique contains all nodes in `nodes`; if `nodes` is not a clique, the function raises `ValueError`.

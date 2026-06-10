@@ -1,0 +1,9 @@
+1. The function returns a result with two components (slope and intercept) such that for every input pair (xᵢ, yᵢ), the predicted value `slope * xᵢ + intercept` minimizes the sum of squared residuals; equivalently, the residuals are orthogonal to the independent variable (their sum is zero, and the sum of residuals weighted by x is zero in the non-proportional case).
+
+2. When `proportional=True`, the returned intercept is always exactly 0.0, and the fitted line passes through the origin.
+
+3. If the data lies exactly on a line `y = a*x + b` (with non-constant x), the function returns slope ≈ a and intercept ≈ b; in the proportional case, if the data lies exactly on `y = a*x`, it returns slope ≈ a.
+
+4. The function raises a StatisticsError when the inputs have different lengths, when the length is less than two, or when the independent variable x is constant.
+
+5. The regression is equivariant under scaling and shifting of inputs: e.g., scaling all y values by a constant c multiplies both slope and intercept by c, and (in the non-proportional case) adding a constant d to all y values increases the intercept by d while leaving the slope unchanged.

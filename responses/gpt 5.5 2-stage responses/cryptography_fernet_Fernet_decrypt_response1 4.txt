@@ -1,0 +1,9 @@
+1. For any byte string `data`, decrypting a token produced by `Fernet(key).encrypt(data)` with the same key returns exactly `data`.
+
+2. For any successfully decrypted valid token, the return value is always of type `bytes`.
+
+3. Passing the token as either `bytes` or `str`, when both represent the same valid Fernet token, produces the same plaintext output.
+
+4. If `ttl` is `None`, a valid token decrypts to its original plaintext regardless of how old the token is.
+
+5. If `ttl` is provided, a valid token decrypts to its original plaintext only when the token age is within the allowed `ttl`; otherwise `InvalidToken` is raised.

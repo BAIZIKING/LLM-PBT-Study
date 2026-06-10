@@ -1,0 +1,72 @@
+# Strategy for Generating Inputs
+
+To exercise `statistics.variance` thoroughly, I want to generate:
+
+1. **Lists of floats** — the most common case. I'll constrain them with `allow_nan=False`, `allow_infinity=False`, and reasonable bounds to avoid floating point overflow/precision issues that would make verification unreliable.
+2. **Lists with at least two elements** — since the function requires this (otherwise it raises `StatisticsError`).
+3. **Edge cases** like all-identical values (variance should be 0), and small lists.
+4. **Mixed magnitudes** to test spread.
+
+I'll use `st.lists` with `min_size=2` over bounded floats. I keep the bounds moderate (e.g. ±1e6) so that algebraic identities involving squaring remain numerically stable enough to assert with tolerances.
+
+# Properties to Check
+
+Based on the documentation:
+
+1. **Non-negativity**: Variance is a measure of spread, so it must be `>= 0` (modulo tiny floating point error).
+2. **Zero variance for constant data**: If all values are identical, variance must be (essentially) 0.
+3. **Equivalence with explicit `xbar`**: Passing the precomputed mean as `xbar` should give the same result as letting the function compute it.
+4. **Bessel's correction relationship**: Sample variance = population variance × N/(N-1), i.e. `variance(data) == pvariance(data) * n / (n-1)`.
+5. **Translation invariance**: Adding a constant to every data point should not change the variance (variance is about spread around the mean).
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists of at least two bounded, finite floats (covering
+# constant lists, small lists, and varied magnitudes). Verify non-negativity,
+# zero variance for constant data, agreement when passing the precomputed mean
+# as xbar, the Bessel-correction relation to pvariance, and translation invariance.
+@given(st.data())
+def test_statistics_variance():
+    data = st.data()  # placeholder to satisfy decorator signature; real draw below
+
+# The actual test (hypothesis injects the data object):
+@given(st.data())
+def test_statistics_variance(data):
+    finite_floats = st.floats(
+        allow_nan=False, allow_infinity=False, min_value=-1e6, max_value=1e6
+    )
+    values = data.draw(st.lists(finite_floats, min_size=2, max_size=50))
+
+    var = statistics.variance(values)
+
+    # Property 1: variance is non-negative.
+    assert var >= -1e-9
+
+    # Property 2: constant data has zero variance.
+    if len(set(values)) == 1:
+        assert math.isclose(var, 0.0, abs_tol=1e-6)
+
+    # Property 3: passing the precomputed mean as xbar gives the same result.
+    m = statistics.mean(values)
+    var_with_xbar = statistics.variance(values, m)
+    assert math.isclose(var, var_with_xbar, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 4: Bessel's correction -> variance == pvariance * n / (n - 1).
+    n = len(values)
+    pvar = statistics.pvariance(values)
+    expected = pvar * n / (n - 1)
+    assert math.isclose(var, expected, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 5: translation invariance (shift all values by a constant).
+    shift = data.draw(finite_floats)
+    shifted = [x + shift for x in values]
+    var_shifted = statistics.variance(shifted)
+    scale = max(1.0, abs(var))
+    assert math.isclose(var, var_shifted, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+```

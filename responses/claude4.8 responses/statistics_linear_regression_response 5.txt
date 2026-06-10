@@ -1,0 +1,83 @@
+# Generation Strategy
+
+To exercise `statistics.linear_regression` thoroughly, I'll generate inputs that cover both the normal and `proportional` modes, plus edge cases:
+
+1. **Length variety**: Generate lists of length ≥ 2 (the minimum valid size), including small and moderately large sizes.
+2. **Value variety**: Use floats with constraints (`allow_nan=False`, `allow_infinity=False`) and bounded magnitude to avoid overflow/precision blowups in the OLS computation.
+3. **Avoid constant `x`**: The docs state `x` cannot be constant (raises `StatisticsError`). To reliably test the *success* properties, I generate `x` values and ensure they are not all identical (regenerate/assume otherwise). I'll handle the constant case by asserting the error is raised.
+4. **`proportional` flag**: Randomly toggle between `True` and `False` to test both code paths.
+5. **Equal lengths**: `x` and `y` are generated with the same length.
+
+# Properties to Check
+
+Based on the documentation:
+
+1. **Return structure**: The result has `.slope` and `.intercept` attributes (it's a named tuple), and they are finite floats.
+2. **Intercept is 0.0 when proportional**: If `proportional=True`, the intercept must be exactly `0.0`.
+3. **StatisticsError on constant x**: If all `x` values are identical, a `StatisticsError` is raised.
+4. **StatisticsError on too-short input**: Inputs of length < 2 raise `StatisticsError`.
+5. **Model reconstruction**: For each point, `slope * x + intercept` should approximately reproduce the OLS prediction (we verify the line is well-defined and finite — and that predicted values are finite).
+
+```python
+from hypothesis import given, strategies as st, assume
+import math
+import statistics
+
+# Summary: Generate equal-length lists (len >= 2) of bounded finite floats for x and y,
+# along with a random `proportional` flag. Detect constant-x and short-input cases and
+# assert StatisticsError; otherwise verify the returned slope/intercept are finite,
+# the intercept is 0.0 in proportional mode, and the fitted line produces finite predictions.
+@given(st.data())
+def test_statistics_linear_regression(data):
+    n = data.draw(st.integers(min_value=2, max_value=50), label="n")
+    finite_floats = st.floats(
+        allow_nan=False, allow_infinity=False, min_value=-1e6, max_value=1e6, width=64
+    )
+    x = data.draw(st.lists(finite_floats, min_size=n, max_size=n), label="x")
+    y = data.draw(st.lists(finite_floats, min_size=n, max_size=n), label="y")
+    proportional = data.draw(st.booleans(), label="proportional")
+
+    x_is_constant = all(xi == x[0] for xi in x)
+
+    if x_is_constant:
+        # Constant independent variable must raise StatisticsError.
+        try:
+            statistics.linear_regression(x, y, proportional=proportional)
+            assert False, "Expected StatisticsError for constant x"
+        except statistics.StatisticsError:
+            return
+
+    result = statistics.linear_regression(x, y, proportional=proportional)
+
+    # Property 1: result exposes finite slope and intercept.
+    slope = result.slope
+    intercept = result.intercept
+    assert math.isfinite(slope), f"slope not finite: {slope}"
+    assert math.isfinite(intercept), f"intercept not finite: {intercept}"
+
+    # Property 2: proportional mode forces intercept == 0.0.
+    if proportional:
+        assert intercept == 0.0, f"expected intercept 0.0 in proportional mode, got {intercept}"
+
+    # Property 3: the fitted line yields finite predictions for all x.
+    for xi in x:
+        pred = slope * xi + intercept
+        assert math.isfinite(pred), f"prediction not finite for x={xi}: {pred}"
+
+
+# Also verify the length-< 2 edge case separately.
+@given(
+    st.lists(
+        st.floats(allow_nan=False, allow_infinity=False, min_value=-1e6, max_value=1e6),
+        min_size=0,
+        max_size=1,
+    )
+)
+def test_statistics_linear_regression_short_input(short):
+    try:
+        statistics.linear_regression(short, short)
+        assert False, "Expected StatisticsError for input shorter than 2"
+    except statistics.StatisticsError:
+        pass
+# End program
+```

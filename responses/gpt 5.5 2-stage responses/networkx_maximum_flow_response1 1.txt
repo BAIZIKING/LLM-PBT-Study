@@ -1,0 +1,9 @@
+1. The returned `flow_value` equals the net flow out of the source `_s` in `flow_dict` and also equals the net flow into the sink `_t`.
+
+2. For every edge `(u, v)` in the input graph, the reported flow `flow_dict[u][v]` is non-negative and does not exceed the edge capacity; if the edge has no capacity attribute, it is treated as having infinite capacity.
+
+3. For every node other than `_s` and `_t`, flow is conserved: the total incoming flow equals the total outgoing flow.
+
+4. The returned `flow_dict` contains flow entries only for edges present in the input graph, organized by source node, and every original edge has a corresponding reported flow value.
+
+5. The returned flow is maximal: there is no feasible flow with a larger value; equivalently, the value equals the capacity of some minimum `_s`-`_t` cut in the graph.

@@ -1,0 +1,168 @@
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate small random Graph/DiGraph/MultiGraph/MultiDiGraph instances with integer
+# nodes, self-loops, duplicate/parallel edges, arbitrary valid sources, and all documented
+# orientation values. Check that returned edges exist, have the documented tuple shape, include
+# traversal direction exactly when documented, and form a closed cyclic walk. If NetworkXNoCycle
+# is raised, independently verify that no cycle is reachable from the chosen source under the
+# requested traversal orientation.
+@given(st.data())
+def test_networkx_find_cycle(data):
+    graph_cls = data.draw(
+        st.sampled_from([nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]),
+        label="graph_cls",
+    )
+
+    n = data.draw(st.integers(min_value=0, max_value=8), label="node_count")
+    nodes = list(range(n))
+
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+
+    if nodes:
+        edges = data.draw(
+            st.lists(
+                st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)),
+                min_size=0,
+                max_size=25,
+            ),
+            label="edges",
+        )
+        G.add_edges_from(edges)
+
+    orientation = data.draw(
+        st.sampled_from([None, "original", "reverse", "ignore"]),
+        label="orientation",
+    )
+
+    if not nodes:
+        source = None
+    else:
+        source_kind = data.draw(st.sampled_from(["none", "node", "list"]), label="source_kind")
+        if source_kind == "none":
+            source = None
+        elif source_kind == "node":
+            source = data.draw(st.sampled_from(nodes), label="source_node")
+        else:
+            source = data.draw(
+                st.lists(
+                    st.sampled_from(nodes),
+                    min_size=1,
+                    max_size=min(5, len(nodes)),
+                    unique=True,
+                ),
+                label="source_list",
+            )
+
+    def source_nodes():
+        if source is None:
+            return list(G.nodes)
+        if isinstance(source, list):
+            return source
+        return [source]
+
+    def reachable_nodes():
+        if source is None:
+            return set(G.nodes)
+
+        seen = set(source_nodes())
+        stack = list(seen)
+
+        while stack:
+            u = stack.pop()
+
+            if G.is_directed():
+                if orientation in (None, "original"):
+                    nbrs = G.successors(u)
+                elif orientation == "reverse":
+                    nbrs = G.predecessors(u)
+                else:
+                    nbrs = set(G.successors(u)) | set(G.predecessors(u))
+            else:
+                nbrs = G.neighbors(u)
+
+            for v in nbrs:
+                if v not in seen:
+                    seen.add(v)
+                    stack.append(v)
+
+        return seen
+
+    def has_undirected_cycle(H):
+        parent = {u: u for u in H.nodes}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return False
+            parent[rb] = ra
+            return True
+
+        edge_iter = H.edges(keys=True) if H.is_multigraph() else H.edges()
+        for edge in edge_iter:
+            u, v = edge[:2]
+            if u == v:
+                return True
+            if not union(u, v):
+                return True
+        return False
+
+    def reachable_cycle_exists():
+        H = G.subgraph(reachable_nodes())
+
+        if G.is_directed() and orientation in (None, "original", "reverse"):
+            return not nx.is_directed_acyclic_graph(H)
+
+        return has_undirected_cycle(H)
+
+    def edge_exists(edge):
+        if G.is_multigraph():
+            u, v, key = edge[:3]
+            return G.has_edge(u, v, key) or (not G.is_directed() and G.has_edge(v, u, key))
+        u, v = edge[:2]
+        return G.has_edge(u, v) or (not G.is_directed() and G.has_edge(v, u))
+
+    def traversal_endpoints(edge):
+        u, v = edge[:2]
+        if G.is_directed() and orientation is not None and edge[-1] == "reverse":
+            return v, u
+        return u, v
+
+    try:
+        cycle = list(nx.find_cycle(G, source=source, orientation=orientation))
+    except nx.NetworkXNoCycle:
+        assert not reachable_cycle_exists()
+        return
+
+    assert cycle
+    assert reachable_cycle_exists()
+
+    base_len = 3 if G.is_multigraph() else 2
+    expected_len = base_len + 1 if G.is_directed() and orientation is not None else base_len
+
+    starts = []
+    ends = []
+
+    for edge in cycle:
+        assert len(edge) == expected_len
+        assert edge_exists(edge)
+
+        if G.is_directed() and orientation is not None:
+            assert edge[-1] in {"forward", "reverse"}
+
+        start, end = traversal_endpoints(edge)
+        starts.append(start)
+        ends.append(end)
+
+    for i in range(len(cycle)):
+        assert ends[i] == starts[(i + 1) % len(cycle)]
+# End program
+```

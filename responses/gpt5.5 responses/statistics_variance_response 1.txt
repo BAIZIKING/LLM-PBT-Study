@@ -1,0 +1,102 @@
+```python
+from hypothesis import given, strategies as st
+from statistics import variance, mean, StatisticsError
+from decimal import Decimal
+from fractions import Fraction
+import math
+
+# Summary: Generate homogeneous numeric iterables containing ints, finite floats,
+# Decimals, or Fractions, including empty inputs, singletons, repeated values,
+# negatives, zeros, and normal multi-value samples. Also vary the iterable shape
+# between list, tuple, and one-shot iterator. Check that inputs with fewer than
+# two values raise StatisticsError; otherwise, variance is non-negative, is
+# independent of iterable shape, matches the result when the true mean is passed
+# as xbar, is zero for constant data, is unchanged by sign negation, and for
+# two-point samples equals (a - b) ** 2 / 2.
+@given(st.data())
+def test_statistics_variance(data):
+    def numeric_element_strategy(kind):
+        if kind == "int":
+            return st.integers(min_value=-10_000, max_value=10_000)
+        if kind == "float":
+            return st.floats(
+                min_value=-10_000.0,
+                max_value=10_000.0,
+                allow_nan=False,
+                allow_infinity=False,
+                width=32,
+            )
+        if kind == "decimal":
+            return st.decimals(
+                min_value=Decimal("-10000"),
+                max_value=Decimal("10000"),
+                places=3,
+                allow_nan=False,
+                allow_infinity=False,
+            )
+        return st.builds(
+            Fraction,
+            st.integers(min_value=-10_000, max_value=10_000),
+            st.integers(min_value=1, max_value=1_000),
+        )
+
+    def as_iterable(values, shape):
+        if shape == "list":
+            return list(values)
+        if shape == "tuple":
+            return tuple(values)
+        return iter(values)
+
+    def assert_numeric_equal(left, right):
+        if isinstance(left, float) or isinstance(right, float):
+            assert math.isclose(
+                float(left),
+                float(right),
+                rel_tol=1e-9,
+                abs_tol=1e-9,
+            )
+        else:
+            assert left == right
+
+    kind = data.draw(st.sampled_from(["int", "float", "decimal", "fraction"]))
+    element = numeric_element_strategy(kind)
+    size = data.draw(st.integers(min_value=0, max_value=20))
+
+    if data.draw(st.booleans()):
+        value = data.draw(element)
+        values = [value] * size
+    else:
+        values = data.draw(st.lists(element, min_size=size, max_size=size))
+
+    shape = data.draw(st.sampled_from(["list", "tuple", "iterator"]))
+
+    if len(values) < 2:
+        try:
+            variance(as_iterable(values, shape))
+        except StatisticsError:
+            pass
+        else:
+            assert False, "variance() must raise StatisticsError for fewer than two values"
+        return
+
+    result = variance(as_iterable(values, shape))
+
+    assert result >= 0
+
+    list_result = variance(list(values))
+    assert_numeric_equal(result, list_result)
+
+    known_mean_result = variance(as_iterable(values, shape), mean(values))
+    assert_numeric_equal(result, known_mean_result)
+
+    negated_result = variance([-x for x in values])
+    assert_numeric_equal(result, negated_result)
+
+    if all(x == values[0] for x in values):
+        assert_numeric_equal(result, 0)
+
+    if len(values) == 2:
+        expected = (values[0] - values[1]) ** 2 / 2
+        assert_numeric_equal(result, expected)
+# End program
+```

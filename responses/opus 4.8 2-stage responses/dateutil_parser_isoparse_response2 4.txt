@@ -1,0 +1,109 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+from dateutil.parser import isoparse
+from dateutil import tz
+
+
+# Property 1: The output is always a datetime.datetime for any valid ISO-8601 input string.
+@given(st.datetimes(
+    min_value=datetime.datetime(1, 1, 1),
+    max_value=datetime.datetime(9999, 12, 31, 23, 59, 59, 999999),
+))
+def test_dateutil_parser_isoparse_returns_datetime(dt):
+    iso_str = dt.isoformat()
+    result = isoparse(iso_str)
+    assert isinstance(result, datetime.datetime)
+
+
+# Property 2: Round-trip consistency for naive datetimes.
+@given(st.datetimes(
+    min_value=datetime.datetime(1, 1, 1),
+    max_value=datetime.datetime(9999, 12, 31, 23, 59, 59, 999999),
+))
+def test_dateutil_parser_isoparse_roundtrip_naive(dt):
+    iso_str = dt.isoformat()
+    result = isoparse(iso_str)
+    assert result == dt
+
+
+# Property 2b: Round-trip consistency for timezone-aware datetimes.
+@given(
+    st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31, 23, 59, 59, 999999),
+    ),
+    st.integers(min_value=-23 * 3600, max_value=23 * 3600),
+)
+def test_dateutil_parser_isoparse_roundtrip_aware(dt, offset_seconds):
+    tzinfo = tz.tzoffset(None, offset_seconds)
+    aware_dt = dt.replace(tzinfo=tzinfo)
+    iso_str = aware_dt.isoformat()
+    result = isoparse(iso_str)
+    # Compare absolute moments in time (UTC) to avoid tzutc/tzoffset object differences.
+    assert result.utcoffset() == aware_dt.utcoffset()
+    assert result.replace(tzinfo=None) == aware_dt.replace(tzinfo=None)
+
+
+# Property 3: Unspecified components default to their lowest value (date-only input).
+@given(st.dates(
+    min_value=datetime.date(1, 1, 1),
+    max_value=datetime.date(9999, 12, 31),
+))
+def test_dateutil_parser_isoparse_defaults_lowest(d):
+    iso_str = d.isoformat()  # YYYY-MM-DD, no time portion
+    result = isoparse(iso_str)
+    assert result.year == d.year
+    assert result.month == d.month
+    assert result.day == d.day
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+    assert result.tzinfo is None
+
+
+# Property 4: UTC / zero offset -> tzutc; nonzero offset -> tzoffset matching value.
+@given(
+    st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31, 23, 59, 59, 999999),
+    ),
+    st.integers(min_value=-23 * 3600, max_value=23 * 3600),
+)
+def test_dateutil_parser_isoparse_tzinfo_kind(dt, offset_seconds):
+    tzinfo = tz.tzoffset(None, offset_seconds)
+    aware_dt = dt.replace(tzinfo=tzinfo)
+    iso_str = aware_dt.isoformat()
+    result = isoparse(iso_str)
+    if offset_seconds == 0:
+        assert isinstance(result.tzinfo, tz.tzutc)
+    else:
+        assert isinstance(result.tzinfo, tz.tzoffset)
+        assert result.utcoffset() == datetime.timedelta(seconds=offset_seconds)
+
+    # Explicit "Z" suffix should map to tzutc.
+    utc_str = dt.isoformat() + "Z"
+    utc_result = isoparse(utc_str)
+    assert isinstance(utc_result.tzinfo, tz.tzutc)
+
+
+# Property 5: No tz info -> naive (tzinfo None); with tz info -> aware (tzinfo not None).
+@given(
+    st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31, 23, 59, 59, 999999),
+    ),
+    st.integers(min_value=-23 * 3600, max_value=23 * 3600),
+)
+def test_dateutil_parser_isoparse_naive_vs_aware(dt, offset_seconds):
+    naive_str = dt.isoformat()
+    naive_result = isoparse(naive_str)
+    assert naive_result.tzinfo is None
+
+    aware_dt = dt.replace(tzinfo=tz.tzoffset(None, offset_seconds))
+    aware_str = aware_dt.isoformat()
+    aware_result = isoparse(aware_str)
+    assert aware_result.tzinfo is not None
+# End program
+```

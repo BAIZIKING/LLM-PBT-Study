@@ -1,0 +1,9 @@
+1. The output is always an integer.
+
+2. The output is always an unsigned 32-bit integer (i.e., in the range 0 to 2^32 - 1, inclusive).
+
+3. When `data` is empty and no `value` is provided, the output equals the default starting value of 1.
+
+4. The checksum is deterministic: calling the function with the same `data` (and same `value`, if provided) always produces the same output.
+
+5. Computing the checksum over the concatenation of two inputs equals computing the checksum of the first input, then passing that result as `value` when computing the checksum of the second input (running checksum property).

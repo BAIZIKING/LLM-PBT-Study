@@ -1,0 +1,68 @@
+from hypothesis import given, strategies as st
+from fractions import Fraction
+import decimal
+import math
+
+# Property 1: Return type invariant
+@given(st.one_of(
+    st.floats(allow_nan=True, allow_infinity=True),
+    st.integers()
+))
+def test_decimal_Decimal_from_float_return_type(f):
+    result = decimal.Decimal.from_float(f)
+    assert isinstance(result, decimal.Decimal)
+# End program
+
+
+# Property 2: Exact value preservation for finite floats
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_exact_value(f):
+    result = decimal.Decimal.from_float(f)
+    # Use a context with enough precision to compare exactly
+    with decimal.localcontext() as ctx:
+        ctx.prec = 100
+        # The Decimal should equal the exact rational value of the float
+        assert Fraction(result) == Fraction(f)
+    # Converting back to float yields the original float
+    assert float(result) == f
+# End program
+
+
+# Property 3: Integer correspondence
+@given(st.integers())
+def test_decimal_Decimal_from_float_integer(n):
+    result = decimal.Decimal.from_float(n)
+    assert result == decimal.Decimal(n)
+    # No fractional part: equals its own integer truncation
+    assert result == result.to_integral_value()
+# End program
+
+
+# Property 4: Special value mapping
+@given(st.sampled_from([float('nan'), float('inf'), float('-inf')]))
+def test_decimal_Decimal_from_float_special_values(f):
+    result = decimal.Decimal.from_float(f)
+    if math.isnan(f):
+        assert result.is_nan()
+    elif math.isinf(f) and f > 0:
+        assert result.is_infinite() and result > 0
+    else:  # negative infinity
+        assert result.is_infinite() and result < 0
+# End program
+
+
+# Property 5: Sign and zero consistency
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_sign_consistency(f):
+    result = decimal.Decimal.from_float(f)
+    # is_signed() returns True if the sign bit is set (negative, including -0.0)
+    assert result.is_signed() == math.copysign(1.0, f) < 0
+    if f == 0.0:
+        assert result == 0
+        # signed zero preservation
+        assert result.is_signed() == (math.copysign(1.0, f) < 0)
+    elif f > 0:
+        assert result > 0
+    else:
+        assert result < 0
+# End program

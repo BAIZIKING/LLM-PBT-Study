@@ -1,0 +1,145 @@
+from hypothesis import given, strategies as st, settings
+import numpy as np
+import pandas as pd
+
+# Summary: Generate a small DataFrame with int, float (possibly NaN), and string
+# columns, then call sort_values with randomized by/ascending/na_position/
+# ignore_index/kind/inplace/key. We verify: shape preservation, that the result
+# is a row-permutation of the input (multiset equality), inplace return/mutation
+# semantics, ignore_index produces a RangeIndex 0..n-1, and that the by-columns
+# are correctly ordered (respecting ascending direction and na_position) after
+# applying any key function.
+@settings(max_examples=200)
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    n = data.draw(st.integers(min_value=0, max_value=8), label="n_rows")
+
+    int_col = data.draw(
+        st.lists(st.integers(min_value=-100, max_value=100), min_size=n, max_size=n),
+        label="int_col",
+    )
+    float_col = data.draw(
+        st.lists(
+            st.one_of(
+                st.floats(allow_nan=False, allow_infinity=False,
+                          min_value=-1e6, max_value=1e6),
+                st.just(np.nan),
+            ),
+            min_size=n, max_size=n,
+        ),
+        label="float_col",
+    )
+    str_col = data.draw(
+        st.lists(st.text(alphabet="abcABC", min_size=0, max_size=3),
+                 min_size=n, max_size=n),
+        label="str_col",
+    )
+
+    df = pd.DataFrame({"i": int_col, "f": float_col, "s": str_col})
+    original = df.copy(deep=True)
+
+    columns = ["i", "f", "s"]
+    by = data.draw(
+        st.lists(st.sampled_from(columns), min_size=1, max_size=3, unique=True),
+        label="by",
+    )
+
+    # ascending: either a single bool or a list matching len(by)
+    if data.draw(st.booleans(), label="ascending_is_list"):
+        ascending = data.draw(
+            st.lists(st.booleans(), min_size=len(by), max_size=len(by)),
+            label="ascending_list",
+        )
+    else:
+        ascending = data.draw(st.booleans(), label="ascending_scalar")
+
+    na_position = data.draw(st.sampled_from(["first", "last"]), label="na_position")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+    kind = data.draw(
+        st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]),
+        label="kind",
+    )
+    inplace = data.draw(st.booleans(), label="inplace")
+    use_key = data.draw(st.booleans(), label="use_key")
+
+    # A vectorized key: lowercases strings, negates numerics. Returns same shape.
+    def key(col):
+        if col.dtype == object:
+            return col.str.lower()
+        return -col
+
+    key_func = key if use_key else None
+
+    if inplace:
+        target = df  # operate on df in place
+        ret = target.sort_values(
+            by=by, ascending=ascending, na_position=na_position,
+            ignore_index=ignore_index, kind=kind, inplace=True, key=key_func,
+        )
+        # Property: inplace returns None
+        assert ret is None
+        result = target
+    else:
+        result = df.sort_values(
+            by=by, ascending=ascending, na_position=na_position,
+            ignore_index=ignore_index, kind=kind, inplace=False, key=key_func,
+        )
+        # Property: non-inplace must not mutate the original
+        pd.testing.assert_frame_equal(df, original)
+
+    # Property: shape preserved
+    assert result.shape == original.shape
+
+    # Property: result is a row-permutation of original (multiset equality).
+    # Compare the sorted collection of row tuples (NaN-aware via repr).
+    def rows_multiset(frame):
+        return sorted(
+            [tuple("NAN" if (isinstance(v, float) and np.isnan(v)) else v
+                   for v in row)
+             for row in frame[columns].to_numpy().tolist()]
+        )
+    assert rows_multiset(result) == rows_multiset(original)
+
+    # Property: ignore_index produces a clean 0..n-1 RangeIndex
+    if ignore_index:
+        assert list(result.index) == list(range(len(result)))
+
+    # Property: the by-columns are actually ordered.
+    if len(result) >= 2:
+        # Build the sort keys (apply key function per column if used).
+        norm_ascending = (ascending if isinstance(ascending, list)
+                          else [ascending] * len(by))
+
+        # Construct comparable key columns matching pandas' transformation.
+        key_frame = result[by].copy()
+        if key_func is not None:
+            for c in by:
+                key_frame[c] = key_func(key_frame[c])
+
+        def cmp(a, b):
+            # Returns True if a should come before-or-equal-to b under the
+            # given ordering, treating NaN per na_position.
+            for c, asc in zip(by, norm_ascending):
+                va, vb = a[c], b[c]
+                na_a = isinstance(va, float) and np.isnan(va)
+                na_b = isinstance(vb, float) and np.isnan(vb)
+                if na_a and na_b:
+                    continue
+                if na_a or na_b:
+                    # The NaN one goes to the requested end.
+                    if na_position == "last":
+                        return na_b  # ok if b is the NaN (a non-NaN comes first)
+                    else:  # first
+                        return na_a  # ok if a is the NaN
+                if va == vb:
+                    continue
+                return (va < vb) if asc else (va > vb)
+            return True  # fully equal across all keys
+
+        recs = key_frame.to_dict("records")
+        for prev, curr in zip(recs, recs[1:]):
+            assert cmp(prev, curr), (
+                f"Order violated: {prev} should precede {curr} "
+                f"(ascending={norm_ascending}, na_position={na_position})"
+            )
+# End program

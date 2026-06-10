@@ -1,0 +1,11 @@
+Here are five properties of the output of `degree(G, nbunch=None, weight=None)`:
+
+1. **Sum of degrees equals twice the number of edges (unweighted, whole graph):** When `nbunch=None` and `weight=None`, the sum of all returned degree values equals twice the number of edges in the graph (each edge contributes to the degree of two endpoints), or accounts for self-loops contributing 2 to a node's degree.
+
+2. **Degree is non-negative:** Every degree value returned (whether for a single node, an nbunch, or all nodes) is a non-negative number; for unweighted graphs it is a non-negative integer.
+
+3. **Consistency with neighbor count (unweighted):** For each node, its returned unweighted degree equals the number of incident edges, i.e., the number of its neighbors plus an extra count for any self-loop (which adds 2).
+
+4. **Coverage and correspondence with nbunch:** When `nbunch` is provided as a collection of nodes, the returned view contains exactly those nodes present in the graph, and querying the degree for each yields the same value as the whole-graph degree view restricted to that node. When `nbunch=None`, the output covers exactly all nodes in the graph.
+
+5. **Weighted degree equals sum of incident edge weights:** When `weight` specifies an edge attribute, each node's returned degree equals the sum of that attribute's values over all incident edges (with self-loops counted appropriately), and reduces to the unweighted degree when all weights are 1.

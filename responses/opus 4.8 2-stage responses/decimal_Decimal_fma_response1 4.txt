@@ -1,0 +1,9 @@
+1. The result of `self.fma(other, third)` should equal `self*other + third` when computed with exact (infinite precision) arithmetic for the intermediate product, then rounded according to the context.
+
+2. When `third` is zero (and not negative zero causing sign issues), the result should equal the exact product `self*other` rounded according to the context.
+
+3. When `other` is one, the result should equal `self + third` computed under the context.
+
+4. When `self` or `other` is zero (and the other operand is finite and nonzero), the result should equal `third` (accounting for sign of zero rules).
+
+5. If any operand is a signaling NaN, or if the intermediate product is an invalid operation (e.g., 0 × infinity), the function should raise an InvalidOperation exception (or return NaN depending on context traps); and if any operand is a quiet NaN with no invalid product, the result should be NaN.

@@ -1,0 +1,83 @@
+from hypothesis import given, strategies as st, settings
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# Strategy for "safe" floating point values to avoid overflow/NaN issues in summation.
+safe_floats = st.floats(
+    min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False, width=64
+)
+
+# Strategy for integers that won't overflow easily when accumulated.
+safe_ints = st.integers(min_value=-(10**6), max_value=10**6)
+
+
+def array_strategy(dtype_kind="float"):
+    if dtype_kind == "float":
+        elements = safe_floats
+        dtype = np.float64
+    else:
+        elements = safe_ints
+        dtype = np.int64
+    shape = hnp.array_shapes(min_dims=1, max_dims=3, min_side=1, max_side=8)
+    return hnp.arrays(dtype=dtype, shape=shape, elements=elements)
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_numpy_cumsum_property(data):
+    # Property 1: The output has the same total number of elements as the input.
+    a = data.draw(array_strategy("float"))
+    result_flat = np.cumsum(a)
+    assert result_flat.size == a.size
+
+    axis = data.draw(st.one_of(st.none(), st.integers(0, a.ndim - 1)))
+    result_axis = np.cumsum(a, axis=axis)
+    assert result_axis.size == a.size
+
+    # Property 2: The last cumulative element equals the total sum along that axis.
+    if axis is None:
+        last = np.cumsum(a).reshape(-1)[-1]
+        total = np.sum(a)
+        assert np.isclose(last, total, rtol=1e-6, atol=1e-3)
+    else:
+        last = np.take(result_axis, indices=a.shape[axis] - 1, axis=axis)
+        total = np.sum(a, axis=axis)
+        assert np.allclose(last, total, rtol=1e-6, atol=1e-3)
+
+    # Property 3: The first element along the computed axis equals the first input element.
+    if axis is None:
+        first = np.cumsum(a).reshape(-1)[0]
+        assert np.isclose(first, a.reshape(-1)[0], rtol=1e-9, atol=1e-9)
+    else:
+        first = np.take(result_axis, indices=0, axis=axis)
+        first_input = np.take(a, indices=0, axis=axis)
+        assert np.allclose(first, first_input, rtol=1e-9, atol=1e-9)
+
+    # Property 4: Discrete difference of the cumsum recovers the input.
+    if axis is None:
+        flat = a.reshape(-1)
+        cum = np.cumsum(flat)
+        recovered = np.diff(cum, prepend=0)
+        assert np.allclose(recovered, flat, rtol=1e-6, atol=1e-3)
+    else:
+        recovered = np.diff(result_axis, axis=axis,
+                            prepend=np.take(result_axis, [0], axis=axis) * 0)
+        assert np.allclose(recovered, a, rtol=1e-6, atol=1e-3)
+
+    # Property 5: dtype handling.
+    # 5a: When dtype is specified, output dtype matches it.
+    res_dtype = np.cumsum(a, dtype=np.float32)
+    assert res_dtype.dtype == np.float32
+
+    # 5b: For an integer array with low precision, output is promoted to platform int.
+    a_int = data.draw(hnp.arrays(dtype=np.int8,
+                                 shape=hnp.array_shapes(min_dims=1, max_dims=2,
+                                                        min_side=1, max_side=5),
+                                 elements=st.integers(-5, 5)))
+    res_int = np.cumsum(a_int)
+    assert res_int.dtype == np.dtype(np.intp) or res_int.dtype.itemsize >= np.dtype(np.intp).itemsize
+
+    # 5c: For a float64 input without dtype, output retains float64.
+    res_default = np.cumsum(a)
+    assert res_default.dtype == a.dtype
+# End program

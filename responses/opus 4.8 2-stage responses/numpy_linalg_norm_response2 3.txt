@@ -1,0 +1,144 @@
+```python
+from hypothesis import given, settings, strategies as st
+import hypothesis.extra.numpy as hnp
+import numpy
+
+# Strategy for generating reasonable floating-point arrays without overflow issues.
+# We bound the magnitude of elements to avoid overflow in norm computations.
+def finite_floats(min_value=-1e6, max_value=1e6):
+    return st.floats(
+        min_value=min_value,
+        max_value=max_value,
+        allow_nan=False,
+        allow_infinity=False,
+        width=64,
+    )
+
+
+# 1-D vector strategy
+def vector_strategy():
+    return hnp.arrays(
+        dtype=numpy.float64,
+        shape=hnp.array_shapes(min_dims=1, max_dims=1, min_side=1, max_side=10),
+        elements=finite_floats(),
+    )
+
+
+# 2-D matrix strategy
+def matrix_strategy():
+    return hnp.arrays(
+        dtype=numpy.float64,
+        shape=hnp.array_shapes(min_dims=2, max_dims=2, min_side=1, max_side=8),
+        elements=finite_floats(),
+    )
+
+
+# Valid norm orders that produce a non-negative norm (>= 1 or special).
+VECTOR_NORM_ORDS = [None, 1, 2, 3, numpy.inf]
+MATRIX_NORM_ORDS = [None, 'fro', 'nuc', 1, 2, numpy.inf]
+
+
+@given(st.data())
+def test_numpy_linalg_norm_property():
+    # ----------------------------------------------------------------
+    # Property 1: Non-negativity for standard norms.
+    # For ord >= 1 (or None, 'fro', 'nuc', inf), the output is >= 0.
+    # ----------------------------------------------------------------
+    x_vec = st.data  # placeholder; actual draws below
+
+    # --- Property 1 (vectors) ---
+    v = st.data
+    vec = data_draw_vector = None
+    # draw a vector and a vector ord
+    vec = st.data
+    # We use data.draw within the test body via the injected `data` fixture.
+    pass
+
+
+# The above scaffold is incomplete; below is the full self-contained suite.
+# We re-define a single comprehensive test using st.data().
+
+
+@settings(deadline=None)
+@given(st.data())
+def test_numpy_linalg_norm_property_full(data):
+    # =====================================================================
+    # Property 1: Non-negativity for standard norms.
+    # =====================================================================
+    # Vector case
+    vec = data.draw(vector_strategy())
+    v_ord = data.draw(st.sampled_from(VECTOR_NORM_ORDS))
+    n_vec = numpy.linalg.norm(vec, ord=v_ord)
+    assert numpy.isfinite(n_vec)
+    assert n_vec >= -1e-9, f"Vector norm should be non-negative, got {n_vec}"
+
+    # Matrix case
+    mat = data.draw(matrix_strategy())
+    m_ord = data.draw(st.sampled_from(MATRIX_NORM_ORDS))
+    n_mat = numpy.linalg.norm(mat, ord=m_ord)
+    assert numpy.isfinite(n_mat)
+    assert n_mat >= -1e-9, f"Matrix norm should be non-negative, got {n_mat}"
+
+    # =====================================================================
+    # Property 2: Absolute homogeneity (scaling).
+    # norm(s*x, ord) == abs(s) * norm(x, ord)
+    # =====================================================================
+    s = data.draw(finite_floats(min_value=-1e3, max_value=1e3))
+    scaled = s * vec
+    lhs = numpy.linalg.norm(scaled, ord=v_ord)
+    rhs = abs(s) * numpy.linalg.norm(vec, ord=v_ord)
+    # Use a relative tolerance scaled to the magnitudes involved.
+    tol = 1e-6 * (1.0 + abs(rhs) + abs(lhs))
+    assert numpy.isclose(lhs, rhs, rtol=1e-6, atol=tol), (
+        f"Homogeneity failed: norm(s*x)={lhs}, |s|*norm(x)={rhs}"
+    )
+
+    # =====================================================================
+    # Property 3: Zero norm of the zero vector/matrix.
+    # =====================================================================
+    zero_vec = numpy.zeros_like(vec)
+    assert numpy.isclose(numpy.linalg.norm(zero_vec, ord=v_ord), 0.0, atol=1e-9), (
+        "Norm of zero vector should be 0"
+    )
+    zero_mat = numpy.zeros_like(mat)
+    assert numpy.isclose(numpy.linalg.norm(zero_mat, ord=m_ord), 0.0, atol=1e-9), (
+        "Norm of zero matrix should be 0"
+    )
+
+    # =====================================================================
+    # Property 4: Triangle inequality (for ord >= 1 / valid norms).
+    # norm(x + y, ord) <= norm(x, ord) + norm(y, ord)
+    # =====================================================================
+    # Draw a second vector of the same shape as `vec`.
+    vec2 = data.draw(
+        hnp.arrays(
+            dtype=numpy.float64,
+            shape=vec.shape,
+            elements=finite_floats(),
+        )
+    )
+    # Only test triangle inequality for genuine norms (ord >= 1, None, inf).
+    # ord=3 is a valid norm (p>=1), all sampled vector orders qualify.
+    n_sum = numpy.linalg.norm(vec + vec2, ord=v_ord)
+    n_individual = numpy.linalg.norm(vec, ord=v_ord) + numpy.linalg.norm(vec2, ord=v_ord)
+    tol_tri = 1e-6 * (1.0 + abs(n_individual))
+    assert n_sum <= n_individual + tol_tri, (
+        f"Triangle inequality failed: norm(x+y)={n_sum} > "
+        f"norm(x)+norm(y)={n_individual}"
+    )
+
+    # =====================================================================
+    # Property 5: Default vector norm equals Euclidean (2-norm).
+    # norm(x, None) == sqrt(sum(abs(x)**2)) == norm(x, 2)
+    # =====================================================================
+    default_norm = numpy.linalg.norm(vec, ord=None)
+    two_norm = numpy.linalg.norm(vec, ord=2)
+    manual = numpy.sqrt(numpy.sum(numpy.abs(vec) ** 2))
+    assert numpy.isclose(default_norm, two_norm, rtol=1e-9, atol=1e-9), (
+        f"Default norm {default_norm} != 2-norm {two_norm}"
+    )
+    assert numpy.isclose(default_norm, manual, rtol=1e-9, atol=1e-6 * (1 + manual)), (
+        f"Default norm {default_norm} != sqrt(sum(|x|^2)) {manual}"
+    )
+# End program
+```

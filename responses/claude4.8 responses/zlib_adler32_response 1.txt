@@ -1,0 +1,60 @@
+# Strategy for Generating Inputs
+
+The `zlib.adler32` function takes two parameters: `data` (bytes-like object) and an optional `value` (the starting checksum value).
+
+**Generation Strategy:**
+1. **`data` parameter:** Use `st.binary()` to generate byte strings of varying lengths. Include edge cases like empty bytes (`b""`), single bytes, and long byte sequences by setting a reasonable `min_size=0` and `max_size` to cover both empty and large inputs.
+2. **`value` parameter:** Use `st.integers()` constrained to the valid range for a 32-bit unsigned integer `[0, 2**32 - 1]`. This covers edge cases like `0`, `1` (the default), and the maximum value `2**32 - 1`. We also generate cases where `value` is omitted by using `st.none()` to test the default behavior.
+
+# Properties to Check
+
+Based on the API documentation, the following properties should hold:
+
+1. **Unsigned 32-bit result:** The result is always an unsigned 32-bit integer, so it must be an `int` in the range `[0, 2**32 - 1]`. (Explicitly noted: "The result is always unsigned" as of Python 3.0.)
+
+2. **Default value behavior:** When `value` is omitted, the result must equal calling with `value=1` (the documented default).
+
+3. **Running checksum / concatenation property:** Passing `value` allows computing a running checksum over concatenated inputs. So `adler32(data2, adler32(data1))` must equal `adler32(data1 + data2)`. This validates the core composability feature.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate `data` as arbitrary bytes (including empty) and `value` as either
+# None (to test default) or an unsigned 32-bit integer covering edge values [0, 2**32-1].
+# Also generate a second bytes input to verify the running/concatenation checksum property.
+@given(st.data())
+def test_zlib_adler32():
+    data = st.data().draw  # placeholder to satisfy format; real draws below
+    d = st_data = None
+
+    # Draw inputs using the provided data strategy
+    import hypothesis
+    @given(
+        data1=st.binary(min_size=0, max_size=1024),
+        data2=st.binary(min_size=0, max_size=1024),
+        value=st.one_of(st.none(), st.integers(min_value=0, max_value=2**32 - 1)),
+    )
+    def inner(data1, data2, value):
+        # Property 1: result is always an unsigned 32-bit integer
+        if value is None:
+            result = zlib.adler32(data1)
+        else:
+            result = zlib.adler32(data1, value)
+        assert isinstance(result, int)
+        assert 0 <= result <= 2**32 - 1
+
+        # Property 2: omitting value equals passing default value of 1
+        assert zlib.adler32(data1) == zlib.adler32(data1, 1)
+
+        # Property 3: running checksum over concatenation
+        # adler32(data1 + data2) == adler32(data2, adler32(data1))
+        combined = zlib.adler32(data1 + data2)
+        running = zlib.adler32(data2, zlib.adler32(data1))
+        assert combined == running
+
+    inner()
+# End program
+```

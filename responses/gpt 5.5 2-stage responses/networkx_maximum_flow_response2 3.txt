@@ -1,0 +1,68 @@
+```python
+from hypothesis import given, strategies as st
+import networkx
+
+@given(st.data())
+def test_networkx_maximum_flow_property(data):
+    node_count = data.draw(st.integers(min_value=2, max_value=8))
+    nodes = list(range(node_count))
+
+    source, sink = data.draw(
+        st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)).filter(
+            lambda pair: pair[0] != pair[1]
+        )
+    )
+
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+
+    edges = data.draw(
+        st.lists(
+            st.sampled_from(possible_edges),
+            unique=True,
+            min_size=0,
+            max_size=min(len(possible_edges), 20),
+        )
+    )
+
+    capacities = data.draw(
+        st.lists(
+            st.integers(min_value=0, max_value=100),
+            min_size=len(edges),
+            max_size=len(edges),
+        )
+    )
+
+    graph = networkx.DiGraph()
+    graph.add_nodes_from(nodes)
+
+    for (u, v), capacity in zip(edges, capacities):
+        graph.add_edge(u, v, capacity=capacity)
+
+    flow_value, flow_dict = networkx.maximum_flow(graph, source, sink)
+
+    for u, v, edge_data in graph.edges(data=True):
+        edge_flow = flow_dict[u][v]
+        assert edge_flow >= 0
+        assert edge_flow <= edge_data["capacity"]
+
+    for node in graph.nodes:
+        inflow = sum(flow_dict[pred][node] for pred in graph.predecessors(node))
+        outflow = sum(flow_dict[node][succ] for succ in graph.successors(node))
+
+        if node not in {source, sink}:
+            assert inflow == outflow
+
+    source_outflow = sum(flow_dict[source][succ] for succ in graph.successors(source))
+    source_inflow = sum(flow_dict[pred][source] for pred in graph.predecessors(source))
+    assert flow_value == source_outflow - source_inflow
+
+    sink_inflow = sum(flow_dict[pred][sink] for pred in graph.predecessors(sink))
+    sink_outflow = sum(flow_dict[sink][succ] for succ in graph.successors(sink))
+    assert flow_value == sink_inflow - sink_outflow
+
+    minimum_cut_value = networkx.minimum_cut_value(
+        graph, source, sink, capacity="capacity"
+    )
+    assert flow_value == minimum_cut_value
+# End program
+```

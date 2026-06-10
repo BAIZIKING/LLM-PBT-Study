@@ -1,0 +1,144 @@
+from hypothesis import given, strategies as st
+
+# Summary: Generate both methods ("linear" and "ranked"), valid same-length nonconstant
+# finite numeric lists, and documented invalid edge cases: mismatched lengths, length < 2,
+# constant x, and constant y. Values mix small integers and finite floats, producing
+# negatives, zeros, duplicates/ties for ranking, and ordinary continuous-looking data.
+@given(st.data())
+def test_statistics_correlation(data):
+    import math
+    from statistics import StatisticsError, correlation
+
+    number = st.one_of(
+        st.integers(min_value=-10, max_value=10),
+        st.floats(
+            min_value=-1000,
+            max_value=1000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+    method = data.draw(st.sampled_from(["linear", "ranked"]), label="method")
+    case = data.draw(
+        st.sampled_from(
+            ["valid", "mismatched_lengths", "too_short", "constant_x", "constant_y"]
+        ),
+        label="case",
+    )
+
+    def draw_list(n, label):
+        return data.draw(st.lists(number, min_size=n, max_size=n), label=label)
+
+    def draw_nonconstant_list(n, label):
+        values = draw_list(n, label)
+        if len(set(values)) < 2:
+            values = list(values)
+            values[-1] = values[0] + 1
+        return values
+
+    if case == "valid":
+        n = data.draw(st.integers(min_value=2, max_value=20), label="n")
+        x = draw_nonconstant_list(n, "x")
+        y = draw_nonconstant_list(n, "y")
+
+    elif case == "mismatched_lengths":
+        nx = data.draw(st.integers(min_value=0, max_value=20), label="nx")
+        ny = data.draw(st.integers(min_value=0, max_value=20), label="ny")
+        if ny == nx:
+            ny = (ny + 1) % 21
+        x = draw_list(nx, "x")
+        y = draw_list(ny, "y")
+
+    elif case == "too_short":
+        n = data.draw(st.integers(min_value=0, max_value=1), label="n")
+        x = draw_list(n, "x")
+        y = draw_list(n, "y")
+
+    elif case == "constant_x":
+        n = data.draw(st.integers(min_value=2, max_value=20), label="n")
+        c = data.draw(number, label="constant_x_value")
+        x = [c] * n
+        y = draw_nonconstant_list(n, "y")
+
+    else:  # constant_y
+        n = data.draw(st.integers(min_value=2, max_value=20), label="n")
+        c = data.draw(number, label="constant_y_value")
+        x = draw_nonconstant_list(n, "x")
+        y = [c] * n
+
+    expected_error = (
+        len(x) != len(y)
+        or len(x) < 2
+        or len(set(x)) < 2
+        or len(set(y)) < 2
+    )
+
+    use_default_for_linear = data.draw(st.booleans(), label="use_default_for_linear")
+
+    def call_correlation(a, b):
+        if method == "linear" and use_default_for_linear:
+            return correlation(a, b)
+        return correlation(a, b, method=method)
+
+    def averaged_ranks(values):
+        pairs = sorted((value, index) for index, value in enumerate(values))
+        ranks = [0.0] * len(values)
+        i = 0
+        while i < len(pairs):
+            j = i + 1
+            while j < len(pairs) and pairs[j][0] == pairs[i][0]:
+                j += 1
+            average_rank = ((i + 1) + j) / 2.0
+            for k in range(i, j):
+                ranks[pairs[k][1]] = average_rank
+            i = j
+        return ranks
+
+    def reference_correlation(a, b, correlation_method):
+        if correlation_method == "ranked":
+            a = averaged_ranks(a)
+            b = averaged_ranks(b)
+
+        mean_a = sum(a) / len(a)
+        mean_b = sum(b) / len(b)
+
+        da = [value - mean_a for value in a]
+        db = [value - mean_b for value in b]
+
+        numerator = sum(u * v for u, v in zip(da, db))
+        denominator = math.sqrt(sum(u * u for u in da) * sum(v * v for v in db))
+        return numerator / denominator
+
+    try:
+        result = call_correlation(x, y)
+    except StatisticsError:
+        assert expected_error
+        return
+
+    assert not expected_error
+
+    # Properties from the API:
+    # 1. Valid correlations are finite and lie between -1 and +1.
+    # 2. Correlation is symmetric in x and y.
+    # 3. method="linear" is the default behavior.
+    # 4. "linear" matches Pearson's coefficient; "ranked" matches Spearman's
+    #    coefficient using averaged ranks for ties.
+    assert math.isfinite(result)
+    assert -1.0 - 1e-12 <= result <= 1.0 + 1e-12
+
+    swapped = correlation(y, x, method=method)
+    assert math.isclose(result, swapped, rel_tol=1e-10, abs_tol=1e-10)
+
+    if method == "linear":
+        explicit_linear = correlation(x, y, method="linear")
+        default_linear = correlation(x, y)
+        assert math.isclose(
+            explicit_linear, default_linear, rel_tol=1e-10, abs_tol=1e-10
+        )
+
+    expected = reference_correlation(x, y, method)
+    assert math.isclose(result, expected, rel_tol=1e-10, abs_tol=1e-10)
+
+# End program

@@ -1,0 +1,9 @@
+1. The output is always an instance of `Decimal`.
+
+2. For any finite float or int input, the resulting Decimal converted back to a float equals the original input value (i.e., `float(Decimal.from_float(f)) == f`).
+
+3. For an integer input `n`, the result equals `Decimal(n)` exactly, with no fractional part.
+
+4. Special float values map to their Decimal equivalents: `float('nan')` produces a NaN Decimal, `float('inf')` produces `Decimal('Infinity')`, and `float('-inf')` produces `Decimal('-Infinity')`.
+
+5. The sign of the output matches the sign of the input: negative inputs produce negative Decimals, positive inputs produce positive Decimals, and zero inputs produce a Decimal equal to zero.

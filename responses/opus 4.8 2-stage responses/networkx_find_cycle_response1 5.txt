@@ -1,0 +1,9 @@
+1. Every edge returned in the cycle must be an actual edge present in the graph G (respecting the orientation rules: original edges for 'original', reversed edges for 'reverse', and either direction for 'ignore' and None).
+
+2. The returned edges must form a connected, contiguous path where the head of each edge matches the tail of the next edge, and the head of the last edge matches the tail of the first edge, thereby forming a closed cycle.
+
+3. When orientation is not None, each returned edge tuple must have a final element that is either 'forward' or 'reverse', and when orientation is None, the edge tuples must contain no direction indicator.
+
+4. If a source node is specified, then that source node must appear among the nodes participating in the returned cycle.
+
+5. If the function returns a cycle without raising NetworkXNoCycle, then the graph indeed contains a cycle under the given orientation; conversely, if NetworkXNoCycle is raised, then no cycle exists under that orientation (e.g., a directed acyclic graph with orientation='original' must raise the exception).

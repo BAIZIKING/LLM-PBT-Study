@@ -1,0 +1,9 @@
+1. The rotated token returned by `rotate(msg)` is of type `bytes`.
+
+2. Decrypting the rotated token with the MultiFernet instance yields the same plaintext as decrypting the original token.
+
+3. The rotated token preserves the original timestamp embedded in the input token (i.e., the timestamp extracted from the rotated token equals the timestamp of the original token).
+
+4. The rotated token is a valid URL-safe base64-encoded value (it can be decoded as URL-safe base64 without error).
+
+5. Calling `rotate` on an invalid or tampered token raises `InvalidToken`, and calling it with an argument that is neither `bytes` nor `str` raises `TypeError`.

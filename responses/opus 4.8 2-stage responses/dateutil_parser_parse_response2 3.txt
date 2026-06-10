@@ -1,0 +1,135 @@
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+from dateutil.parser import parse, ParserError
+from dateutil import tz
+
+
+# Strategy for "safe" datetimes that won't cause overflow when formatted/parsed.
+# Keep years well within C int range and away from edges.
+safe_datetimes = st.datetimes(
+    min_value=datetime.datetime(1, 1, 1, 0, 0, 0),
+    max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+)
+
+
+# Property 1:
+# The function returns a datetime.datetime object (or a tuple whose first
+# element is a datetime.datetime when fuzzy_with_tokens=True).
+@given(st.data())
+def test_dateutil_parser_parse_returns_datetime():
+    data = st.data
+    dt = (yield_dt := __import__("dateutil"))  # placeholder, unused
+    sample = data  # not used directly; we draw below
+
+
+@given(dt=safe_datetimes)
+def test_dateutil_parser_parse_returns_datetime_type(dt):
+    # Format the datetime into an ISO-like string that dateutil can parse.
+    timestr = dt.replace(microsecond=0).isoformat()
+    result = parse(timestr)
+    assert isinstance(result, datetime.datetime)
+
+    # With fuzzy_with_tokens=True, output is a tuple (datetime, tuple).
+    result2 = parse(timestr, fuzzy_with_tokens=True)
+    assert isinstance(result2, tuple)
+    assert isinstance(result2[0], datetime.datetime)
+    assert isinstance(result2[1], tuple)
+# End program
+
+
+# Property 2:
+# When ignoretz=True, the returned datetime is always naive.
+@given(dt=safe_datetimes, tzname=st.sampled_from(["UTC", "BRST", "CST", "EST", "GMT"]))
+def test_dateutil_parser_parse_ignoretz_naive(dt):
+    pass
+
+
+@given(dt=safe_datetimes, tzname=st.sampled_from(["UTC", "GMT", "EST", "PST", "CET"]))
+def test_dateutil_parser_parse_ignoretz_returns_naive(dt, tzname):
+    base = dt.replace(microsecond=0)
+    # Construct a string with an explicit timezone name appended.
+    timestr = base.strftime("%Y-%m-%d %H:%M:%S ") + tzname
+    try:
+        result = parse(timestr, ignoretz=True)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    assert isinstance(result, datetime.datetime)
+    assert result.tzinfo is None
+# End program
+
+
+# Property 3:
+# When a default datetime is provided, unspecified components come from default
+# and specified components override the default.
+@given(default=safe_datetimes)
+def test_dateutil_parser_parse_default_fills_missing(default):
+    base_default = default.replace(microsecond=0)
+    # Provide only a time component; date components should come from default.
+    timestr = "13:14:15"
+    try:
+        result = parse(timestr, default=base_default)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    assert isinstance(result, datetime.datetime)
+    # Date components should be inherited from default.
+    assert result.year == base_default.year
+    assert result.month == base_default.month
+    assert result.day == base_default.day
+    # Time components should be overridden by the parsed string.
+    assert result.hour == 13
+    assert result.minute == 14
+    assert result.second == 15
+# End program
+
+
+# Property 4:
+# With fuzzy_with_tokens=True, the second element is a tuple of strings, and
+# the ignored tokens are substrings of the original input.
+@given(
+    dt=safe_datetimes,
+    prefix=st.text(alphabet=st.characters(whitelist_categories=("L", "Zs")), max_size=20),
+    suffix=st.text(alphabet=st.characters(whitelist_categories=("L", "Zs")), max_size=20),
+)
+def test_dateutil_parser_parse_fuzzy_tokens_are_substrings(dt, prefix, suffix):
+    base = dt.replace(microsecond=0)
+    core = base.strftime("%Y-%m-%d %H:%M:%S")
+    timestr = prefix + " " + core + " " + suffix
+    try:
+        result = parse(timestr, fuzzy_with_tokens=True)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    assert isinstance(result, tuple)
+    parsed_dt, tokens = result
+    assert isinstance(parsed_dt, datetime.datetime)
+    assert isinstance(tokens, tuple)
+    for tok in tokens:
+        assert isinstance(tok, str)
+        # Every ignored token must appear in the original string.
+        assert tok in timestr
+# End program
+
+
+# Property 5:
+# When a tzinfos-mapped name appears (and ignoretz is False), the returned
+# datetime is timezone-aware with the mapped offset.
+@given(dt=safe_datetimes, offset_seconds=st.integers(min_value=-12 * 3600, max_value=12 * 3600))
+def test_dateutil_parser_parse_tzinfos_aware(dt, offset_seconds):
+    base = dt.replace(microsecond=0)
+    tzname = "ZZZ"
+    tzinfos = {tzname: offset_seconds}
+    timestr = base.strftime("%Y-%m-%d %H:%M:%S ") + tzname
+    try:
+        result = parse(timestr, tzinfos=tzinfos, ignoretz=False)
+    except (ParserError, OverflowError, ValueError):
+        assume(False)
+        return
+    assert isinstance(result, datetime.datetime)
+    assert result.tzinfo is not None
+    # The UTC offset should match the mapped offset.
+    assert result.utcoffset() == datetime.timedelta(seconds=offset_seconds)
+# End program
+```

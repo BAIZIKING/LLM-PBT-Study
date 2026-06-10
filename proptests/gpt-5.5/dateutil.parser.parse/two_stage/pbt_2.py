@@ -1,0 +1,125 @@
+from hypothesis import given, strategies as st
+import dateutil
+import dateutil.parser
+from datetime import datetime
+
+
+_SAFE_DATETIMES = st.datetimes(
+    min_value=datetime(1900, 1, 1, 0, 0, 0),
+    max_value=datetime(2099, 12, 31, 23, 59, 59),
+    timezones=st.none(),
+)
+
+
+def _format_datetime(dt):
+    return (
+        f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d} "
+        f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
+    )
+
+
+@given(st.data())
+def test_dateutil_parser_parse_property_1(data):
+    dt = data.draw(_SAFE_DATETIMES)
+    timestr = _format_datetime(dt)
+
+    parsed = dateutil.parser.parse(timestr)
+    assert isinstance(parsed, datetime)
+
+    fuzzy_parsed = dateutil.parser.parse(
+        f"ignored before {timestr} ignored after",
+        fuzzy_with_tokens=True,
+    )
+    assert isinstance(fuzzy_parsed, tuple)
+    assert len(fuzzy_parsed) == 2
+    assert isinstance(fuzzy_parsed[0], datetime)
+    assert isinstance(fuzzy_parsed[1], tuple)
+    assert all(isinstance(token, str) for token in fuzzy_parsed[1])
+
+
+@given(st.data())
+def test_dateutil_parser_parse_property_2(data):
+    dt = data.draw(_SAFE_DATETIMES)
+    hour = data.draw(st.integers(min_value=0, max_value=14))
+    minute = data.draw(st.sampled_from([0, 15, 30, 45]))
+    sign = data.draw(st.sampled_from(["+", "-"]))
+
+    timestr = f"{_format_datetime(dt)} {sign}{hour:02d}{minute:02d}"
+    parsed = dateutil.parser.parse(timestr, ignoretz=True)
+
+    assert isinstance(parsed, datetime)
+    assert parsed.tzinfo is None
+
+
+@given(st.data())
+def test_dateutil_parser_parse_property_3(data):
+    default = data.draw(_SAFE_DATETIMES)
+    parsed_date = data.draw(
+        st.dates(
+            min_value=datetime(1900, 1, 1).date(),
+            max_value=datetime(2099, 12, 31).date(),
+        )
+    )
+
+    parsed = dateutil.parser.parse(parsed_date.isoformat(), default=default)
+
+    assert parsed.year == parsed_date.year
+    assert parsed.month == parsed_date.month
+    assert parsed.day == parsed_date.day
+    assert parsed.hour == default.hour
+    assert parsed.minute == default.minute
+    assert parsed.second == default.second
+    assert parsed.microsecond == default.microsecond
+
+
+@given(st.data())
+def test_dateutil_parser_parse_property_4(data):
+    year = data.draw(st.integers(min_value=1900, max_value=2099))
+    first = data.draw(st.integers(min_value=1, max_value=12))
+    second = data.draw(st.integers(min_value=1, max_value=12))
+
+    ambiguous = f"{year:04d}/{first:02d}/{second:02d}"
+
+    parsed_ymd = dateutil.parser.parse(
+        ambiguous,
+        yearfirst=True,
+        dayfirst=False,
+    )
+    parsed_ydm = dateutil.parser.parse(
+        ambiguous,
+        yearfirst=True,
+        dayfirst=True,
+    )
+
+    assert parsed_ymd.year == year
+    assert parsed_ymd.month == first
+    assert parsed_ymd.day == second
+
+    assert parsed_ydm.year == year
+    assert parsed_ydm.day == first
+    assert parsed_ydm.month == second
+
+
+@given(st.data())
+def test_dateutil_parser_parse_property_5(data):
+    dt = data.draw(_SAFE_DATETIMES)
+    date_part = f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
+    time_part = f"{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}"
+
+    clean = f"{date_part} {time_part}"
+    fuzzy = f"Today is {date_part} at {time_part} exactly"
+
+    expected = dateutil.parser.parse(clean)
+    parsed, tokens = dateutil.parser.parse(fuzzy, fuzzy_with_tokens=True)
+
+    assert parsed == expected
+    assert isinstance(tokens, tuple)
+    assert all(isinstance(token, str) for token in tokens)
+
+    ignored_text = "".join(tokens)
+    assert "Today is " in ignored_text
+    assert " at " in ignored_text
+    assert " exactly" in ignored_text
+
+
+# End program

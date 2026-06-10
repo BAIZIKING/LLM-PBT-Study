@@ -1,0 +1,239 @@
+```python
+from hypothesis import given, strategies as st
+import dateutil
+import dateutil.parser
+import dateutil.tz
+import datetime as dt
+
+
+_MIN_DATE = dt.date(1, 1, 1)
+_MAX_DATE = dt.date(9999, 12, 31)
+
+
+def _format_extended_date(d):
+    return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+
+
+def _format_basic_date(d):
+    return f"{d.year:04d}{d.month:02d}{d.day:02d}"
+
+
+def _draw_time_string(data):
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+    frac = data.draw(st.text(alphabet="0123456789", min_size=1, max_size=6))
+
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "hour",
+                "minute_extended",
+                "minute_basic",
+                "second_extended",
+                "second_basic",
+                "fraction_dot",
+                "fraction_comma",
+            ]
+        )
+    )
+
+    if kind == "hour":
+        return f"{hour:02d}"
+    if kind == "minute_extended":
+        return f"{hour:02d}:{minute:02d}"
+    if kind == "minute_basic":
+        return f"{hour:02d}{minute:02d}"
+    if kind == "second_extended":
+        return f"{hour:02d}:{minute:02d}:{second:02d}"
+    if kind == "second_basic":
+        return f"{hour:02d}{minute:02d}{second:02d}"
+    if kind == "fraction_dot":
+        return f"{hour:02d}:{minute:02d}:{second:02d}.{frac}"
+    return f"{hour:02d}:{minute:02d}:{second:02d},{frac}"
+
+
+def _draw_timezone_suffix(data):
+    kind = data.draw(st.sampled_from(["none", "z", "colon", "basic", "hour"]))
+    if kind == "none":
+        return ""
+    if kind == "z":
+        return "Z"
+
+    total_minutes = data.draw(st.integers(min_value=0, max_value=(23 * 60) + 59))
+    sign = "+" if total_minutes == 0 else data.draw(st.sampled_from(["+", "-"]))
+    hours, minutes = divmod(total_minutes, 60)
+
+    if kind == "colon":
+        return f"{sign}{hours:02d}:{minutes:02d}"
+    if kind == "basic":
+        return f"{sign}{hours:02d}{minutes:02d}"
+    return f"{sign}{hours:02d}"
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_returns_datetime_for_valid_generated_inputs(data):
+    include_time = data.draw(st.booleans())
+
+    if include_time:
+        d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+        date_part = data.draw(st.sampled_from([_format_extended_date(d), _format_basic_date(d)]))
+        dt_str = f"{date_part}T{_draw_time_string(data)}{_draw_timezone_suffix(data)}"
+    else:
+        kind = data.draw(
+            st.sampled_from(
+                [
+                    "year",
+                    "month_extended",
+                    "month_basic",
+                    "date_extended",
+                    "date_basic",
+                ]
+            )
+        )
+        if kind == "year":
+            year = data.draw(st.integers(min_value=1, max_value=9999))
+            dt_str = f"{year:04d}"
+        elif kind in {"month_extended", "month_basic"}:
+            year = data.draw(st.integers(min_value=1, max_value=9999))
+            month = data.draw(st.integers(min_value=1, max_value=12))
+            dt_str = f"{year:04d}-{month:02d}" if kind == "month_extended" else f"{year:04d}{month:02d}"
+        else:
+            d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+            dt_str = _format_extended_date(d) if kind == "date_extended" else _format_basic_date(d)
+
+    parsed = dateutil.parser.isoparse(dt_str)
+
+    assert isinstance(parsed, dt.datetime)
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_unspecified_components_default_to_lowest_values(data):
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "year",
+                "month_extended",
+                "month_basic",
+                "date_extended",
+                "date_basic",
+            ]
+        )
+    )
+
+    if kind == "year":
+        year = data.draw(st.integers(min_value=1, max_value=9999))
+        dt_str = f"{year:04d}"
+        expected = dt.datetime(year, 1, 1, 0, 0, 0, 0)
+    elif kind in {"month_extended", "month_basic"}:
+        year = data.draw(st.integers(min_value=1, max_value=9999))
+        month = data.draw(st.integers(min_value=1, max_value=12))
+        dt_str = f"{year:04d}-{month:02d}" if kind == "month_extended" else f"{year:04d}{month:02d}"
+        expected = dt.datetime(year, month, 1, 0, 0, 0, 0)
+    else:
+        d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+        dt_str = _format_extended_date(d) if kind == "date_extended" else _format_basic_date(d)
+        expected = dt.datetime(d.year, d.month, d.day, 0, 0, 0, 0)
+
+    assert dateutil.parser.isoparse(dt_str) == expected
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_basic_and_extended_equivalent_forms_match(data):
+    kind = data.draw(
+        st.sampled_from(
+            [
+                "month",
+                "date",
+                "datetime_minutes",
+                "datetime_seconds",
+            ]
+        )
+    )
+
+    if kind == "month":
+        year = data.draw(st.integers(min_value=1, max_value=9999))
+        month = data.draw(st.integers(min_value=1, max_value=12))
+        extended = f"{year:04d}-{month:02d}"
+        basic = f"{year:04d}{month:02d}"
+    elif kind == "date":
+        d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+        extended = _format_extended_date(d)
+        basic = _format_basic_date(d)
+    else:
+        d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+        hour = data.draw(st.integers(min_value=0, max_value=23))
+        minute = data.draw(st.integers(min_value=0, max_value=59))
+        second = data.draw(st.integers(min_value=0, max_value=59))
+
+        if kind == "datetime_minutes":
+            extended = f"{_format_extended_date(d)}T{hour:02d}:{minute:02d}"
+            basic = f"{_format_basic_date(d)}T{hour:02d}{minute:02d}"
+        else:
+            extended = f"{_format_extended_date(d)}T{hour:02d}:{minute:02d}:{second:02d}"
+            basic = f"{_format_basic_date(d)}T{hour:02d}{minute:02d}{second:02d}"
+
+    assert dateutil.parser.isoparse(extended) == dateutil.parser.isoparse(basic)
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_timezone_offsets_are_reflected_in_tzinfo(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+    base = f"{_format_extended_date(d)}T{hour:02d}:{minute:02d}:{second:02d}"
+
+    zero_suffix = data.draw(st.sampled_from(["Z", "+00:00", "+0000", "+00"]))
+    zero_parsed = dateutil.parser.isoparse(base + zero_suffix)
+
+    assert zero_parsed.tzinfo == dateutil.tz.tzutc()
+    assert zero_parsed.utcoffset() == dt.timedelta(0)
+
+    offset_kind = data.draw(st.sampled_from(["colon", "basic", "hour"]))
+    sign = data.draw(st.sampled_from(["+", "-"]))
+
+    if offset_kind == "hour":
+        offset_hour = data.draw(st.integers(min_value=1, max_value=23))
+        offset_minute = 0
+        suffix = f"{sign}{offset_hour:02d}"
+    else:
+        total_minutes = data.draw(st.integers(min_value=1, max_value=(23 * 60) + 59))
+        offset_hour, offset_minute = divmod(total_minutes, 60)
+        suffix = (
+            f"{sign}{offset_hour:02d}:{offset_minute:02d}"
+            if offset_kind == "colon"
+            else f"{sign}{offset_hour:02d}{offset_minute:02d}"
+        )
+
+    sign_multiplier = 1 if sign == "+" else -1
+    expected_offset = dt.timedelta(minutes=sign_multiplier * ((offset_hour * 60) + offset_minute))
+    parsed = dateutil.parser.isoparse(base + suffix)
+
+    assert isinstance(parsed.tzinfo, dateutil.tz.tzoffset)
+    assert parsed.utcoffset() == expected_offset
+
+
+@given(st.data())
+def test_dateutil_parser_isoparse_fractional_seconds_set_microseconds(data):
+    d = data.draw(st.dates(min_value=_MIN_DATE, max_value=_MAX_DATE))
+    hour = data.draw(st.integers(min_value=0, max_value=23))
+    minute = data.draw(st.integers(min_value=0, max_value=59))
+    second = data.draw(st.integers(min_value=0, max_value=59))
+    frac_digits = data.draw(st.text(alphabet="0123456789", min_size=1, max_size=6))
+
+    base = f"{_format_extended_date(d)}T{hour:02d}:{minute:02d}:{second:02d}"
+    expected_microsecond = int(frac_digits.ljust(6, "0"))
+
+    dot_parsed = dateutil.parser.isoparse(f"{base}.{frac_digits}")
+    comma_parsed = dateutil.parser.isoparse(f"{base},{frac_digits}")
+    no_fraction_parsed = dateutil.parser.isoparse(base)
+
+    assert dot_parsed.microsecond == expected_microsecond
+    assert comma_parsed.microsecond == expected_microsecond
+    assert dot_parsed == comma_parsed
+    assert no_fraction_parsed.microsecond == 0
+
+
+# End program
+```

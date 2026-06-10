@@ -1,0 +1,179 @@
+from hypothesis import given, strategies as st, settings, assume
+import pandas as pd
+import numpy as np
+
+
+# ----------------------------------------------------------------------
+# Strategies
+# ----------------------------------------------------------------------
+
+# Keep values small and simple to avoid overflows and huge cartesian products.
+key_values = st.sampled_from(['foo', 'bar', 'baz', 'qux', 'a', 'b', 'c'])
+
+int_values = st.integers(min_value=-1000, max_value=1000)
+
+
+@st.composite
+def two_frames_shared_key(draw, max_rows=8):
+    """Generate two DataFrames that share a key column 'k' plus other columns."""
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+
+    left_vals = draw(st.lists(int_values, min_size=n_left, max_size=n_left))
+    right_vals = draw(st.lists(int_values, min_size=n_right, max_size=n_right))
+
+    left = pd.DataFrame({'k': left_keys, 'lval': left_vals})
+    right = pd.DataFrame({'k': right_keys, 'rval': right_vals})
+    return left, right
+
+
+@st.composite
+def two_frames_overlap_col(draw, max_rows=8):
+    """Two DataFrames sharing key 'k' AND an overlapping non-key column 'v'."""
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+
+    left_v = draw(st.lists(int_values, min_size=n_left, max_size=n_left))
+    right_v = draw(st.lists(int_values, min_size=n_right, max_size=n_right))
+    left_only = draw(st.lists(int_values, min_size=n_left, max_size=n_left))
+    right_only = draw(st.lists(int_values, min_size=n_right, max_size=n_right))
+
+    left = pd.DataFrame({'k': left_keys, 'v': left_v, 'lonly': left_only})
+    right = pd.DataFrame({'k': right_keys, 'v': right_v, 'ronly': right_only})
+    return left, right
+
+
+# ----------------------------------------------------------------------
+# Property 1: Cross merge row count and column set
+# ----------------------------------------------------------------------
+@given(st.data())
+@settings(deadline=None)
+def test_pandas_merge_cross_rowcount_and_columns():
+    @given(two_frames_shared_key(max_rows=10))
+    def inner(frames):
+        left, right = frames
+        # Rename so there are no overlapping columns for a clean cross test.
+        l = left.rename(columns={'k': 'lk'})
+        r = right.rename(columns={'k': 'rk'})
+        result = pd.merge(l, r, how='cross')
+        # Row count == product of input row counts.
+        assert len(result) == len(l) * len(r)
+        # Columns == union of all input columns (no overlap here).
+        assert set(result.columns) == set(l.columns) | set(r.columns)
+    inner()
+
+
+# ----------------------------------------------------------------------
+# Property 2: Inner merge rows are a subset of outer merge rows
+# ----------------------------------------------------------------------
+@given(st.data())
+@settings(deadline=None)
+def test_pandas_merge_inner_subset_of_outer():
+    @given(two_frames_shared_key())
+    def inner(frames):
+        left, right = frames
+        inner_res = pd.merge(left, right, how='inner', on='k')
+        outer_res = pd.merge(left, right, how='outer', on='k')
+
+        def row_multiset(df):
+            cols = list(df.columns)
+            counts = {}
+            for tup in df[cols].itertuples(index=False, name=None):
+                # Represent NaN consistently.
+                key = tuple('NaN' if (isinstance(x, float) and pd.isna(x)) else x
+                            for x in tup)
+                counts[key] = counts.get(key, 0) + 1
+            return counts
+
+        inner_counts = row_multiset(inner_res)
+        outer_counts = row_multiset(outer_res)
+        # Every inner row appears in outer at least as many times.
+        for key, c in inner_counts.items():
+            assert outer_counts.get(key, 0) >= c
+    inner()
+
+
+# ----------------------------------------------------------------------
+# Property 3: Left merge preserves all left keys and row count bound
+# ----------------------------------------------------------------------
+@given(st.data())
+@settings(deadline=None)
+def test_pandas_merge_left_preserves_keys():
+    @given(two_frames_shared_key())
+    def inner(frames):
+        left, right = frames
+        result = pd.merge(left, right, how='left', on='k')
+        # All keys from left appear in the output.
+        assert set(left['k']) <= set(result['k'])
+        # Output has at least as many rows as left.
+        assert len(result) >= len(left)
+        # If right keys are unique, row count equals len(left).
+        if right['k'].is_unique:
+            assert len(result) == len(left)
+    inner()
+
+
+# ----------------------------------------------------------------------
+# Property 4: Indicator column correctness
+# ----------------------------------------------------------------------
+@given(st.data())
+@settings(deadline=None)
+def test_pandas_merge_indicator():
+    @given(two_frames_shared_key())
+    def inner(frames):
+        left, right = frames
+        result = pd.merge(left, right, how='outer', on='k', indicator=True)
+        assert '_merge' in result.columns
+        assert isinstance(result['_merge'].dtype, pd.CategoricalDtype)
+        allowed = {'left_only', 'right_only', 'both'}
+        assert set(result['_merge'].astype(str)) <= allowed
+
+        left_keys = set(left['k'])
+        right_keys = set(right['k'])
+        for _, row in result.iterrows():
+            k = row['k']
+            ind = str(row['_merge'])
+            in_left = k in left_keys
+            in_right = k in right_keys
+            if in_left and in_right:
+                assert ind == 'both'
+            elif in_left:
+                assert ind == 'left_only'
+            else:
+                assert ind == 'right_only'
+    inner()
+
+
+# ----------------------------------------------------------------------
+# Property 5: Output column set with suffixes
+# ----------------------------------------------------------------------
+@given(st.data())
+@settings(deadline=None)
+def test_pandas_merge_suffixes_columns():
+    @given(two_frames_overlap_col())
+    def inner(frames):
+        left, right = frames
+        result = pd.merge(left, right, how='inner', on='k',
+                          suffixes=('_L', '_R'))
+        cols = set(result.columns)
+        # Key column retained as-is.
+        assert 'k' in cols
+        # Non-overlapping columns retained as-is.
+        assert 'lonly' in cols
+        assert 'ronly' in cols
+        # Overlapping non-key column 'v' gets suffixes.
+        assert 'v_L' in cols
+        assert 'v_R' in cols
+        # Plain 'v' should not appear since it overlapped.
+        assert 'v' not in cols
+        # Exact expected column set.
+        expected = {'k', 'v_L', 'lonly', 'v_R', 'ronly'}
+        assert cols == expected
+    inner()
+# End program

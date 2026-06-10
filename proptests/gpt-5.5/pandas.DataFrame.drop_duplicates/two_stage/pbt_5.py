@@ -1,0 +1,143 @@
+from hypothesis import given, strategies as st
+import pandas
+
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates_property(data):
+    n_rows = data.draw(st.integers(min_value=0, max_value=25), label="n_rows")
+    n_cols = data.draw(st.integers(min_value=1, max_value=5), label="n_cols")
+
+    columns = [f"c{i}" for i in range(n_cols)]
+
+    value_strategy = st.one_of(
+        st.integers(min_value=-10, max_value=10),
+        st.text(
+            alphabet=st.characters(blacklist_categories=("Cs",)),
+            min_size=0,
+            max_size=5,
+        ),
+    )
+
+    frame_data = {
+        column: data.draw(
+            st.lists(value_strategy, min_size=n_rows, max_size=n_rows),
+            label=f"{column}_values",
+        )
+        for column in columns
+    }
+
+    index = data.draw(
+        st.lists(
+            st.integers(min_value=-1000, max_value=1000),
+            min_size=n_rows,
+            max_size=n_rows,
+            unique=True,
+        ),
+        label="index",
+    )
+
+    df = pandas.DataFrame(frame_data, index=index)
+
+    subset = data.draw(
+        st.one_of(
+            st.none(),
+            st.sampled_from(columns),
+            st.lists(
+                st.sampled_from(columns),
+                min_size=1,
+                max_size=n_cols,
+                unique=True,
+            ),
+        ),
+        label="subset",
+    )
+
+    keep = data.draw(st.sampled_from(["first", "last", False]), label="keep")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    result = df.drop_duplicates(
+        subset=subset,
+        keep=keep,
+        ignore_index=ignore_index,
+    )
+
+    if subset is None:
+        subset_columns = columns
+    elif isinstance(subset, list):
+        subset_columns = subset
+    else:
+        subset_columns = [subset]
+
+    keys = [
+        tuple(df[column].iloc[row_position] for column in subset_columns)
+        for row_position in range(len(df))
+    ]
+
+    counts = {}
+    first_positions = {}
+    last_positions = {}
+
+    for row_position, key in enumerate(keys):
+        counts[key] = counts.get(key, 0) + 1
+        first_positions.setdefault(key, row_position)
+        last_positions[key] = row_position
+
+    if keep == "first":
+        expected_positions = [
+            row_position
+            for row_position, key in enumerate(keys)
+            if row_position == first_positions[key]
+        ]
+    elif keep == "last":
+        expected_positions = [
+            row_position
+            for row_position, key in enumerate(keys)
+            if row_position == last_positions[key]
+        ]
+    else:
+        expected_positions = [
+            row_position
+            for row_position, key in enumerate(keys)
+            if counts[key] == 1
+        ]
+
+    expected = df.iloc[expected_positions]
+
+    if ignore_index:
+        expected = expected.reset_index(drop=True)
+
+    assert list(result.columns) == columns
+
+    pandas.testing.assert_frame_equal(result, expected)
+
+    if ignore_index:
+        assert list(result.index) == list(range(len(result)))
+    else:
+        assert list(result.index) == [
+            df.index[row_position] for row_position in expected_positions
+        ]
+
+    assert expected_positions == sorted(expected_positions)
+
+    result_keys = [
+        tuple(result[column].iloc[row_position] for column in subset_columns)
+        for row_position in range(len(result))
+    ]
+
+    if keep in ("first", "last"):
+        assert len(result_keys) == len(set(keys))
+        assert len(result_keys) == len(set(result_keys))
+        assert set(result_keys) == set(keys)
+
+        for row_position in expected_positions:
+            key = keys[row_position]
+            if keep == "first":
+                assert row_position == first_positions[key]
+            else:
+                assert row_position == last_positions[key]
+    else:
+        assert set(result_keys) == {
+            key for key, count in counts.items() if count == 1
+        }
+        assert all(counts[key] == 1 for key in result_keys)
+
+# End program

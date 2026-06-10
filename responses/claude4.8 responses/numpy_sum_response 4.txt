@@ -1,0 +1,118 @@
+# Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `numpy.sum`, I'll use the following approach:
+
+1. **Array generation**: Use `hypothesis.extra.numpy.arrays` to generate numpy arrays with:
+   - Variable shapes (0-d scalars, 1-d, 2-d, higher dimensions) including empty arrays.
+   - Multiple dtypes (integers, floats) to exercise dtype promotion behavior.
+   - A constrained float range (no NaN/inf) so that arithmetic equality is well-defined and we avoid `nan`-comparison issues.
+
+2. **Axis generation**: Derive a valid `axis` from the generated array's number of dimensions — `None`, a single int (including negative), or a tuple of distinct ints. This ensures axes are always valid for the given array.
+
+3. **`initial` and `where`**: Generate an optional scalar `initial` value, and an optional boolean `where` mask broadcastable to the array shape.
+
+# Properties to Check
+
+Based on the documentation:
+
+1. **Shape property**: When summing over an `axis` with `keepdims=False`, the result shape equals the input shape with that axis removed. With `keepdims=True`, the reduced axes become size 1.
+
+2. **`axis=None` returns a scalar** (0-d result) equal to summing all elements.
+
+3. **Decomposition / consistency**: Summing over all elements (`axis=None`) should equal summing sequentially over each axis (the total is invariant to grouping). I check `sum(a, axis=None) == sum(sum(a, axis=ax))`.
+
+4. **`initial` property**: `sum(a, initial=c) == sum(a) + c`.
+
+5. **Empty array**: sum of empty array is the neutral element 0.
+
+```python
+from hypothesis import given, strategies as st, assume, settings
+from hypothesis.extra.numpy import arrays, array_shapes, floating_dtypes, integer_dtypes
+import numpy as np
+
+# Summary: Generate numpy arrays of varied shapes (including 0-d and empty) and
+# numeric dtypes (ints/floats, finite values only). Derive a valid axis (None,
+# int, or tuple of distinct ints) from the array's ndim. Also generate an optional
+# scalar `initial`. Check: result shape after reduction (with/without keepdims),
+# axis=None yields a scalar equal to the global sum, sum invariance under grouping
+# of axes, the additive effect of `initial`, and the empty-array neutral element.
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_sum(data):
+    dtype = data.draw(
+        st.one_of(
+            floating_dtypes(sizes=(32, 64)),
+            integer_dtypes(sizes=(32, 64)),
+        ),
+        label="dtype",
+    )
+    shape = data.draw(array_shapes(min_dims=0, max_dims=4, min_side=0, max_side=4),
+                      label="shape")
+
+    if np.issubdtype(dtype, np.floating):
+        elements = st.floats(min_value=-1e3, max_value=1e3,
+                             allow_nan=False, allow_infinity=False, width=32)
+    else:
+        elements = st.integers(min_value=-1000, max_value=1000)
+
+    a = data.draw(arrays(dtype=dtype, shape=shape, elements=elements), label="a")
+    ndim = a.ndim
+
+    # ---- Property 1: empty-array neutral element ----
+    if a.size == 0:
+        assert np.sum(a) == 0
+        return
+
+    # Use a high-precision accumulator to avoid floating rounding mismatches.
+    acc = np.float64 if np.issubdtype(dtype, np.floating) else np.int64
+
+    # ---- Property 2: axis=None returns a scalar equal to global sum ----
+    total = np.sum(a, dtype=acc)
+    assert np.ndim(total) == 0
+    # Compare to a manual flattened sum.
+    assert np.isclose(np.float64(total),
+                      np.float64(np.sum(a.ravel(), dtype=acc)),
+                      rtol=1e-6, atol=1e-6)
+
+    # ---- Choose a valid axis based on ndim ----
+    axis = None
+    if ndim >= 1:
+        axis = data.draw(
+            st.one_of(
+                st.none(),
+                st.integers(min_value=-ndim, max_value=ndim - 1),
+                st.lists(st.integers(min_value=0, max_value=ndim - 1),
+                         min_size=1, max_size=ndim, unique=True).map(tuple),
+            ),
+            label="axis",
+        )
+
+    res = np.sum(a, axis=axis, dtype=acc)
+
+    # ---- Property 3: result shape (keepdims=False) ----
+    if axis is None:
+        assert np.ndim(res) == 0
+    else:
+        norm_axes = {ax % ndim for ax in ((axis,) if isinstance(axis, int) else axis)}
+        expected_shape = tuple(s for i, s in enumerate(a.shape) if i not in norm_axes)
+        assert res.shape == expected_shape
+
+        # ---- Property 4: keepdims=True keeps reduced axes as size 1 ----
+        res_keep = np.sum(a, axis=axis, dtype=acc, keepdims=True)
+        expected_keep = tuple(1 if i in norm_axes else s
+                              for i, s in enumerate(a.shape))
+        assert res_keep.shape == expected_keep
+
+    # ---- Property 5: grouping invariance (sum over axis == global total) ----
+    assert np.isclose(np.float64(np.sum(res, dtype=acc)),
+                      np.float64(total),
+                      rtol=1e-6, atol=1e-6)
+
+    # ---- Property 6: initial adds to the sum ----
+    initial = data.draw(st.integers(min_value=-100, max_value=100), label="initial")
+    with_initial = np.sum(a, dtype=acc, initial=initial)
+    assert np.isclose(np.float64(with_initial),
+                      np.float64(total) + initial,
+                      rtol=1e-6, atol=1e-6)
+# End program
+```

@@ -1,0 +1,221 @@
+```python
+from hypothesis import given, strategies as st
+import pandas
+from collections import Counter
+
+
+def _number_or_none():
+    return st.one_of(
+        st.none(),
+        st.integers(min_value=-1_000_000, max_value=1_000_000),
+        st.floats(
+            min_value=-1_000_000,
+            max_value=1_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+
+def _normalize_missing(value):
+    return "<NA>" if pandas.isna(value) else value
+
+
+def _row_counter(df):
+    return Counter(
+        tuple(_normalize_missing(value) for value in row)
+        for row in df.itertuples(index=False, name=None)
+    )
+
+
+def _column_counter(df):
+    return Counter(
+        tuple(_normalize_missing(value) for value in df[col].tolist())
+        for col in df.columns
+    )
+
+
+def _rank_numeric(value, ascending=True, na_position="last"):
+    if pandas.isna(value):
+        return (0 if na_position == "first" else 2, 0.0)
+    value = float(value)
+    return (1, value if ascending else -value)
+
+
+def _lexicographically_ordered(left, right, ascending):
+    for left_value, right_value, is_ascending in zip(left, right, ascending):
+        if left_value == right_value:
+            continue
+        return left_value < right_value if is_ascending else left_value > right_value
+    return True
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_property_orders_by_key_transformed_values(data):
+    n = data.draw(st.integers(min_value=0, max_value=40))
+    alphabet = list("abcXYZ")
+    col_a = data.draw(
+        st.lists(st.text(alphabet=alphabet, min_size=0, max_size=5), min_size=n, max_size=n)
+    )
+    col_b = data.draw(
+        st.lists(st.text(alphabet=alphabet, min_size=0, max_size=5), min_size=n, max_size=n)
+    )
+    payload = data.draw(st.lists(st.integers(-100, 100), min_size=n, max_size=n))
+    ascending = data.draw(st.lists(st.booleans(), min_size=2, max_size=2))
+
+    df = pandas.DataFrame({"a": col_a, "b": col_b, "payload": payload})
+    result = df.sort_values(
+        by=["a", "b"],
+        ascending=ascending,
+        key=lambda series: series.str.lower(),
+    )
+
+    transformed_keys = [
+        (row.a.lower(), row.b.lower())
+        for row in result.itertuples(index=False)
+    ]
+
+    assert all(
+        _lexicographically_ordered(left, right, ascending)
+        for left, right in zip(transformed_keys, transformed_keys[1:])
+    )
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_property_places_missing_values_at_requested_end(data):
+    n = data.draw(st.integers(min_value=0, max_value=40))
+    values = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+    payload = data.draw(st.lists(st.integers(-100, 100), min_size=n, max_size=n))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    df = pandas.DataFrame({"key": values, "payload": payload})
+    result = df.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+    )
+
+    missing_mask = result["key"].isna().tolist()
+
+    if na_position == "first":
+        assert missing_mask == sorted(missing_mask, reverse=True)
+    else:
+        assert missing_mask == sorted(missing_mask)
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_property_preserves_data_as_axis_permutation(data):
+    axis = data.draw(st.sampled_from([0, 1]))
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+    ascending = data.draw(st.booleans())
+
+    if axis == 0:
+        n = data.draw(st.integers(min_value=0, max_value=40))
+        key = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+        other = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+        df = pandas.DataFrame({"key": key, "other": other})
+
+        result = df.sort_values(
+            by="key",
+            axis=0,
+            ascending=ascending,
+            na_position=na_position,
+        )
+
+        assert _row_counter(result) == _row_counter(df)
+        assert list(result.columns) == list(df.columns)
+
+    else:
+        n = data.draw(st.integers(min_value=0, max_value=40))
+        sort_key = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+        payload = data.draw(st.lists(st.integers(-100, 100), min_size=n, max_size=n))
+        columns = [f"c{i}" for i in range(n)]
+        df = pandas.DataFrame(
+            [sort_key, payload],
+            index=["sort_key", "payload"],
+            columns=columns,
+        )
+
+        result = df.sort_values(
+            by="sort_key",
+            axis=1,
+            ascending=ascending,
+            na_position=na_position,
+        )
+
+        assert _column_counter(result) == _column_counter(df)
+        assert list(result.index) == list(df.index)
+
+        ranked_keys = [
+            _rank_numeric(value, ascending=ascending, na_position=na_position)
+            for value in result.loc["sort_key"].tolist()
+        ]
+        assert all(left <= right for left, right in zip(ranked_keys, ranked_keys[1:]))
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_property_ignore_index_controls_result_index(data):
+    n = data.draw(st.integers(min_value=0, max_value=40))
+    key = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+    payload = data.draw(st.lists(st.integers(-100, 100), min_size=n, max_size=n))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    df = pandas.DataFrame(
+        {"key": key, "payload": payload},
+        index=[f"row_{i}" for i in range(n)],
+    )
+
+    result_preserve_index = df.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+        ignore_index=False,
+    )
+    result_ignore_index = df.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+        ignore_index=True,
+    )
+
+    assert Counter(result_preserve_index.index.tolist()) == Counter(df.index.tolist())
+    assert result_ignore_index.index.tolist() == list(range(n))
+
+    pandas.testing.assert_frame_equal(
+        result_preserve_index.reset_index(drop=True),
+        result_ignore_index,
+        check_dtype=False,
+    )
+
+
+@given(st.data())
+def test_pandas_DataFrame_sort_values_property_inplace_returns_none_and_matches_copy_sort(data):
+    n = data.draw(st.integers(min_value=0, max_value=40))
+    key = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+    payload = data.draw(st.lists(_number_or_none(), min_size=n, max_size=n))
+    ascending = data.draw(st.booleans())
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+
+    original = pandas.DataFrame({"key": key, "payload": payload})
+    expected = original.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+        inplace=False,
+    )
+
+    actual = original.copy(deep=True)
+    return_value = actual.sort_values(
+        by="key",
+        ascending=ascending,
+        na_position=na_position,
+        inplace=True,
+    )
+
+    assert return_value is None
+    pandas.testing.assert_frame_equal(actual, expected, check_dtype=False)
+# End program
+```

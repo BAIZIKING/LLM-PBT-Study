@@ -1,0 +1,227 @@
+```python
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+from collections import Counter
+
+
+def _identity_key(s):
+    return s
+
+
+def _negate_key(s):
+    return -s
+
+
+def _is_missing(x):
+    return bool(pd.isna(x))
+
+
+def _normalize_cell(x):
+    if _is_missing(x):
+        return ("NA",)
+    if isinstance(x, np.generic):
+        x = x.item()
+    return ("VALUE", x)
+
+
+def _axis_records(df, axis):
+    if axis == 0:
+        return [
+            tuple(_normalize_cell(df.iat[i, j]) for j in range(df.shape[1]))
+            for i in range(df.shape[0])
+        ]
+    return [
+        tuple(_normalize_cell(df.iat[i, j]) for i in range(df.shape[0]))
+        for j in range(df.shape[1])
+    ]
+
+
+def _apply_key_to_scalar(x, key):
+    if key is _negate_key:
+        return -x
+    return x
+
+
+def _cmp_scalar(a, b, ascending, na_position):
+    a_missing = _is_missing(a)
+    b_missing = _is_missing(b)
+
+    if a_missing and b_missing:
+        return 0
+
+    if a_missing:
+        return -1 if na_position == "first" else 1
+
+    if b_missing:
+        return 1 if na_position == "first" else -1
+
+    if a < b:
+        cmp = -1
+    elif a > b:
+        cmp = 1
+    else:
+        cmp = 0
+
+    return cmp if ascending else -cmp
+
+
+def _cmp_records(left, right, ascending_list, na_position):
+    for a, b, ascending in zip(left, right, ascending_list):
+        cmp = _cmp_scalar(a, b, ascending, na_position)
+        if cmp != 0:
+            return cmp
+    return 0
+
+
+def _sort_record(df, axis, position, by_labels, key):
+    if axis == 0:
+        return [
+            _apply_key_to_scalar(df.iloc[position][label], key)
+            for label in by_labels
+        ]
+
+    return [
+        _apply_key_to_scalar(df.iat[df.index.get_loc(label), position], key)
+        for label in by_labels
+    ]
+
+
+# Summary: Generates small non-empty numeric DataFrames containing duplicates,
+# negative values, infinities, and NaNs. It randomly varies all documented
+# parameters: by as a scalar or list, axis as integer or string, ascending as
+# bool or matching bool list, inplace, kind, na_position, ignore_index, and key
+# as None or a vectorized Series-preserving function. The test checks the API
+# contract: inplace return behavior, non-inplace immutability, shape preservation,
+# sorted-axis relabeling when ignore_index=True, permutation preservation along
+# the sorted axis, and monotonic lexicographic ordering according to by,
+# ascending, na_position, and key.
+@given(st.data())
+def test_pandas_DataFrame_sort_values(data):
+    n_rows = data.draw(st.integers(min_value=1, max_value=8))
+    n_cols = data.draw(st.integers(min_value=1, max_value=6))
+
+    cell = st.one_of(
+        st.integers(min_value=-5, max_value=5),
+        st.floats(
+            min_value=-10,
+            max_value=10,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+        st.just(np.nan),
+        st.just(np.inf),
+        st.just(-np.inf),
+    )
+
+    values = data.draw(
+        st.lists(
+            st.lists(cell, min_size=n_cols, max_size=n_cols),
+            min_size=n_rows,
+            max_size=n_rows,
+        )
+    )
+
+    columns = [f"c{i}" for i in range(n_cols)]
+    index = [f"r{i}" for i in range(n_rows)]
+    df = pd.DataFrame(values, columns=columns, index=index)
+    original = df.copy(deep=True)
+
+    axis_arg = data.draw(st.sampled_from([0, 1, "index", "columns"]))
+    axis = 0 if axis_arg in (0, "index") else 1
+
+    available_by_labels = columns if axis == 0 else index
+    by_labels = data.draw(
+        st.lists(
+            st.sampled_from(available_by_labels),
+            min_size=1,
+            max_size=len(available_by_labels),
+            unique=True,
+        )
+    )
+
+    if len(by_labels) == 1 and data.draw(st.booleans()):
+        by_arg = by_labels[0]
+    else:
+        by_arg = list(by_labels)
+
+    if data.draw(st.booleans()):
+        ascending_arg = data.draw(st.booleans())
+        ascending_list = [ascending_arg] * len(by_labels)
+    else:
+        ascending_arg = data.draw(
+            st.lists(
+                st.booleans(),
+                min_size=len(by_labels),
+                max_size=len(by_labels),
+            )
+        )
+        ascending_list = list(ascending_arg)
+
+    inplace = data.draw(st.booleans())
+    kind = data.draw(st.sampled_from(["quicksort", "mergesort", "heapsort", "stable"]))
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+    ignore_index = data.draw(st.booleans())
+    key = data.draw(st.sampled_from([None, _identity_key, _negate_key]))
+
+    work = df.copy(deep=True)
+
+    result = work.sort_values(
+        by=by_arg,
+        axis=axis_arg,
+        ascending=ascending_arg,
+        inplace=inplace,
+        kind=kind,
+        na_position=na_position,
+        ignore_index=ignore_index,
+        key=key,
+    )
+
+    if inplace:
+        assert result is None
+        sorted_df = work
+    else:
+        assert isinstance(result, pd.DataFrame)
+        assert work.equals(original)
+        sorted_df = result
+
+    assert sorted_df.shape == original.shape
+
+    if axis == 0:
+        assert list(sorted_df.columns) == list(original.columns)
+
+        if ignore_index:
+            assert list(sorted_df.index) == list(range(n_rows))
+        else:
+            assert Counter(sorted_df.index) == Counter(original.index)
+
+        assert Counter(_axis_records(sorted_df, axis=0)) == Counter(
+            _axis_records(original, axis=0)
+        )
+
+        for pos in range(n_rows - 1):
+            left = _sort_record(sorted_df, axis, pos, by_labels, key)
+            right = _sort_record(sorted_df, axis, pos + 1, by_labels, key)
+            assert _cmp_records(left, right, ascending_list, na_position) <= 0
+
+    else:
+        assert list(sorted_df.index) == list(original.index)
+
+        if ignore_index:
+            assert list(sorted_df.columns) == list(range(n_cols))
+        else:
+            assert Counter(sorted_df.columns) == Counter(original.columns)
+
+        assert Counter(_axis_records(sorted_df, axis=1)) == Counter(
+            _axis_records(original, axis=1)
+        )
+
+        for pos in range(n_cols - 1):
+            left = _sort_record(sorted_df, axis, pos, by_labels, key)
+            right = _sort_record(sorted_df, axis, pos + 1, by_labels, key)
+            assert _cmp_records(left, right, ascending_list, na_position) <= 0
+
+
+# End program
+```

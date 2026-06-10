@@ -1,0 +1,65 @@
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+import math
+
+# Summary: Generate both allowed input types: ints, including zero, signs, float-precision boundaries, and very large values; and IEEE-754 floats, including NaN, infinities, signed zero, subnormals, ordinary finite values, and values like 0.1 whose exact binary representation differs from their short decimal spelling. Check that ints convert exactly, NaN/Infinity map to the documented Decimal special values, and finite floats convert to the exact decimal value of their binary float as given by as_integer_ratio().
+@given(st.data())
+def test_decimal_Decimal_from_float(data):
+    int_strategy = st.one_of(
+        st.sampled_from([
+            0,
+            1,
+            -1,
+            2**53 - 1,
+            2**53,
+            2**53 + 1,
+            -(2**53),
+            10**100,
+            -(10**100),
+            10**1000,
+            -(10**1000),
+        ]),
+        st.integers(min_value=-(10**1000), max_value=10**1000),
+    )
+
+    float_strategy = st.one_of(
+        st.sampled_from([
+            0.0,
+            -0.0,
+            0.1,
+            -0.1,
+            1.0,
+            -1.0,
+            1.1,
+            -1.1,
+            float("inf"),
+            float("-inf"),
+            float("nan"),
+            float.fromhex("0x1.fffffffffffffp1023"),
+            float.fromhex("-0x1.fffffffffffffp1023"),
+            float.fromhex("0x0.0000000000001p-1022"),
+            float.fromhex("-0x0.0000000000001p-1022"),
+        ]),
+        st.floats(width=64, allow_nan=True, allow_infinity=True),
+    )
+
+    f = data.draw(st.one_of(int_strategy, float_strategy), label="f")
+    result = Decimal.from_float(f)
+
+    assert isinstance(result, Decimal)
+
+    if type(f) is int:
+        assert result == Decimal(f)
+    elif math.isnan(f):
+        assert result.is_qnan()
+    elif math.isinf(f):
+        expected = Decimal("-Infinity") if f < 0 else Decimal("Infinity")
+        assert result == expected
+    else:
+        numerator, denominator = f.as_integer_ratio()
+        with localcontext() as ctx:
+            ctx.prec = 5000
+            expected = Decimal(numerator) / Decimal(denominator)
+        assert result == expected
+
+# End program

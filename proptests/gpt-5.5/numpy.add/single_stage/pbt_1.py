@@ -1,0 +1,151 @@
+from hypothesis import given, strategies as st
+import numpy as np
+
+# Summary: Generate numeric scalar, 0-D, and small N-D array_like inputs with integer/float dtypes,
+# including NaN/inf for floats, empty dimensions, broadcasting-compatible shapes, optional explicit
+# dtype, optional where masks, and optional out arrays/tuples. Check that np.add follows broadcasting,
+# matches element-wise + where computed, returns/stores into out when provided, preserves out where
+# where=False, and has the documented output shape/dtype.
+@given(st.data())
+def test_numpy_add(data):
+    dtypes = [np.int8, np.int16, np.int64, np.float32, np.float64]
+
+    def draw_shape(max_rank=3, max_side=4):
+        rank = data.draw(st.integers(min_value=0, max_value=max_rank))
+        return tuple(
+            data.draw(st.integers(min_value=0, max_value=max_side))
+            for _ in range(rank)
+        )
+
+    def draw_broadcastable_shape(target):
+        if not target:
+            return ()
+        suffix_len = data.draw(st.integers(min_value=0, max_value=len(target)))
+        suffix = target[len(target) - suffix_len:]
+        shape = []
+        for dim in suffix:
+            if dim == 0:
+                choices = [0]
+            elif dim == 1:
+                choices = [1]
+            else:
+                choices = [1, dim]
+            shape.append(data.draw(st.sampled_from(choices)))
+        return tuple(shape)
+
+    def size_of(shape):
+        size = 1
+        for dim in shape:
+            size *= dim
+        return size
+
+    def value_strategy(dtype):
+        dtype = np.dtype(dtype)
+        if np.issubdtype(dtype, np.integer):
+            info = np.iinfo(dtype)
+            return st.integers(
+                min_value=max(info.min, -100),
+                max_value=min(info.max, 100),
+            )
+        width = 32 if dtype == np.dtype(np.float32) else 64
+        return st.floats(width=width, allow_nan=True, allow_infinity=True)
+
+    def draw_array_like(shape, dtype):
+        strat = value_strategy(dtype)
+        if shape == ():
+            value = data.draw(strat)
+            if data.draw(st.booleans()):
+                return np.array(value, dtype=dtype)[()]
+            return np.array(value, dtype=dtype)
+
+        values = data.draw(
+            st.lists(strat, min_size=size_of(shape), max_size=size_of(shape))
+        )
+        return np.array(values, dtype=dtype).reshape(shape)
+
+    def draw_ndarray(shape, dtype):
+        strat = value_strategy(dtype)
+        values = data.draw(
+            st.lists(strat, min_size=size_of(shape), max_size=size_of(shape))
+        )
+        return np.array(values, dtype=dtype).reshape(shape)
+
+    def draw_bool_array_like(shape):
+        if shape == ():
+            value = data.draw(st.booleans())
+            if data.draw(st.booleans()):
+                return value
+            return np.array(value, dtype=bool)
+
+        values = data.draw(
+            st.lists(st.booleans(), min_size=size_of(shape), max_size=size_of(shape))
+        )
+        return np.array(values, dtype=bool).reshape(shape)
+
+    dtype = data.draw(st.sampled_from(dtypes))
+    dtype_arg = data.draw(st.one_of(st.none(), st.just(dtype)))
+
+    target_shape = draw_shape()
+    x1_shape = draw_broadcastable_shape(target_shape)
+    x2_shape = draw_broadcastable_shape(target_shape)
+
+    x1 = draw_array_like(x1_shape, dtype)
+    x2 = draw_array_like(x2_shape, dtype)
+
+    output_shape = np.broadcast_shapes(np.shape(x1), np.shape(x2))
+    where_shape = draw_broadcastable_shape(output_shape)
+    where = draw_bool_array_like(where_shape)
+
+    with np.errstate(all="ignore"):
+        if dtype_arg is None:
+            expected_sum = np.asarray(x1) + np.asarray(x2)
+        else:
+            expected_sum = (
+                np.asarray(x1, dtype=dtype_arg) + np.asarray(x2, dtype=dtype_arg)
+            )
+
+    expected_sum = np.asarray(expected_sum)
+    result_dtype = expected_sum.dtype
+
+    kwargs = {"where": where}
+    if dtype_arg is not None:
+        kwargs["dtype"] = dtype_arg
+
+    use_out = data.draw(st.booleans())
+    if use_out:
+        out = draw_ndarray(output_shape, result_dtype)
+        original_out = out.copy()
+        kwargs["out"] = (out,) if data.draw(st.booleans()) else out
+
+    with np.errstate(all="ignore"):
+        result = np.add(x1, x2, **kwargs)
+
+    result_array = np.asarray(result)
+    where_mask = np.broadcast_to(np.asarray(where, dtype=bool), output_shape)
+
+    assert result_array.shape == output_shape
+    assert result_array.dtype == result_dtype
+
+    if use_out:
+        assert result is out
+
+        expected_out = original_out.copy()
+        np.copyto(expected_out, expected_sum, where=where_mask)
+
+        np.testing.assert_allclose(
+            result_array,
+            expected_out,
+            rtol=0,
+            atol=0,
+            equal_nan=True,
+        )
+    else:
+        np.testing.assert_allclose(
+            np.where(where_mask, result_array, 0),
+            np.where(where_mask, expected_sum, 0),
+            rtol=0,
+            atol=0,
+            equal_nan=True,
+        )
+
+# End program

@@ -1,0 +1,67 @@
+## Generation Strategy
+
+To exercise `MultiFernet.rotate()` with a wide variety of inputs and edge cases, I focus on the `msg` parameter, which is the token to re-encrypt:
+
+1. **Valid tokens**: The most meaningful inputs are *real* Fernet tokens. To generate these, I create random plaintext payloads (using `st.binary()` to cover empty bytes, small messages, and large binary blobs including null bytes and unicode-derived bytes) and encrypt them with a `MultiFernet` instance built from one or more randomly generated keys. This ensures `rotate()` receives genuine, decryptable tokens.
+
+2. **Varying key configurations**: I generate the number of keys randomly so the encrypting/rotating MultiFernet may have 1 to several keys, and I build a *second* MultiFernet for rotation whose primary key differs (simulating the documented key-rotation use case where a new key is prepended).
+
+3. **Edge cases**: Empty payloads (`b""`), large payloads, and tokens encrypted by a key that is still present in the rotating instance (must succeed) versus the same payload re-encrypted under the new primary.
+
+## Properties to Check
+
+Based on the documentation:
+
+- **Round-trip correctness**: After rotating a valid token, decrypting the rotated token with the rotating MultiFernet must yield the original plaintext.
+- **Re-encryption under primary key**: The rotated token must be decryptable by a fresh Fernet built *only* from the new primary key (proving it was re-encrypted under the primary).
+- **Timestamp preservation**: The timestamp of the original token must equal that of the rotated token (documented behavior).
+- **Output type**: The return value is `bytes`.
+
+```python
+from hypothesis import given, strategies as st
+
+# Summary: Generate genuine Fernet tokens by encrypting random binary payloads with a
+# MultiFernet built from a random number of keys, then rotate using a second MultiFernet
+# that prepends a fresh primary key. Verify round-trip decryption, re-encryption under the
+# new primary key, timestamp preservation, and bytes output type.
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate(data):
+    from cryptography.fernet import Fernet, MultiFernet
+
+    # Generate a random payload, including edge cases (empty / large binary).
+    payload = data.draw(st.binary(min_size=0, max_size=512))
+
+    # Build the original MultiFernet from 1..4 random keys.
+    num_keys = data.draw(st.integers(min_value=1, max_value=4))
+    original_keys = [Fernet(Fernet.generate_key()) for _ in range(num_keys)]
+    f_original = MultiFernet(original_keys)
+
+    # Encrypt to produce a genuine, valid token.
+    token = f_original.encrypt(payload)
+
+    # Create a new primary key and build the rotating MultiFernet by prepending it.
+    new_primary_key = Fernet.generate_key()
+    new_primary = Fernet(new_primary_key)
+    f_rotate = MultiFernet([new_primary] + original_keys)
+
+    # Perform the rotation.
+    rotated = f_rotate.rotate(token)
+
+    # Property 1: Output must be bytes.
+    assert isinstance(rotated, bytes)
+
+    # Property 2: Round-trip correctness via the rotating MultiFernet.
+    assert f_rotate.decrypt(rotated) == payload
+
+    # Property 3: Re-encryption under the new primary key (a Fernet with only that key
+    # must be able to decrypt the rotated token).
+    primary_only = Fernet(new_primary_key)
+    assert primary_only.decrypt(rotated) == payload
+
+    # Property 4: Timestamp preservation. The timestamp extracted from the original token
+    # must equal that of the rotated token.
+    orig_ts = f_original.extract_timestamp(token)
+    rotated_ts = f_rotate.extract_timestamp(rotated)
+    assert orig_ts == rotated_ts
+# End program
+```

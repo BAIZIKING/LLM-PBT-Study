@@ -1,0 +1,9 @@
+1. The output is always a `datetime.datetime` object for any successfully parsed valid ISO-8601 input.
+
+2. Any unspecified date or time components in the input are set to their lowest valid values in the output, such as month `1`, day `1`, hour `0`, minute `0`, second `0`, and microsecond `0`.
+
+3. Fractional seconds in the input are represented in the output as `microsecond`, using at most six digits of precision.
+
+4. Inputs with `Z` or a UTC-equivalent offset such as `+00:00`, `+0000`, or `+00` produce an output whose `tzinfo` represents UTC.
+
+5. Inputs representing midnight as `24:00` produce an output equivalent to midnight at the start of the following calendar day.

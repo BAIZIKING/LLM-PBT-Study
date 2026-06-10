@@ -1,0 +1,9 @@
+1. The result is a DataFrame whose columns consist of the appropriate join key column(s) plus columns from both inputs; overlapping non-key column names are disambiguated using `suffixes`.
+
+2. For non-`cross` merges, every output row combines left and right rows whose join key values are equal, including null key values, which match each other.
+
+3. The set of join keys in the output follows `how`: `inner` uses the intersection, `left` uses keys from the left input, `right` uses keys from the right input, and `outer` uses the union.
+
+4. For each join key, output row multiplicity reflects duplicate matches: if a key appears `m` times on the left and `n` times on the right, matched output rows for that key are `m * n`; unmatched rows have missing values for the absent side.
+
+5. For `how='cross'`, the output contains the Cartesian product of the two inputs, with exactly `len(left) * len(right)` rows and all combinations of left and right rows.

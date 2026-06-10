@@ -1,0 +1,147 @@
+from hypothesis import given, strategies as st, assume, settings
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Strategies / helpers
+# ---------------------------------------------------------------------------
+KEY_DOMAIN = ["foo", "bar", "baz", "qux", "spam"]
+key_values = st.sampled_from(KEY_DOMAIN)
+payload_values = st.integers(min_value=-1000, max_value=1000)  # bounded -> no overflow
+
+
+def _make_df(data, key_col, value_col, max_rows=6, unique_keys=False):
+    """Build a small DataFrame with a key column and a value column."""
+    if unique_keys:
+        keys = data.draw(st.lists(st.sampled_from(KEY_DOMAIN),
+                                  min_size=0, max_size=len(KEY_DOMAIN),
+                                  unique=True))
+    else:
+        n = data.draw(st.integers(min_value=0, max_value=max_rows))
+        keys = data.draw(st.lists(key_values, min_size=n, max_size=n))
+    n = len(keys)
+    vals = data.draw(st.lists(payload_values, min_size=n, max_size=n))
+    return pd.DataFrame({key_col: keys, value_col: vals})
+
+
+@given(st.data())
+@settings(max_examples=500, deadline=None)
+def test_pandas_merge_property():
+    # Re-draw a fresh `data` object inside the body via the injected one.
+    # (Hypothesis passes the SearchStrategy result; we use st.data())
+    pass
+
+
+# The above signature requires the data object; redefine correctly:
+@given(st.data())
+@settings(max_examples=500, deadline=None)
+def test_pandas_merge_property(data):  # noqa: F811
+    # Choose which property to exercise this run.
+    prop = data.draw(st.integers(min_value=1, max_value=5))
+
+    # -------------------------------------------------------------------
+    # Property 1: Cross merge row count and columns
+    # -------------------------------------------------------------------
+    if prop == 1:
+        # Distinct column names so no suffixing is needed for clarity.
+        left = _make_df(data, "lkey", "lval")
+        right = _make_df(data, "rkey", "rval")
+
+        result = pd.merge(left, right, how="cross")
+
+        # Row count = product
+        assert len(result) == len(left) * len(right)
+        # Columns = union of left and right columns (all distinct here)
+        assert set(result.columns) == set(left.columns) | set(right.columns)
+
+    # -------------------------------------------------------------------
+    # Property 2: Inner merge subset & row count bound
+    # -------------------------------------------------------------------
+    elif prop == 2:
+        left = _make_df(data, "k", "lval")
+        right = _make_df(data, "k", "rval")
+
+        result = pd.merge(left, right, how="inner", on="k")
+
+        left_keys = set(left["k"])
+        right_keys = set(right["k"])
+
+        # Every output key appears in both inputs.
+        for kv in result["k"]:
+            assert kv in left_keys
+            assert kv in right_keys
+
+        # Row count is at most the cartesian product size.
+        assert len(result) <= len(left) * len(right)
+
+    # -------------------------------------------------------------------
+    # Property 3: Left merge key preservation & 1:1 / m:1 row count
+    # -------------------------------------------------------------------
+    elif prop == 3:
+        # right has unique keys so merge is m:1 (or 1:1) from left's view.
+        left = _make_df(data, "k", "lval")
+        right = _make_df(data, "k", "rval", unique_keys=True)
+
+        result = pd.merge(left, right, how="left", on="k")
+
+        # No left keys are dropped.
+        assert set(left["k"]).issubset(set(result["k"]))
+        # At least as many rows as left.
+        assert len(result) >= len(left)
+        # Because right keys are unique, each left row matches at most one
+        # right row => exactly len(left) output rows.
+        assert len(result) == len(left)
+
+    # -------------------------------------------------------------------
+    # Property 4: Outer merge keys == union of input keys
+    # -------------------------------------------------------------------
+    elif prop == 4:
+        left = _make_df(data, "k", "lval")
+        right = _make_df(data, "k", "rval")
+
+        outer = pd.merge(left, right, how="outer", on="k")
+        inner = pd.merge(left, right, how="inner", on="k")
+
+        union_keys = set(left["k"]) | set(right["k"])
+        # Outer result key set equals the union of input keys.
+        assert set(outer["k"]) == union_keys
+        # Inner keys are contained in outer keys.
+        assert set(inner["k"]).issubset(set(outer["k"]))
+        # Both input key sets are contained in the outer key set.
+        assert set(left["k"]).issubset(set(outer["k"]))
+        assert set(right["k"]).issubset(set(outer["k"]))
+
+    # -------------------------------------------------------------------
+    # Property 5: Indicator values & suffix correctness
+    # -------------------------------------------------------------------
+    else:
+        # Both frames share the key column "k" and an overlapping payload
+        # column "value" -> suffixes must be applied.
+        left = _make_df(data, "k", "value")
+        right = _make_df(data, "k", "value")
+
+        how = data.draw(st.sampled_from(["inner", "left", "right", "outer"]))
+
+        result = pd.merge(left, right, how=how, on="k",
+                          indicator=True, suffixes=("_L", "_R"))
+
+        # Indicator column exists and has only valid categories.
+        assert "_merge" in result.columns
+        allowed = {"left_only", "right_only", "both"}
+        assert set(map(str, result["_merge"].unique())).issubset(allowed)
+
+        # Indicator values must be consistent with the join type.
+        observed = set(map(str, result["_merge"].unique()))
+        if how == "inner":
+            assert observed.issubset({"both"})
+        elif how == "left":
+            assert observed.issubset({"both", "left_only"})
+        elif how == "right":
+            assert observed.issubset({"both", "right_only"})
+        # outer: any of the three allowed -> nothing extra to check.
+
+        # Suffix correctness: overlapping "value" column should be split
+        # into "value_L" and "value_R", and the bare "value" should be gone.
+        assert "value_L" in result.columns
+        assert "value_R" in result.columns
+        assert "value" not in result.columns
+# End program

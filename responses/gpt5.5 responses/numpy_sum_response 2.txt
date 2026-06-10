@@ -1,0 +1,147 @@
+```python
+from hypothesis import given, strategies as st
+import itertools
+import numpy as np
+
+# Summary: Generate 0-D to 3-D NumPy arrays, including empty dimensions, with bool,
+# signed/unsigned integer, and floating dtypes. Randomly generate axis as None, an int
+# including negative axes, or a tuple of unique axes; randomly vary dtype, keepdims,
+# initial, where masks, and out. Check against a small independent Python oracle:
+# reduced axes are removed or kept as size 1, initial is applied per reduction result,
+# where excludes elements, empty reductions use the neutral element 0, requested dtype
+# controls the result dtype, and out is returned and filled with the cast result.
+@given(st.data())
+def test_numpy_sum(data):
+    base_dtype = data.draw(
+        st.sampled_from([np.bool_, np.int8, np.uint8, np.int16, np.int64, np.float32, np.float64])
+    )
+
+    ndim = data.draw(st.integers(min_value=0, max_value=3))
+    if ndim == 0:
+        shape = ()
+    else:
+        shape = tuple(
+            data.draw(st.lists(st.integers(min_value=0, max_value=4), min_size=ndim, max_size=ndim))
+        )
+
+    total_size = int(np.prod(shape)) if shape else 1
+    kind = np.dtype(base_dtype).kind
+    if kind == "b":
+        element_strategy = st.booleans()
+    elif kind == "u":
+        element_strategy = st.integers(min_value=0, max_value=3)
+    else:
+        element_strategy = st.integers(min_value=-3, max_value=3)
+
+    values = data.draw(st.lists(element_strategy, min_size=total_size, max_size=total_size))
+    a = np.asarray(values, dtype=base_dtype).reshape(shape)
+
+    if ndim == 0:
+        axis = None
+        reduced_axes = tuple()
+    else:
+        axis_kind = data.draw(st.sampled_from(["none", "int", "tuple"]))
+        if axis_kind == "none":
+            axis = None
+            reduced_axes = tuple(range(ndim))
+        elif axis_kind == "int":
+            axis = data.draw(st.integers(min_value=-ndim, max_value=ndim - 1))
+            reduced_axes = (axis % ndim,)
+        else:
+            positive_axes = data.draw(
+                st.lists(
+                    st.integers(min_value=0, max_value=ndim - 1),
+                    min_size=1,
+                    max_size=ndim,
+                    unique=True,
+                )
+            )
+            axis_items = []
+            for ax in positive_axes:
+                axis_items.append(ax - ndim if data.draw(st.booleans()) else ax)
+            axis = tuple(axis_items)
+            reduced_axes = tuple(ax % ndim for ax in axis)
+
+    reduced_set = set(reduced_axes)
+
+    keepdims = data.draw(st.booleans())
+
+    dtype_param = data.draw(st.sampled_from([None, np.int64, np.float64]))
+
+    use_initial = data.draw(st.booleans())
+    initial = data.draw(st.integers(min_value=0, max_value=3)) if use_initial else None
+
+    use_where = data.draw(st.booleans())
+    if use_where:
+        where_values = data.draw(st.lists(st.booleans(), min_size=total_size, max_size=total_size))
+        where = np.asarray(where_values, dtype=bool).reshape(shape)
+    else:
+        where = None
+
+    kwargs = {"keepdims": keepdims}
+    if dtype_param is not None:
+        kwargs["dtype"] = dtype_param
+    if use_initial:
+        kwargs["initial"] = initial
+    if use_where:
+        kwargs["where"] = where
+
+    actual = np.sum(a, axis=axis, **kwargs)
+    actual_array = np.asarray(actual)
+
+    if keepdims:
+        expected_shape = tuple(1 if dim in reduced_set else shape[dim] for dim in range(ndim))
+    else:
+        expected_shape = tuple(shape[dim] for dim in range(ndim) if dim not in reduced_set)
+
+    assert actual_array.shape == expected_shape
+
+    reduced_axes_sorted = tuple(sorted(reduced_set))
+    expected_values = []
+
+    for output_index in np.ndindex(expected_shape):
+        accumulator = initial if use_initial else 0
+
+        reduction_ranges = [range(shape[ax]) for ax in reduced_axes_sorted]
+        for reduction_index in itertools.product(*reduction_ranges):
+            reduction_map = dict(zip(reduced_axes_sorted, reduction_index))
+
+            full_index = []
+            non_reduced_pos = 0
+            for dim in range(ndim):
+                if dim in reduced_set:
+                    full_index.append(reduction_map[dim])
+                else:
+                    if keepdims:
+                        full_index.append(output_index[dim])
+                    else:
+                        full_index.append(output_index[non_reduced_pos])
+                        non_reduced_pos += 1
+
+            full_index = tuple(full_index)
+
+            if where is None or bool(where[full_index]):
+                accumulator += a[full_index].item()
+
+        expected_values.append(accumulator)
+
+    expected = np.asarray(expected_values, dtype=actual_array.dtype).reshape(expected_shape)
+    np.testing.assert_array_equal(actual_array, expected)
+
+    if dtype_param is not None:
+        assert actual_array.dtype == np.dtype(dtype_param)
+
+    if data.draw(st.booleans()):
+        out_dtype = data.draw(st.sampled_from([actual_array.dtype, np.float64]))
+        out = np.empty(expected_shape, dtype=out_dtype)
+
+        out_kwargs = dict(kwargs)
+        out_kwargs["out"] = out
+
+        returned = np.sum(a, axis=axis, **out_kwargs)
+
+        assert returned is out
+        np.testing.assert_array_equal(out, actual_array.astype(out_dtype))
+
+# End program
+```

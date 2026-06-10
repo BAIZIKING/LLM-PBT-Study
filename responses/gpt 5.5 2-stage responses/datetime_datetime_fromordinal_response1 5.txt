@@ -1,0 +1,9 @@
+1. For any valid `ordinal`, the returned datetime’s `toordinal()` value is exactly equal to the input `ordinal`.
+
+2. The returned datetime always has `hour == 0`, `minute == 0`, `second == 0`, and `microsecond == 0`.
+
+3. The returned datetime always has `tzinfo is None`.
+
+4. For `ordinal == 1`, the returned datetime represents January 1, year 1.
+
+5. For any valid `ordinal`, the returned datetime is within the supported range `datetime.min <= result <= datetime.max`.

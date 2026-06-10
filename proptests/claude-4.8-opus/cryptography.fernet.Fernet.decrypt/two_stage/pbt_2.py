@@ -1,0 +1,93 @@
+from hypothesis import given, strategies as st, assume
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import time
+import pytest
+
+
+# Property 1: Round-trip correctness
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_decrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert f.decrypt(token) == data
+# End program
+
+
+# Property 2: Output type is always bytes
+@given(data=st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_decrypt_output_type(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    result = f.decrypt(token)
+    assert isinstance(result, bytes)
+# End program
+
+
+# Property 3: TTL expiration enforcement
+@given(
+    data=st.binary(max_size=4096),
+    creation_time=st.integers(min_value=0, max_value=2_000_000_000),
+    ttl=st.integers(min_value=0, max_value=1_000_000),
+    extra=st.integers(min_value=1, max_value=1_000_000),
+)
+def test_cryptography_fernet_Fernet_decrypt_ttl_expired(data, creation_time, ttl, extra):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt_at_time(data, creation_time)
+    # current time is strictly more than ttl seconds after creation
+    current_time = creation_time + ttl + extra
+    with pytest.raises(InvalidToken):
+        f.decrypt_at_time(token, ttl, current_time)
+# End program
+
+
+# Property 4: TTL validity within bounds
+@given(
+    data=st.binary(max_size=4096),
+    creation_time=st.integers(min_value=0, max_value=2_000_000_000),
+    ttl=st.integers(min_value=0, max_value=1_000_000),
+    age=st.integers(min_value=0, max_value=1_000_000),
+)
+def test_cryptography_fernet_Fernet_decrypt_ttl_valid(data, creation_time, ttl, age):
+    # age within ttl bounds
+    assume(age <= ttl)
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt_at_time(data, creation_time)
+    current_time = creation_time + age
+    assert f.decrypt_at_time(token, ttl, current_time) == data
+# End program
+
+
+# Property 5: Tamper/invalidity detection
+@given(
+    data=st.binary(max_size=4096),
+    idx=st.integers(min_value=0, max_value=10_000),
+    xor=st.integers(min_value=1, max_value=255),
+    use_wrong_key=st.booleans(),
+)
+def test_cryptography_fernet_Fernet_decrypt_tamper_detection(data, idx, xor, use_wrong_key):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+
+    if use_wrong_key:
+        # decrypting with a different key must fail
+        other_key = Fernet.generate_key()
+        assume(other_key != key)
+        other_f = Fernet(other_key)
+        with pytest.raises(InvalidToken):
+            other_f.decrypt(token)
+    else:
+        # mutate one byte of the token to corrupt it
+        token_bytes = bytearray(token)
+        pos = idx % len(token_bytes)
+        token_bytes[pos] ^= xor
+        tampered = bytes(token_bytes)
+        assume(tampered != token)
+        with pytest.raises((InvalidToken, TypeError, ValueError)):
+            f.decrypt(tampered)
+# End program

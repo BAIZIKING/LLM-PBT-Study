@@ -1,0 +1,117 @@
+```python
+from hypothesis import given, strategies as st
+from itertools import combinations
+
+import networkx as nx
+import pytest
+
+
+# Summary: Generate small undirected Graph/MultiGraph instances with 0..7 integer
+# nodes, arbitrary edges, self-loops, and possible parallel edges. Generate `nodes`
+# as None, an empty list, a clique candidate, or an invalid/non-clique candidate
+# including missing nodes. Check that invalid `nodes` raises ValueError; otherwise
+# compare nx.find_cliques against a brute-force enumeration of all maximal cliques,
+# ignoring self-loops and parallel-edge multiplicity.
+@given(st.data())
+def test_networkx_find_cliques(data):
+    n = data.draw(st.integers(min_value=0, max_value=7), label="number_of_nodes")
+    labels = list(range(n))
+
+    graph_type = data.draw(st.sampled_from([nx.Graph, nx.MultiGraph]), label="graph_type")
+    G = graph_type()
+    G.add_nodes_from(labels)
+
+    possible_edges = list(combinations(labels, 2))
+    if possible_edges:
+        edges = data.draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                unique=True,
+                max_size=len(possible_edges),
+            ),
+            label="simple_edges",
+        )
+        G.add_edges_from(edges)
+
+        if isinstance(G, nx.MultiGraph):
+            parallel_edges = data.draw(
+                st.lists(st.sampled_from(possible_edges), max_size=10),
+                label="parallel_edges",
+            )
+            G.add_edges_from(parallel_edges)
+
+    if labels:
+        loop_nodes = data.draw(
+            st.lists(st.sampled_from(labels), unique=True, max_size=n),
+            label="self_loops",
+        )
+        G.add_edges_from((u, u) for u in loop_nodes)
+
+    if n == 0:
+        query_nodes = data.draw(st.one_of(st.none(), st.just([])), label="nodes")
+    else:
+        query_nodes = data.draw(
+            st.one_of(
+                st.none(),
+                st.just([]),
+                st.lists(
+                    st.integers(min_value=0, max_value=n + 1),
+                    unique=True,
+                    max_size=n + 2,
+                ),
+            ),
+            label="nodes",
+        )
+
+    def is_complete(node_set):
+        return all(G.has_edge(u, v) for u, v in combinations(node_set, 2))
+
+    def is_maximal_clique(node_set):
+        node_set = set(node_set)
+        if not node_set or not is_complete(node_set):
+            return False
+        return not any(
+            all(G.has_edge(candidate, member) for member in node_set)
+            for candidate in set(G.nodes) - node_set
+        )
+
+    def query_nodes_form_clique():
+        if query_nodes is None:
+            return True
+        if any(node not in G for node in query_nodes):
+            return False
+        return is_complete(query_nodes)
+
+    if not query_nodes_form_clique():
+        with pytest.raises(ValueError):
+            list(nx.find_cliques(G, nodes=query_nodes))
+        return
+
+    expected = set()
+    graph_nodes = list(G.nodes)
+
+    for size in range(1, len(graph_nodes) + 1):
+        for candidate in combinations(graph_nodes, size):
+            candidate_set = frozenset(candidate)
+            if is_maximal_clique(candidate_set):
+                if query_nodes is None or set(query_nodes) <= candidate_set:
+                    expected.add(candidate_set)
+
+    clique_iter = nx.find_cliques(G, nodes=query_nodes)
+    assert iter(clique_iter) is clique_iter
+
+    actual_lists = list(clique_iter)
+    actual = {frozenset(clique) for clique in actual_lists}
+
+    assert len(actual_lists) == len(actual)
+    assert actual == expected
+
+    for clique in actual_lists:
+        clique_set = set(clique)
+        assert clique_set <= set(G.nodes)
+        assert is_complete(clique_set)
+        assert is_maximal_clique(clique_set)
+        if query_nodes is not None:
+            assert set(query_nodes) <= clique_set
+# End program
+```

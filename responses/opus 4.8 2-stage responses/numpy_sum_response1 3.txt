@@ -1,0 +1,9 @@
+1. **Identity/equivalence with manual summation**: For a given array and axis, the result of `np.sum` should equal the value obtained by iteratively adding all included elements along that axis (within floating-point tolerance), confirming it computes a correct total.
+
+2. **Shape correctness**: When `axis` is specified without `keepdims`, the output shape should equal the input shape with the summed axis (or axes) removed; when `keepdims=True`, those axes should remain present with size one; when `axis=None`, the result should be a scalar (0-d).
+
+3. **Initial value offset**: For any array and scalar `initial`, the result of `np.sum(a, initial=k)` should equal `np.sum(a) + k`, since the starting value is simply added to the total.
+
+4. **Empty array neutral element**: Summing an empty array (or an entirely excluded selection via `where=False`) should return 0 (the additive identity), possibly combined with the `initial` value if provided.
+
+5. **Additivity / decomposition over axes**: Summing over all axes should equal summing sequentially over each axis one at a time, and summing over a tuple of axes should equal the result of summing over those axes in successive reductions—the order of axis reduction should not change the final value (within floating-point tolerance).

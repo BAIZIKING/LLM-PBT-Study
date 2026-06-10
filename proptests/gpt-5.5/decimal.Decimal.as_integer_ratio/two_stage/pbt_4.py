@@ -1,0 +1,65 @@
+from hypothesis import given, strategies as st
+import decimal
+import math
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_property(data):
+    finite_decimals = st.builds(
+        lambda coefficient, exponent: decimal.Decimal(f"{coefficient}e{exponent}"),
+        st.integers(min_value=-(10**50), max_value=10**50),
+        st.integers(min_value=-50, max_value=50),
+    )
+
+    x = data.draw(finite_decimals)
+
+    result = x.as_integer_ratio()
+
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+    n, d = result
+
+    assert isinstance(n, int)
+    assert isinstance(d, int)
+
+    assert d > 0
+
+    sign, digits, exponent = x.as_tuple()
+    coefficient = 0
+    for digit in digits:
+        coefficient = coefficient * 10 + digit
+    if sign:
+        coefficient = -coefficient
+
+    if exponent >= 0:
+        expected_n = coefficient * (10 ** exponent)
+        expected_d = 1
+    else:
+        expected_n = coefficient
+        expected_d = 10 ** (-exponent)
+
+    assert n * expected_d == expected_n * d
+
+    assert math.gcd(abs(n), d) == 1
+
+    non_finite = data.draw(
+        st.sampled_from(
+            [
+                decimal.Decimal("Infinity"),
+                decimal.Decimal("-Infinity"),
+                decimal.Decimal("NaN"),
+                decimal.Decimal("-NaN"),
+            ]
+        )
+    )
+
+    try:
+        non_finite.as_integer_ratio()
+    except OverflowError:
+        assert non_finite.is_infinite()
+    except ValueError:
+        assert non_finite.is_nan()
+    else:
+        assert False
+
+# End program

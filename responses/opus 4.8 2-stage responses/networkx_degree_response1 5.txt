@@ -1,0 +1,11 @@
+Here are five properties for property-based testing of `networkx_degree`:
+
+1. **Degree non-negativity and integer type (unweighted):** When `weight=None`, the degree returned for every node is a non-negative integer.
+
+2. **Sum of degrees equals twice the number of edges (handshaking lemma):** When `nbunch=None` and `weight=None`, the sum of all node degrees equals twice the total number of edges in the graph `G` (with self-loops counted twice).
+
+3. **Consistency with node count:** When `nbunch=None`, the degree view contains exactly one entry per node in `G`, and the set of nodes in the view equals the set of nodes in `G`.
+
+4. **Single node consistency:** When `nbunch` is a single node present in `G`, the returned degree equals the degree of that same node when retrieved from the full degree view (with `nbunch=None`), and equals the number of edges incident to that node (self-loops counted twice).
+
+5. **Weighted degree equals sum of incident edge weights:** When `weight` is specified, the degree of each node equals the sum of the weight attribute over all its incident edges (self-loops contributing their weight twice), and reduces to the unweighted degree if all edge weights are 1.

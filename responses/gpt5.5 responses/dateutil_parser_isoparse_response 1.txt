@@ -1,0 +1,201 @@
+```python
+from hypothesis import given, strategies as st
+import calendar
+import datetime as dt
+import io
+
+from dateutil import parser as dateutil_parser
+from dateutil import tz as dateutil_tz
+
+# Summary: Generates supported ISO-8601 date/time strings across common and week-date forms,
+# compact and separated spellings, optional times only for complete dates, midnight 24:00,
+# fractional seconds with "." or ",", timezone spellings including UTC-equivalent offsets,
+# and sometimes passes the value through a text stream. Checks that parsing matches the
+# independently computed datetime, that omitted components default low, and that tzinfo
+# follows the documented UTC/non-UTC offset behavior.
+@given(st.data())
+def test_dateutil_parser_isoparse(data):
+    year_strategy = st.one_of(
+        st.sampled_from([1, 4, 1582, 1900, 1999, 2000, 2004, 9999]),
+        st.integers(min_value=1, max_value=9999),
+    )
+    bounded_week_year_strategy = st.one_of(
+        st.sampled_from([2, 4, 1582, 1999, 2000, 2004, 9998]),
+        st.integers(min_value=2, max_value=9998),
+    )
+
+    date_kind = data.draw(st.sampled_from(["year", "year_month", "ymd", "week", "week_day"]))
+
+    if date_kind == "year":
+        year = data.draw(year_strategy)
+        date_part = f"{year:04d}"
+        expected_date = dt.date(year, 1, 1)
+        date_is_complete = False
+
+    elif date_kind == "year_month":
+        year = data.draw(year_strategy)
+        month = data.draw(st.one_of(st.sampled_from([1, 12]), st.integers(1, 12)))
+        separated = data.draw(st.booleans())
+        date_part = f"{year:04d}-{month:02d}" if separated else f"{year:04d}{month:02d}"
+        expected_date = dt.date(year, month, 1)
+        date_is_complete = False
+
+    elif date_kind == "ymd":
+        year = data.draw(year_strategy)
+        month = data.draw(st.one_of(st.sampled_from([1, 2, 12]), st.integers(1, 12)))
+        last_day = calendar.monthrange(year, month)[1]
+        day = data.draw(st.one_of(st.sampled_from([1, last_day]), st.integers(1, last_day)))
+        separated = data.draw(st.booleans())
+        date_part = (
+            f"{year:04d}-{month:02d}-{day:02d}"
+            if separated
+            else f"{year:04d}{month:02d}{day:02d}"
+        )
+        expected_date = dt.date(year, month, day)
+        date_is_complete = True
+
+    elif date_kind == "week":
+        year = data.draw(bounded_week_year_strategy)
+        max_week = dt.date(year, 12, 28).isocalendar().week
+        week = data.draw(st.one_of(st.sampled_from([1, max_week]), st.integers(1, max_week)))
+        separated = data.draw(st.booleans())
+        date_part = f"{year:04d}-W{week:02d}" if separated else f"{year:04d}W{week:02d}"
+        expected_date = dt.date.fromisocalendar(year, week, 1)
+        date_is_complete = False
+
+    else:
+        year = data.draw(bounded_week_year_strategy)
+        max_week = dt.date(year, 12, 28).isocalendar().week
+        week = data.draw(st.one_of(st.sampled_from([1, max_week]), st.integers(1, max_week)))
+        iso_day = data.draw(st.one_of(st.sampled_from([1, 7]), st.integers(1, 7)))
+        separated = data.draw(st.booleans())
+        date_part = (
+            f"{year:04d}-W{week:02d}-{iso_day}"
+            if separated
+            else f"{year:04d}W{week:02d}{iso_day}"
+        )
+        expected_date = dt.date.fromisocalendar(year, week, iso_day)
+        date_is_complete = True
+
+    include_time = date_is_complete and data.draw(st.booleans())
+
+    time_part = ""
+    expected_time = dt.time(0, 0, 0, 0)
+    expected_tz = None
+    expected_tz_offset_seconds = None
+
+    if include_time:
+        time_format = data.draw(st.sampled_from(["hh", "hhmm_colon", "hhmm", "hhmmss_colon", "hhmmss", "fraction"]))
+        use_24_hour_midnight = (
+            expected_date < dt.date.max
+            and data.draw(st.sampled_from([False, False, True]))
+        )
+
+        if use_24_hour_midnight:
+            hour = 24
+            minute = second = microsecond = 0
+            parsed_date = expected_date + dt.timedelta(days=1)
+            parsed_hour = 0
+        else:
+            hour = data.draw(st.one_of(st.sampled_from([0, 1, 12, 23]), st.integers(0, 23)))
+            minute = data.draw(st.one_of(st.sampled_from([0, 1, 30, 59]), st.integers(0, 59)))
+            second = data.draw(st.one_of(st.sampled_from([0, 1, 30, 59]), st.integers(0, 59)))
+            parsed_date = expected_date
+            parsed_hour = hour
+
+        if time_format == "hh":
+            time_body = f"{hour:02d}"
+            expected_time = dt.time(parsed_hour, 0, 0, 0)
+
+        elif time_format == "hhmm_colon":
+            time_body = f"{hour:02d}:{minute:02d}"
+            expected_time = dt.time(parsed_hour, minute, 0, 0)
+
+        elif time_format == "hhmm":
+            time_body = f"{hour:02d}{minute:02d}"
+            expected_time = dt.time(parsed_hour, minute, 0, 0)
+
+        elif time_format == "hhmmss_colon":
+            time_body = f"{hour:02d}:{minute:02d}:{second:02d}"
+            expected_time = dt.time(parsed_hour, minute, second, 0)
+
+        elif time_format == "hhmmss":
+            time_body = f"{hour:02d}{minute:02d}{second:02d}"
+            expected_time = dt.time(parsed_hour, minute, second, 0)
+
+        else:
+            digits = data.draw(st.one_of(st.sampled_from([1, 6]), st.integers(1, 6)))
+            if use_24_hour_midnight:
+                fraction_value = 0
+            else:
+                fraction_value = data.draw(
+                    st.one_of(
+                        st.sampled_from([0, (10 ** digits) - 1]),
+                        st.integers(0, (10 ** digits) - 1),
+                    )
+                )
+            microsecond = fraction_value * (10 ** (6 - digits))
+            decimal_separator = data.draw(st.sampled_from([".", ","]))
+            time_body = (
+                f"{hour:02d}:{minute:02d}:{second:02d}"
+                f"{decimal_separator}{fraction_value:0{digits}d}"
+            )
+            expected_time = dt.time(parsed_hour, minute, second, microsecond)
+
+        tz_kind = data.draw(st.sampled_from(["none", "Z", "offset"]))
+        if tz_kind == "none":
+            tz_body = ""
+            expected_tz = None
+            expected_tz_offset_seconds = None
+
+        elif tz_kind == "Z":
+            tz_body = "Z"
+            expected_tz = dateutil_tz.tzutc()
+            expected_tz_offset_seconds = 0
+
+        else:
+            offset_format = data.draw(st.sampled_from(["HH:MM", "HHMM", "HH"]))
+            sign_char = data.draw(st.sampled_from(["+", "-"]))
+            sign = 1 if sign_char == "+" else -1
+            offset_hour = data.draw(st.one_of(st.sampled_from([0, 1, 23]), st.integers(0, 23)))
+            if offset_format == "HH":
+                offset_minute = 0
+                tz_body = f"{sign_char}{offset_hour:02d}"
+            else:
+                offset_minute = data.draw(st.one_of(st.sampled_from([0, 1, 30, 59]), st.integers(0, 59)))
+                tz_body = (
+                    f"{sign_char}{offset_hour:02d}:{offset_minute:02d}"
+                    if offset_format == "HH:MM"
+                    else f"{sign_char}{offset_hour:02d}{offset_minute:02d}"
+                )
+
+            expected_tz_offset_seconds = sign * ((offset_hour * 3600) + (offset_minute * 60))
+            expected_tz = (
+                dateutil_tz.tzutc()
+                if expected_tz_offset_seconds == 0
+                else dateutil_tz.tzoffset(None, expected_tz_offset_seconds)
+            )
+
+        separator = data.draw(st.sampled_from(["T", " "]))
+        time_part = separator + time_body + tz_body
+        expected_date = parsed_date
+
+    iso_string = date_part + time_part
+    expected = dt.datetime.combine(expected_date, expected_time, expected_tz)
+
+    input_value = io.StringIO(iso_string) if data.draw(st.booleans()) else iso_string
+    parsed = dateutil_parser.isoparse(input_value)
+
+    assert parsed == expected
+    assert parsed == dateutil_parser.isoparse(iso_string)
+
+    if expected_tz_offset_seconds is None:
+        assert parsed.tzinfo is None
+    elif expected_tz_offset_seconds == 0:
+        assert isinstance(parsed.tzinfo, dateutil_tz.tzutc)
+        assert parsed.utcoffset() == dt.timedelta(0)
+    else:
+        assert isinstance(parsed.tzinfo, dateutil_tz.tzoffset)
+        assert parsed.utcoffset() == dt.timedelta(seconds=expected_tz_offset_seconds)
+# End program
+```

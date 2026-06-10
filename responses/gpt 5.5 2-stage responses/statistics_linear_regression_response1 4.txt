@@ -1,0 +1,9 @@
+1. For valid inputs with `proportional=False`, the fitted line passes through the sample means: `mean(y) == slope * mean(x) + intercept`, up to floating-point tolerance.
+
+2. For valid inputs with `proportional=True`, the returned `intercept` is always `0.0`.
+
+3. If the data is exactly linear, `y[i] = a * x[i] + b`, then with `proportional=False` the returned `slope` is `a` and the returned `intercept` is `b`, up to numeric tolerance.
+
+4. If the data is exactly proportional, `y[i] = a * x[i]`, then with `proportional=True` the returned `slope` is `a` and the returned `intercept` is `0.0`, up to numeric tolerance.
+
+5. For valid inputs, the residuals `y[i] - (slope * x[i] + intercept)` satisfy the ordinary least-squares normal-equation property: with `proportional=False`, residuals sum to approximately zero and are approximately uncorrelated with `x`; with `proportional=True`, the weighted residual sum `sum(x[i] * residual[i])` is approximately zero.

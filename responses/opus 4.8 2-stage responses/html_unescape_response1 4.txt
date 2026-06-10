@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `html.unescape`:
+
+1. **Idempotence on text without references**: For any string `s` containing no character references (no `&` sequences that form valid references), `html.unescape(s)` returns `s` unchanged.
+
+2. **Output type and termination**: For any input string `s`, `html.unescape(s)` always returns a string and never raises an exception.
+
+3. **No remaining valid named references**: After unescaping, the output should not contain any of the well-formed named character references (e.g., `&amp;`, `&gt;`, `&lt;`) that were present in valid form in the input—they should all be converted.
+
+4. **Correct decoding of numeric references**: For any Unicode code point `c` (within valid ranges), unescaping its decimal form `&#<n>;` and its hexadecimal form `&#x<hex>;` both produce the same single character `chr(c)`.
+
+5. **Length non-increase for reference-containing input**: When the input contains valid character references, the length of the output is less than or equal to the length of the input, since each multi-character reference collapses into a single (or smaller number of) Unicode character(s).

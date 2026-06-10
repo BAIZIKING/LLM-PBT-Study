@@ -1,0 +1,115 @@
+from hypothesis import given, strategies as st
+import itertools
+import networkx as nx
+import pytest
+
+try:
+    networkx_find_cliques
+except NameError:
+    networkx_find_cliques = nx.find_cliques
+
+# Summary: Generate small undirected Graph/MultiGraph inputs with isolated nodes, arbitrary edges,
+# self-loops, and parallel edges, plus optional `nodes` values that may be None, empty, valid
+# cliques, non-cliques, or include absent nodes. Check that invalid `nodes` raises ValueError;
+# otherwise compare the unordered output to a brute-force oracle for all maximal cliques while
+# ignoring self-loops/parallel edges, and verify returned cliques are lists, complete, maximal,
+# unique, and contain all requested nodes.
+@given(st.data())
+def test_networkx_find_cliques(data):
+    n = data.draw(st.integers(min_value=0, max_value=7), label="number_of_nodes")
+    use_multigraph = data.draw(st.booleans(), label="use_multigraph")
+
+    G = nx.MultiGraph() if use_multigraph else nx.Graph()
+    G.add_nodes_from(range(n))
+
+    possible_edges = [(u, v) for u in range(n) for v in range(u + 1, n)]
+    if possible_edges:
+        edges = data.draw(
+            st.sets(st.sampled_from(possible_edges), max_size=len(possible_edges)),
+            label="simple_edges",
+        )
+        G.add_edges_from(edges)
+
+    if n:
+        loops = data.draw(
+            st.sets(st.sampled_from(list(range(n))), max_size=n),
+            label="self_loops",
+        )
+        G.add_edges_from((u, u) for u in loops)
+
+    if use_multigraph:
+        possible_multi_edges = possible_edges + [(u, u) for u in range(n)]
+        if possible_multi_edges:
+            duplicate_edges = data.draw(
+                st.lists(st.sampled_from(possible_multi_edges), max_size=10),
+                label="parallel_or_extra_edges",
+            )
+            G.add_edges_from(duplicate_edges)
+
+    if n == 0:
+        nodes = data.draw(st.one_of(st.none(), st.just([])), label="nodes")
+    else:
+        nodes = data.draw(
+            st.one_of(
+                st.none(),
+                st.lists(
+                    st.integers(min_value=0, max_value=n + 2),
+                    unique=True,
+                    max_size=min(n + 3, 6),
+                ),
+            ),
+            label="nodes",
+        )
+
+    graph_nodes = set(G.nodes)
+
+    def is_clique(vertices):
+        vertices = list(vertices)
+        return all(G.has_edge(u, v) for u, v in itertools.combinations(vertices, 2))
+
+    def is_maximal(clique):
+        clique = set(clique)
+        return not any(
+            all(G.has_edge(v, u) for u in clique)
+            for v in graph_nodes - clique
+        )
+
+    requested = set() if nodes is None else set(nodes)
+    valid_nodes_argument = (
+        nodes is None
+        or requested <= graph_nodes and is_clique(requested)
+    )
+
+    if not valid_nodes_argument:
+        with pytest.raises(ValueError):
+            list(networkx_find_cliques(G, nodes=nodes))
+        return
+
+    expected = set()
+    node_list = list(G.nodes)
+    for r in range(1, len(node_list) + 1):
+        for candidate in itertools.combinations(node_list, r):
+            candidate_set = frozenset(candidate)
+            if is_clique(candidate_set) and is_maximal(candidate_set):
+                if nodes is None or requested <= candidate_set:
+                    expected.add(candidate_set)
+
+    clique_iter = networkx_find_cliques(G, nodes=nodes)
+    assert iter(clique_iter) is clique_iter
+
+    cliques = list(clique_iter)
+    observed = [frozenset(clique) for clique in cliques]
+
+    assert len(observed) == len(set(observed))
+    assert set(observed) == expected
+
+    for clique in cliques:
+        clique_set = set(clique)
+        assert isinstance(clique, list)
+        assert len(clique) == len(clique_set)
+        assert clique_set <= graph_nodes
+        assert is_clique(clique_set)
+        assert is_maximal(clique_set)
+        if nodes is not None:
+            assert requested <= clique_set
+# End program

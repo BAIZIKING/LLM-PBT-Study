@@ -1,0 +1,9 @@
+1. The output of `decrypt(token)` is always of type `bytes` (never `str`), regardless of whether the input token was passed as `bytes` or `str`.
+
+2. For any plaintext message `m`, decrypting the token produced by `encrypt(m)` returns exactly the original plaintext `m` (round-trip property: `decrypt(encrypt(m)) == m`).
+
+3. When a valid `ttl` is provided and the token's age (current time minus creation time) is less than or equal to `ttl`, decryption succeeds and returns the original plaintext; when the token's age exceeds `ttl`, an `InvalidToken` exception is raised instead.
+
+4. Decrypting a malformed token, a token with a tampered/invalid signature, or a token created with a different key always raises an `InvalidToken` exception rather than returning any plaintext.
+
+5. Passing a token that is not of type `bytes` or `str` always raises a `TypeError`, and no plaintext is returned.

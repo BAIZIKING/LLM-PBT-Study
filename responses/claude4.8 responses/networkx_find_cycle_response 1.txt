@@ -1,0 +1,125 @@
+## Generation Strategy
+
+To generate a wide variety of inputs for `find_cycle`, I will:
+
+1. **Generate random graphs of different types**: Build directed graphs (`DiGraph`), undirected graphs (`Graph`), and multigraphs to exercise all code paths. The graph type affects the format of returned edges.
+
+2. **Generate random edges**: Create a list of edges from a pool of node integers. This naturally produces graphs that may or may not contain cycles, including edge cases like empty graphs, self-loops, and graphs with many cycles.
+
+3. **Randomly choose `source`**: Either `None` or a node that exists in the graph (to ensure the source is valid and avoid trivial errors unrelated to the property under test).
+
+4. **Randomly choose `orientation`**: From `None`, `'original'`, `'reverse'`, `'ignore'` to test all reporting/traversal modes.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **No-cycle behavior**: If `find_cycle` raises `NetworkXNoCycle`, then the graph genuinely has no relevant cycle. We can cross-validate against a known answer where feasible, but more robustly, we verify the returned cycle's structural validity.
+
+2. **Returned edges form a valid cycle**: The result is a list of edges. Each edge's reported endpoints must correspond to actual edges in the graph. The edges should connect head-to-tail forming a closed path (a cycle), respecting the traversal direction indicators when `orientation` is not `None`.
+
+3. **Edge tuple format**: When `orientation` is not `None`, every returned edge tuple ends with `'forward'` or `'reverse'`. The traversal must be consistent: following the cycle returns to the start node.
+
+4. **Edges exist in the graph**: Every edge in the returned cycle must be a real edge of `G`.
+
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate random directed/undirected (multi)graphs from random edge lists,
+# choose a valid source (or None) and a random orientation. Verify that find_cycle
+# either raises NetworkXNoCycle, or returns a valid cycle whose edges exist in the
+# graph, connect head-to-tail (respecting traversal direction), close into a loop,
+# and carry proper direction labels when orientation is not None.
+@given(st.data())
+def test_networkx_find_cycle(data):
+    # Choose graph type
+    graph_cls = data.draw(st.sampled_from([nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph]))
+    directed = graph_cls in (nx.DiGraph, nx.MultiDiGraph)
+    multi = graph_cls in (nx.MultiGraph, nx.MultiDiGraph)
+
+    # Generate random edges from a small pool of nodes
+    nodes = list(range(data.draw(st.integers(min_value=0, max_value=6))))
+    if nodes:
+        edges = data.draw(st.lists(
+            st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)),
+            min_size=0, max_size=12,
+        ))
+    else:
+        edges = []
+
+    G = graph_cls()
+    G.add_nodes_from(nodes)
+    G.add_edges_from(edges)
+
+    # Choose source: None or a valid node
+    if nodes:
+        source = data.draw(st.one_of(st.none(), st.sampled_from(nodes)))
+    else:
+        source = None
+
+    # Choose orientation (only meaningful for directed graphs, but allowed otherwise)
+    if directed:
+        orientation = data.draw(st.sampled_from([None, "original", "reverse", "ignore"]))
+    else:
+        orientation = None
+
+    try:
+        result = list(nx.find_cycle(G, source=source, orientation=orientation))
+    except nx.NetworkXNoCycle:
+        # Acceptable outcome: no cycle was found.
+        return
+
+    # A returned cycle must be a non-empty list of edges.
+    assert isinstance(result, list)
+    assert len(result) >= 1
+
+    # Helper to parse an edge tuple based on graph type and orientation.
+    def parse(edge):
+        e = list(edge)
+        direction = None
+        if orientation is not None:
+            direction = e[-1]
+            assert direction in ("forward", "reverse")
+            e = e[:-1]
+        if multi:
+            u, v, key = e[0], e[1], e[2]
+        else:
+            u, v = e[0], e[1]
+            key = None
+        return u, v, key, direction
+
+    # Determine, for each reported edge, the (tail, head) actually traversed,
+    # and verify the underlying edge exists in G.
+    traversal = []
+    for edge in result:
+        u, v, key, direction = parse(edge)
+
+        # The reported (u, v) must correspond to a real edge in G.
+        if multi:
+            assert G.has_edge(u, v, key), f"Edge {(u, v, key)} not in graph"
+        else:
+            assert G.has_edge(u, v), f"Edge {(u, v)} not in graph"
+
+        # Determine the direction of traversal (which node we entered from / exited to).
+        if orientation == "reverse":
+            # Edge traversed against its reported direction.
+            tail, head = v, u
+        elif orientation == "ignore":
+            # Traversal direction given by 'forward'/'reverse' relative to (u, v).
+            tail, head = (u, v) if direction == "forward" else (v, u)
+        else:
+            # None or "original": traversal follows reported (u, v).
+            tail, head = u, v
+        traversal.append((tail, head))
+
+    # The traversal edges must chain head-to-tail and close into a cycle.
+    for i in range(len(traversal)):
+        head = traversal[i][1]
+        next_tail = traversal[(i + 1) % len(traversal)][0]
+        assert head == next_tail, (
+            f"Cycle not contiguous: edge {traversal[i]} head does not match "
+            f"next tail {next_tail}"
+        )
+# End program
+```

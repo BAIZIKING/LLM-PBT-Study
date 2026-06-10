@@ -1,0 +1,89 @@
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, MultiFernet
+import base64
+import struct
+
+
+_KEY_MATERIALS = st.lists(
+    st.binary(min_size=32, max_size=32),
+    min_size=1,
+    max_size=5,
+    unique=True,
+)
+
+_PLAINTEXTS = st.binary(min_size=0, max_size=4096)
+
+
+def _fernet_key(raw_key_material):
+    return base64.urlsafe_b64encode(raw_key_material)
+
+
+def _fernet_timestamp(token):
+    decoded = base64.urlsafe_b64decode(token)
+    return struct.unpack(">Q", decoded[1:9])[0]
+
+
+def _draw_valid_rotation_case(data):
+    key_materials = data.draw(_KEY_MATERIALS)
+    plaintext = data.draw(_PLAINTEXTS)
+
+    fernets = [Fernet(_fernet_key(material)) for material in key_materials]
+    encrypting_index = data.draw(
+        st.integers(min_value=0, max_value=len(fernets) - 1)
+    )
+
+    token = fernets[encrypting_index].encrypt(plaintext)
+    multi_fernet = MultiFernet(fernets)
+
+    return multi_fernet, fernets, encrypting_index, plaintext, token
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_returns_bytes(data):
+    multi_fernet, _, _, _, token = _draw_valid_rotation_case(data)
+
+    rotated = multi_fernet.rotate(token)
+
+    assert isinstance(rotated, bytes)
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_returns_token_decryptable_by_same_multifernet(data):
+    multi_fernet, _, _, plaintext, token = _draw_valid_rotation_case(data)
+
+    rotated = multi_fernet.rotate(token)
+
+    assert multi_fernet.decrypt(rotated) == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_preserves_plaintext(data):
+    multi_fernet, _, _, _, token = _draw_valid_rotation_case(data)
+
+    original_plaintext = multi_fernet.decrypt(token)
+    rotated = multi_fernet.rotate(token)
+    rotated_plaintext = multi_fernet.decrypt(rotated)
+
+    assert rotated_plaintext == original_plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_preserves_timestamp(data):
+    multi_fernet, _, _, _, token = _draw_valid_rotation_case(data)
+
+    rotated = multi_fernet.rotate(token)
+
+    assert _fernet_timestamp(rotated) == _fernet_timestamp(token)
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_encrypts_under_primary_key(data):
+    multi_fernet, fernets, _, plaintext, token = _draw_valid_rotation_case(data)
+
+    rotated = multi_fernet.rotate(token)
+
+    assert fernets[0].decrypt(rotated) == plaintext
+
+
+# End program

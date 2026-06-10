@@ -1,0 +1,9 @@
+1. The rotated token returned by `rotate()` is always of type `bytes`.
+
+2. Decrypting the rotated token (using the same MultiFernet instance or any instance containing the primary key) yields the original plaintext message that was contained in the input token.
+
+3. The rotated token preserves the original timestamp that was saved in the input token (i.e., the timestamp extracted from the rotated token equals the timestamp of the original token).
+
+4. The rotated token is a valid URL-safe base64-encoded value (it can be decoded as URL-safe base64 without error).
+
+5. Rotating a token with a MultiFernet whose primary key differs from the original encrypting key produces a token that differs from the input token, whereas the decrypted contents remain identical.

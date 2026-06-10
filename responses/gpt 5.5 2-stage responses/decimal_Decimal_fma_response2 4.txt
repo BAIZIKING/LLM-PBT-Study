@@ -1,0 +1,143 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+
+ROUNDING_MODES = [
+    decimal.ROUND_CEILING,
+    decimal.ROUND_FLOOR,
+    decimal.ROUND_DOWN,
+    decimal.ROUND_UP,
+    decimal.ROUND_HALF_DOWN,
+    decimal.ROUND_HALF_EVEN,
+    decimal.ROUND_HALF_UP,
+    decimal.ROUND_05UP,
+]
+
+DECIMALS = st.decimals(
+    min_value=decimal.Decimal("-999999.999999"),
+    max_value=decimal.Decimal("999999.999999"),
+    allow_nan=False,
+    allow_infinity=False,
+    places=6,
+)
+
+
+def make_context(precision, rounding):
+    context = decimal.Context(
+        prec=precision,
+        rounding=rounding,
+        Emin=-999,
+        Emax=999,
+    )
+    for signal in context.traps:
+        context.traps[signal] = False
+    return context
+
+
+def draw_context(data, min_precision=1, max_precision=30):
+    precision = data.draw(st.integers(min_value=min_precision, max_value=max_precision))
+    rounding = data.draw(st.sampled_from(ROUNDING_MODES))
+    return make_context(precision, rounding)
+
+
+def wide_context():
+    context = decimal.Context(
+        prec=100,
+        rounding=decimal.ROUND_HALF_EVEN,
+        Emin=-999999,
+        Emax=999999,
+    )
+    for signal in context.traps:
+        context.traps[signal] = False
+    return context
+
+
+def rounded_exact_fma(a, b, c, context):
+    with decimal.localcontext(wide_context()):
+        exact_value = a * b + c
+    return context.create_decimal(exact_value)
+
+
+def rounded_exact_product(a, b, context):
+    with decimal.localcontext(wide_context()):
+        exact_value = a * b
+    return context.create_decimal(exact_value)
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_matches_single_rounded_exact_expression(data):
+    a = data.draw(DECIMALS)
+    b = data.draw(DECIMALS)
+    c = data.draw(DECIMALS)
+    context = draw_context(data)
+
+    expected = rounded_exact_fma(a, b, c, context)
+    actual = a.fma(b, c, context=context)
+
+    assert actual == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_does_not_round_intermediate_product(data):
+    a = data.draw(DECIMALS)
+    b = data.draw(DECIMALS)
+    c = data.draw(DECIMALS)
+    context = draw_context(data, min_precision=1, max_precision=10)
+
+    expected_single_rounding = rounded_exact_fma(a, b, c, context)
+    actual = a.fma(b, c, context=context)
+
+    with decimal.localcontext(context):
+        separately_rounded = (a * b) + c
+
+    assert actual == expected_single_rounding
+    if separately_rounded != expected_single_rounding:
+        assert actual != separately_rounded
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_is_commutative_in_first_two_operands(data):
+    a = data.draw(DECIMALS)
+    b = data.draw(DECIMALS)
+    c = data.draw(DECIMALS)
+    context = draw_context(data)
+
+    left = a.fma(b, c, context=context)
+    right = b.fma(a, c, context=context)
+
+    assert left == right
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_with_zero_third_argument_equals_rounded_product(data):
+    a = data.draw(DECIMALS)
+    b = data.draw(DECIMALS)
+    context = draw_context(data)
+    zero = data.draw(st.sampled_from([decimal.Decimal("0"), decimal.Decimal("-0")]))
+
+    expected = rounded_exact_product(a, b, context)
+    actual = a.fma(b, zero, context=context)
+
+    assert actual == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_with_zero_multiplicand_equals_rounded_third_argument(data):
+    nonzero_side = data.draw(DECIMALS)
+    third = data.draw(DECIMALS)
+    context = draw_context(data)
+    zero = data.draw(st.sampled_from([decimal.Decimal("0"), decimal.Decimal("-0")]))
+    zero_is_first_operand = data.draw(st.booleans())
+
+    if zero_is_first_operand:
+        actual = zero.fma(nonzero_side, third, context=context)
+    else:
+        actual = nonzero_side.fma(zero, third, context=context)
+
+    expected = context.create_decimal(third)
+
+    assert actual == expected
+
+
+# End program
+```

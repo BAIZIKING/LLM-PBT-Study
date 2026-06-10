@@ -1,0 +1,9 @@
+1. For any valid Fernet token decryptable by one of the `MultiFernet` keys, `rotate(msg)` returns a `bytes` object.
+
+2. The returned token decrypts to the same plaintext as the original input token when decrypted with the same `MultiFernet` instance.
+
+3. The returned token preserves the original token’s timestamp.
+
+4. The returned token is encrypted under the `MultiFernet` instance’s primary key, meaning it can be decrypted by the first `Fernet` key in the list.
+
+5. The returned token is a valid URL-safe base64-encoded Fernet token.

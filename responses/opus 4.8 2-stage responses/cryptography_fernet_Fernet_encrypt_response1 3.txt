@@ -1,0 +1,11 @@
+Based on the API documentation, here are five properties suitable for property-based testing:
+
+1. **Round-trip / Decryption inverse**: Encrypting data and then decrypting the resulting token with the same key returns the original input data exactly (`f.decrypt(f.encrypt(data)) == data`).
+
+2. **Output type**: The output of `encrypt` is always of type `bytes`, regardless of the input data content.
+
+3. **URL-safe base64 encoding**: The output token is always valid URL-safe base64-encoded data (i.e., it only contains characters from the URL-safe base64 alphabet: `A-Z`, `a-z`, `0-9`, `-`, `_`, and `=` padding, and can be successfully decoded as URL-safe base64).
+
+4. **Non-determinism / Uniqueness**: Encrypting the same input data twice (even in quick succession) generally produces different tokens, since the token embeds the current timestamp and other varying data.
+
+5. **TypeError on non-bytes input**: When the input `data` is not of type `bytes`, the function raises a `TypeError`.

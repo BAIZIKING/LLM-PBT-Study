@@ -1,0 +1,120 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `parser.parse`, I'll focus on creating valid datetime strings programmatically (so I have a known "ground truth" to compare against), while also varying the keyword arguments:
+
+1. **Generate valid datetimes**: Use `st.datetimes()` to produce real `datetime` objects across a wide range. This gives us edge cases like leap years, year boundaries, midnight, end-of-day, etc.
+
+2. **Format the datetime into a string**: Use a variety of `strftime` format strings (ISO-like, with/without seconds, with explicit separators) so the parser sees many input formats. This ensures we test "supported formats."
+
+3. **Vary keyword arguments**: Randomly toggle `ignoretz`, `fuzzy`, `dayfirst`, `yearfirst`, and provide a `default` datetime. This exercises different code paths.
+
+4. **Avoid ambiguity pitfalls**: Use unambiguous formats (e.g. ISO `%Y-%m-%d %H:%M:%S`) when checking exact equality, so `dayfirst`/`yearfirst` don't reinterpret fields incorrectly.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Round-trip property**: When parsing an unambiguously-formatted string derived from a known datetime, the parsed result's date/time components should match the original (the core correctness guarantee).
+2. **Return type**: With `fuzzy_with_tokens=False`, the result is a `datetime.datetime`; with `fuzzy_with_tokens=True`, the result is a tuple `(datetime, tuple_of_tokens)`.
+3. **ignoretz**: When `ignoretz=True`, the returned datetime must be naive (`tzinfo is None`).
+4. **Robustness**: Parsing should either succeed or raise only the documented exceptions (`ParserError`, `OverflowError`).
+
+```python
+from hypothesis import given, strategies as st
+import datetime
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate known datetimes, format them with unambiguous strftime patterns,
+# and vary kwargs (ignoretz, fuzzy_with_tokens, dayfirst, yearfirst, default).
+# Check round-trip correctness on unambiguous ISO strings, return types,
+# the ignoretz->naive guarantee, and that only documented exceptions are raised.
+@given(st.data())
+def test_dateutil_parser_parse():
+    data = st.data()  # placeholder; real draws below
+
+    # Draw a known datetime (naive) to build our ground-truth string.
+    dt = data.draw(st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+    )) if False else None
+
+# End program
+```
+
+Let me provide the correct, properly-structured version:
+
+```python
+from hypothesis import given, strategies as st
+import datetime
+from dateutil.parser import parse, ParserError
+
+# Summary: Generate known naive datetimes and serialize them with an unambiguous
+# ISO-like strftime format, then vary kwargs (ignoretz, fuzzy_with_tokens,
+# dayfirst, yearfirst, default). We verify: round-trip equality of components on
+# unambiguous strings, correct return type for fuzzy_with_tokens, that ignoretz
+# yields a naive datetime, and that only documented exceptions are raised.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    dt = data.draw(st.datetimes(
+        min_value=datetime.datetime(1900, 1, 1),
+        max_value=datetime.datetime(2999, 12, 31, 23, 59, 59),
+    ))
+
+    # Unambiguous format so dayfirst/yearfirst cannot reinterpret fields.
+    fmt = data.draw(st.sampled_from([
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+    ]))
+    timestr = dt.strftime(fmt)
+
+    ignoretz = data.draw(st.booleans())
+    fuzzy_with_tokens = data.draw(st.booleans())
+    dayfirst = data.draw(st.sampled_from([None, True, False]))
+    yearfirst = data.draw(st.sampled_from([None, True, False]))
+    use_default = data.draw(st.booleans())
+    default = data.draw(st.datetimes()) if use_default else None
+
+    try:
+        result = parse(
+            timestr,
+            ignoretz=ignoretz,
+            fuzzy_with_tokens=fuzzy_with_tokens,
+            dayfirst=dayfirst,
+            yearfirst=yearfirst,
+            default=default,
+        )
+    except (ParserError, OverflowError, ValueError):
+        # Only documented (plus underlying ValueError) exceptions allowed.
+        return
+
+    # Property: return type depends on fuzzy_with_tokens.
+    if fuzzy_with_tokens:
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], datetime.datetime)
+        assert isinstance(result[1], tuple)
+        parsed = result[0]
+    else:
+        assert isinstance(result, datetime.datetime)
+        parsed = result
+
+    # Property: ignoretz=True always yields a naive datetime.
+    if ignoretz:
+        assert parsed.tzinfo is None
+
+    # Property: round-trip correctness on unambiguous input.
+    # The datetime fields present in the format string must match the original.
+    assert parsed.year == dt.year
+    assert parsed.month == dt.month
+    assert parsed.day == dt.day
+    if "%H" in fmt:
+        assert parsed.hour == dt.hour
+    if "%M" in fmt:
+        assert parsed.minute == dt.minute
+    if "%S" in fmt:
+        assert parsed.second == dt.second
+# End program
+```

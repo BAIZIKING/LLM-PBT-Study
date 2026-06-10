@@ -1,0 +1,9 @@
+1. The result of `self.fma(other, third)` equals `self*other + third` when the intermediate product does not require rounding (i.e., for exact arithmetic cases, the output matches direct computation).
+
+2. The output is mathematically equivalent to multiplying self by other (without intermediate rounding) and then adding third, which may differ from `(self * other) + third` only in cases where the intermediate product would otherwise be rounded.
+
+3. When `third` is zero, the result of `self.fma(other, 0)` equals the unrounded product of self and other (subject only to final rounding from addition).
+
+4. When `other` is one, the result of `self.fma(1, third)` equals `self + third`.
+
+5. The fma operation is commutative in its first two arguments: `self.fma(other, third)` equals `other.fma(self, third)`.

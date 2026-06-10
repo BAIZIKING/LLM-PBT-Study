@@ -1,0 +1,52 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate edge-heavy byte inputs including empty bytes, arbitrary bytes,
+# repeated single-byte runs, repeated chunks, and all byte values; also generate
+# valid compression levels (-1 and 0..9) and valid wbits values for zlib, raw,
+# and gzip streams. Check that compression returns bytes and that decompressing
+# with the matching wbits exactly round-trips the original input; additionally
+# check gzip output has the gzip magic header and normal zlib streams can be
+# decompressed with the default zlib settings.
+@given(st.data())
+def test_zlib_compress(data):
+    payload = data.draw(
+        st.one_of(
+            st.just(b""),
+            st.binary(min_size=0, max_size=4096),
+            st.builds(
+                lambda byte, n: bytes([byte]) * n,
+                st.integers(min_value=0, max_value=255),
+                st.integers(min_value=0, max_value=4096),
+            ),
+            st.builds(
+                lambda chunk, n: chunk * n,
+                st.binary(min_size=1, max_size=32),
+                st.integers(min_value=0, max_value=256),
+            ),
+            st.just(bytes(range(256))),
+        )
+    )
+
+    level = data.draw(st.sampled_from([-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))
+
+    wbits = data.draw(
+        st.sampled_from(
+            list(range(9, 16))      # zlib header/trailer
+            + list(range(-15, -8))  # raw stream, no header/trailer
+            + list(range(25, 32))   # gzip header/trailer
+        )
+    )
+
+    compressed = zlib.compress(payload, level=level, wbits=wbits)
+
+    assert isinstance(compressed, bytes)
+    assert zlib.decompress(compressed, wbits=wbits) == payload
+
+    if 9 <= wbits <= 15:
+        assert zlib.decompress(compressed) == payload
+
+    if 25 <= wbits <= 31:
+        assert compressed.startswith(b"\x1f\x8b")
+
+# End program

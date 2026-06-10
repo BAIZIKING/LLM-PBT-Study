@@ -1,0 +1,9 @@
+1. The return value is always a `bytes` object for valid inputs and valid `level`/`wbits` values.
+
+2. The compressed output is lossless: decompressing it with the matching `wbits`/format settings reproduces the original `data` exactly.
+
+3. For positive `wbits` values from `9` to `15`, the output is a valid zlib-wrapped stream, including a zlib header and trailer.
+
+4. For negative `wbits` values from `-9` to `-15`, the output is a raw deflate stream with no zlib or gzip header/trailer.
+
+5. For `wbits` values from `25` to `31`, the output is a valid gzip-wrapped stream, including a gzip header and trailing checksum.

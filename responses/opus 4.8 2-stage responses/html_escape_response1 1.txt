@@ -1,0 +1,9 @@
+1. The output never contains an unescaped `&`, `<`, or `>` character; every such character in the input is replaced by its corresponding HTML entity (`&amp;`, `&lt;`, `&gt;`) in the output.
+
+2. When `quote=True`, the output contains no unescaped `"` or `'` characters; they are replaced by `&quot;` and `&#x27;` respectively. When `quote=False`, the output preserves `"` and `'` characters unchanged.
+
+3. For any input string containing none of the special characters (`&`, `<`, `>`, and—when quoting—`"`, `'`), the output is identical to the input (idempotent on "safe" strings).
+
+4. The count of `&amp;`, `&lt;`, and `&gt;` (and `&quot;`/`&#x27;` when quoting) in the output equals the count of the corresponding original characters in the input.
+
+5. The output is always a string, and is never shorter than the input string in length (since escaping replaces single characters with longer entity sequences).

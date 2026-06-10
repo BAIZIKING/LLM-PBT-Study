@@ -1,0 +1,9 @@
+1. The output values are the element-wise sums of `x1` and `x2` after applying NumPy broadcasting.
+
+2. If `x1` and `x2` are broadcastable arrays, the output shape equals the common broadcasted shape of `x1` and `x2`.
+
+3. If both `x1` and `x2` are scalars, the output is a scalar equal to `x1 + x2`.
+
+4. When `out` is provided, the returned object is the same array as `out`, and positions where `where=True` contain the computed sums.
+
+5. When `where` is provided, output positions where `where=False` retain their original values from `out` rather than being replaced by the sum.

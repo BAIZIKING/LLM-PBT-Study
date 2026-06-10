@@ -1,0 +1,9 @@
+1. For every edge with finite capacity, the reported flow is feasible: `0 <= flow_dict[u][v] <= capacity(u, v)`.
+
+2. For every node other than the source `_s` and sink `_t`, flow is conserved: total incoming flow equals total outgoing flow.
+
+3. The returned `flow_value` equals the net flow out of the source: total flow leaving `_s` minus total flow entering `_s`.
+
+4. The returned `flow_value` also equals the net flow into the sink: total flow entering `_t` minus total flow leaving `_t`.
+
+5. The returned flow is maximal: its `flow_value` equals the capacity of a minimum `_s`-`_t` cut in the input graph.

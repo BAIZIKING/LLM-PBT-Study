@@ -1,0 +1,73 @@
+from hypothesis import given, strategies as st
+import datetime
+
+FULL_TIMEDELTAS = st.timedeltas(
+    min_value=datetime.timedelta.min,
+    max_value=datetime.timedelta.max,
+)
+
+SMALL_TIMEDELTAS = st.timedeltas(
+    min_value=datetime.timedelta(days=-365 * 100),
+    max_value=datetime.timedelta(days=365 * 100),
+)
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_returns_float(data):
+    td = data.draw(FULL_TIMEDELTAS)
+    result = td.total_seconds()
+    assert isinstance(result, float)
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_equals_division_by_one_second(data):
+    td = data.draw(FULL_TIMEDELTAS)
+    result = td.total_seconds()
+    expected = td / datetime.timedelta(seconds=1)
+    assert result == expected
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_matches_component_formula(data):
+    td = data.draw(SMALL_TIMEDELTAS)
+    result = td.total_seconds()
+    expected = td.days * 86400 + td.seconds + td.microseconds / 1_000_000
+    assert abs(result - expected) <= 1e-6
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_zero_duration_is_zero_float(data):
+    td = datetime.timedelta()
+    result = td.total_seconds()
+    assert result == 0.0
+    assert isinstance(result, float)
+
+
+@given(st.data())
+def test_datetime_timedelta_total_seconds_equal_normalized_durations_match(data):
+    weeks = data.draw(st.integers(min_value=-10_000, max_value=10_000))
+    days = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+    hours = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+    minutes = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+    seconds = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+    milliseconds = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+    microseconds = data.draw(st.integers(min_value=-100_000, max_value=100_000))
+
+    td = datetime.timedelta(
+        weeks=weeks,
+        days=days,
+        hours=hours,
+        minutes=minutes,
+        seconds=seconds,
+        milliseconds=milliseconds,
+        microseconds=microseconds,
+    )
+    normalized = datetime.timedelta(
+        days=td.days,
+        seconds=td.seconds,
+        microseconds=td.microseconds,
+    )
+
+    assert td == normalized
+    assert td.total_seconds() == normalized.total_seconds()
+# End program

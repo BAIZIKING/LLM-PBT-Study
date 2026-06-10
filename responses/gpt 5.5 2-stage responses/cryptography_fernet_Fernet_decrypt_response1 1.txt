@@ -1,0 +1,9 @@
+1. For any plaintext encrypted with the same `Fernet` instance, `decrypt(encrypt(plaintext))` returns exactly the original plaintext bytes.
+
+2. For any valid token, the returned value is always of type `bytes`.
+
+3. Decrypting the same valid token multiple times with the same key and valid `ttl` conditions returns identical plaintext each time.
+
+4. A valid token provided as `bytes` or as an equivalent `str` decrypts to the same plaintext.
+
+5. If `ttl` is provided and the token is not older than `ttl` seconds, decryption returns the original plaintext; otherwise no plaintext is returned and `InvalidToken` is raised.

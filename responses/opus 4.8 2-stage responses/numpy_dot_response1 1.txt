@@ -1,0 +1,9 @@
+1. **Scalar multiplication equivalence**: When either `a` or `b` is a 0-D scalar, the output equals the element-wise product `a * b` (i.e., `np.multiply(a, b)`).
+
+2. **1-D inner product correctness**: When both `a` and `b` are 1-D arrays of equal length, the output is a scalar equal to the sum of element-wise products `sum(a[i] * b[i])`, without complex conjugation.
+
+3. **2-D matrix multiplication equivalence**: When both `a` and `b` are 2-D arrays, the output equals the matrix product `a @ b`, and each entry `output[i,j]` equals `sum(a[i,:] * b[:,j])`.
+
+4. **Output shape correctness**: For N-D array `a` and M-D array `b`, the output shape equals the concatenation of `a`'s shape excluding its last axis with `b`'s shape excluding its second-to-last axis (and last axis for M>=2); both scalars or both 1-D inputs yield a scalar.
+
+5. **Generalized sum-product entry correctness**: For an N-D array `a` and M-D array `b` (M>=2), each output entry satisfies `dot(a,b)[i,j,k,m] = sum(a[i,j,:] * b[k,:,m])`, i.e., the sum product over the last axis of `a` and the second-to-last axis of `b`.

@@ -1,0 +1,9 @@
+1. For any iterable with at least two real-valued numbers, `variance(data)` is always non-negative.
+
+2. `variance(data)` equals `sum((x - mean(data)) ** 2 for x in data) / (len(data) - 1)`.
+
+3. If all values in `data` are identical, `variance(data)` returns zero.
+
+4. Adding the same constant to every value in `data` does not change the variance.
+
+5. Multiplying every value in `data` by a constant `k` multiplies the variance by `k ** 2`.

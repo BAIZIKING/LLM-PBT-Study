@@ -1,0 +1,118 @@
+from hypothesis import given, strategies as st
+from decimal import (
+    Decimal,
+    Context,
+    localcontext,
+    ROUND_05UP,
+    ROUND_CEILING,
+    ROUND_DOWN,
+    ROUND_FLOOR,
+    ROUND_HALF_DOWN,
+    ROUND_HALF_EVEN,
+    ROUND_HALF_UP,
+    ROUND_UP,
+)
+
+# Summary: Generate varied finite Decimal operands, including signed zeros, powers of ten, large/small exponents, long coefficients, and cancellation cases where third is near -self*other; check that fma equals exact self*other+third rounded once in the requested context, both with explicit context and context=None.
+@given(st.data())
+def test_decimal_Decimal_fma(data):
+    edge_decimals = st.sampled_from(
+        [
+            Decimal("0"),
+            Decimal("-0"),
+            Decimal("1"),
+            Decimal("-1"),
+            Decimal("10"),
+            Decimal("-10"),
+            Decimal("0.1"),
+            Decimal("-0.1"),
+            Decimal("1E-80"),
+            Decimal("-1E-80"),
+            Decimal("1E+80"),
+            Decimal("-1E+80"),
+            Decimal("999999999999999999"),
+            Decimal("-999999999999999999"),
+        ]
+    )
+
+    random_zero = st.builds(
+        lambda sign, exp: Decimal((sign, (0,), exp)),
+        st.integers(0, 1),
+        st.integers(-40, 40),
+    )
+
+    random_nonzero = st.builds(
+        lambda sign, first, rest, exp: Decimal((sign, (first,) + tuple(rest), exp)),
+        st.integers(0, 1),
+        st.integers(1, 9),
+        st.lists(st.integers(0, 9), min_size=0, max_size=17),
+        st.integers(-40, 40),
+    )
+
+    decimal_strategy = st.one_of(edge_decimals, random_zero, random_nonzero)
+
+    self_value = data.draw(decimal_strategy, label="self")
+    other = data.draw(decimal_strategy, label="other")
+
+    exact_context = Context(prec=500, Emin=-999999, Emax=999999)
+    with localcontext(exact_context):
+        exact_product = self_value * other
+
+    third_mode = data.draw(
+        st.sampled_from(["independent", "cancel_product", "near_cancel_product"]),
+        label="third_mode",
+    )
+
+    if third_mode == "independent":
+        third = data.draw(decimal_strategy, label="third")
+    elif third_mode == "cancel_product":
+        with localcontext(exact_context):
+            third = -exact_product
+    else:
+        tweak = data.draw(decimal_strategy, label="tweak")
+        with localcontext(exact_context):
+            third = -exact_product + tweak
+
+    rounding = data.draw(
+        st.sampled_from(
+            [
+                ROUND_05UP,
+                ROUND_CEILING,
+                ROUND_DOWN,
+                ROUND_FLOOR,
+                ROUND_HALF_DOWN,
+                ROUND_HALF_EVEN,
+                ROUND_HALF_UP,
+                ROUND_UP,
+            ]
+        ),
+        label="rounding",
+    )
+
+    context = Context(
+        prec=data.draw(st.integers(1, 50), label="precision"),
+        rounding=rounding,
+        Emin=data.draw(st.integers(-100, -1), label="Emin"),
+        Emax=data.draw(st.integers(1, 100), label="Emax"),
+    )
+    for signal in context.traps:
+        context.traps[signal] = False
+
+    with localcontext(exact_context):
+        exact_sum = (self_value * other) + third
+
+    if data.draw(st.booleans(), label="use_explicit_context"):
+        result = self_value.fma(other, third, context=context)
+        with localcontext(context):
+            expected = +exact_sum
+    else:
+        with localcontext(context):
+            result = self_value.fma(other, third)
+            expected = +exact_sum
+
+    if result.is_nan() or expected.is_nan():
+        assert result.is_nan() and expected.is_nan()
+    else:
+        assert result == expected
+
+# End program

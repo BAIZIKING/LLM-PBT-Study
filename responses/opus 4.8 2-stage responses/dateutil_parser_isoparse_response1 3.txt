@@ -1,0 +1,9 @@
+1. The output is always an instance of `datetime.datetime`.
+
+2. When the input ISO-8601 string contains no time zone information, the output datetime is naive (its `tzinfo` is None); when it contains a time zone offset, the output's `tzinfo` is non-None.
+
+3. If the input contains a `Z` suffix or an offset equivalent to UTC (e.g. `+00:00`), the output's `tzinfo` is a `dateutil.tz.tzutc` instance, whereas other valid offsets produce a `dateutil.tz.tzoffset` instance whose UTC offset equals the offset encoded in the string.
+
+4. Unspecified date/time components default to their lowest value (e.g. month and day default to 1, hour/minute/second/microsecond default to 0), so parsing a string like `YYYY` yields a datetime at midnight on January 1st of that year.
+
+5. Reformatting the parsed datetime back into an ISO-8601 string and parsing it again with `isoparse` yields a datetime equal to the original output (round-trip consistency).

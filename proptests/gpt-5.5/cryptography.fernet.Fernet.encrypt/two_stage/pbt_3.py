@@ -1,0 +1,72 @@
+from hypothesis import given, strategies as st
+import cryptography
+import cryptography.fernet
+import base64
+
+_BYTES = st.binary(min_size=0, max_size=4096)
+_NON_URLSAFE_BYTES = st.lists(
+    st.integers(min_value=128, max_value=255),
+    min_size=1,
+    max_size=1024,
+).map(bytes)
+
+
+def _fernet():
+    return cryptography.fernet.Fernet(cryptography.fernet.Fernet.generate_key())
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_output_is_bytes(data):
+    plaintext = data.draw(_BYTES)
+    f = _fernet()
+
+    token = f.encrypt(plaintext)
+
+    assert isinstance(token, bytes)
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_output_is_urlsafe_base64(data):
+    plaintext = data.draw(_BYTES)
+    f = _fernet()
+
+    token = f.encrypt(plaintext)
+    decoded = base64.urlsafe_b64decode(token)
+
+    assert base64.urlsafe_b64encode(decoded) == token
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_decrypt_round_trips(data):
+    plaintext = data.draw(_BYTES)
+    f = _fernet()
+
+    token = f.encrypt(plaintext)
+
+    assert f.decrypt(token) == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_output_does_not_readably_contain_plaintext(data):
+    plaintext = data.draw(_NON_URLSAFE_BYTES)
+    f = _fernet()
+
+    token = f.encrypt(plaintext)
+
+    assert plaintext not in token
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt_same_input_can_produce_different_valid_tokens(data):
+    plaintext = data.draw(_BYTES)
+    f = _fernet()
+
+    token1 = f.encrypt(plaintext)
+    token2 = f.encrypt(plaintext)
+
+    assert token1 != token2
+    assert f.decrypt(token1) == plaintext
+    assert f.decrypt(token2) == plaintext
+
+
+# End program

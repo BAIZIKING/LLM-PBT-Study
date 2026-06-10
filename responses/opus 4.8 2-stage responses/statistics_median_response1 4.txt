@@ -1,0 +1,9 @@
+1. The median is always within the range of the data, i.e., greater than or equal to the minimum value and less than or equal to the maximum value of the input.
+
+2. The median is invariant under reordering (permutation) of the input data; shuffling the elements produces the same median.
+
+3. For input with an odd number of elements, the returned median is exactly equal to one of the elements in the data (specifically the middle value when sorted).
+
+4. For input with an even number of elements, the returned median equals the average of the two middle values when the data is sorted, i.e., (sorted_data[n//2 - 1] + sorted_data[n//2]) / 2.
+
+5. Calling the function with empty data raises a StatisticsError.

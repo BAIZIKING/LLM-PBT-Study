@@ -1,0 +1,115 @@
+from hypothesis import given, settings, strategies as st
+import networkx as nx
+
+
+def random_dag(draw, max_nodes=15):
+    """Generate a random directed acyclic graph (DAG)."""
+    n = draw(st.integers(min_value=1, max_value=max_nodes))
+    nodes = list(range(n))
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    # Only allow edges from lower index to higher index to guarantee acyclicity.
+    possible_edges = [(i, j) for i in nodes for j in nodes if i < j]
+    if possible_edges:
+        chosen = draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                max_size=len(possible_edges),
+                unique=True,
+            )
+        )
+        G.add_edges_from(chosen)
+    return G
+
+
+def is_ancestor(G, anc, node):
+    """Return True if anc is an ancestor of node (a node is its own ancestor)."""
+    if anc == node:
+        return True
+    return anc in nx.ancestors(G, node)
+
+
+def common_ancestors(G, n1, n2):
+    """Return the set of common ancestors of n1 and n2 (including the nodes themselves)."""
+    anc1 = nx.ancestors(G, n1) | {n1}
+    anc2 = nx.ancestors(G, n2) | {n2}
+    return anc1 & anc2
+
+
+# Property 1: Default value on no common ancestor.
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_lowest_common_ancestor_default_on_no_common(data):
+    G = random_dag(data.draw)
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    if not common_ancestors(G, n1, n2):
+        result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+        assert result is sentinel
+# End program
+
+
+# Property 2: Output is a valid common ancestor.
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_lowest_common_ancestor_is_common_ancestor(data):
+    G = random_dag(data.draw)
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    if result is not sentinel:
+        assert is_ancestor(G, result, n1)
+        assert is_ancestor(G, result, n2)
+# End program
+
+
+# Property 3: Lowest among common ancestors.
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_lowest_common_ancestor_is_lowest(data):
+    G = random_dag(data.draw)
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    if result is not sentinel:
+        commons = common_ancestors(G, n1, n2)
+        # No other common ancestor should be a strict descendant of result.
+        descendants_of_result = nx.descendants(G, result)
+        for c in commons:
+            if c != result:
+                assert c not in descendants_of_result
+# End program
+
+
+# Property 4: Symmetry of arguments.
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_lowest_common_ancestor_symmetry(data):
+    G = random_dag(data.draw)
+    nodes = list(G.nodes())
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    r1 = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    r2 = nx.lowest_common_ancestor(G, n2, n1, default=sentinel)
+    assert r1 == r2
+# End program
+
+
+# Property 5: Self-ancestor identity.
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_lowest_common_ancestor_self_identity(data):
+    G = random_dag(data.draw)
+    nodes = list(G.nodes())
+    n = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n, n, default=sentinel)
+    assert result == n
+# End program

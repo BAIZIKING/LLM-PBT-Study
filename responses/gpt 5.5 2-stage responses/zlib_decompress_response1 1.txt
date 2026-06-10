@@ -1,0 +1,9 @@
+1. For valid compressed input and compatible `wbits`, the return value is always a `bytes` object containing the uncompressed data.
+
+2. For data compressed in zlib format, decompressing with a compatible positive `wbits` value returns exactly the original bytes.
+
+3. For data compressed in raw deflate format, decompressing with the corresponding negative `wbits` value returns exactly the original bytes.
+
+4. For data compressed in gzip format, decompressing with `wbits` in the gzip range returns exactly the original bytes.
+
+5. Changing `bufsize` affects only allocation behavior; for the same valid `data` and `wbits`, all `bufsize` values produce identical output bytes.

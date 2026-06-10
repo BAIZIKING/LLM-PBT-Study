@@ -1,0 +1,9 @@
+1. The returned value is always `bytes`.
+
+2. The returned bytes are a URL-safe base64-encoded Fernet token.
+
+3. Decrypting the returned token with the same Fernet key returns exactly the original input bytes.
+
+4. The returned token cannot be successfully decrypted if it is modified or tampered with.
+
+5. The returned token contains the encryption creation time in plaintext, corresponding to the time `encrypt` was called.

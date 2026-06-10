@@ -1,0 +1,9 @@
+1. The output is always a string.
+
+2. The output contains no literal `<` or `>` characters; when `quote=True`, it also contains no literal `"` or `'` characters.
+
+3. Each escapable input character is replaced by its corresponding entity: `&` becomes `&amp;`, `<` becomes `&lt;`, `>` becomes `&gt;`, and when `quote=True`, `"` becomes `&quot;` and `'` becomes `&#x27;`.
+
+4. The output length equals the input length plus the expansion caused by replacements: `+4` for each `&`, `+3` for each `<` or `>`, and when `quote=True`, `+5` for each `"` and `+4` for each `'`.
+
+5. Escaping preserves character order and is compositional: escaping a concatenation of strings produces the same result as concatenating the escaped versions of those strings.

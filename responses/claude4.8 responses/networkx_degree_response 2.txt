@@ -1,0 +1,114 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `networkx.degree`, I'll focus on three parameters:
+
+1. **Graph `G`**: I'll build graphs dynamically by generating a random set of nodes (integers) and a random set of edges between those nodes. This covers edge cases like:
+   - Empty graphs (no nodes)
+   - Single-node graphs
+   - Graphs with isolated nodes (no edges)
+   - Dense graphs (many edges)
+   - Self-loops (edges from a node to itself)
+   - Edges with random weight attributes
+
+2. **`nbunch`**: I'll randomly choose between:
+   - `None` (degrees of all nodes)
+   - A single node (from the graph)
+   - A subset (list) of nodes from the graph
+
+3. **`weight`**: I'll randomly choose between `None` (count edges) and `"weight"` (sum edge weights), to test both unweighted and weighted degree computations.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify:
+
+1. **Return type consistency**: When `nbunch=None`, the result iterates over `(node, degree)` pairs covering exactly all graph nodes. When `nbunch` is a single node, `degree` returns an integer/number directly.
+
+2. **Handshaking lemma**: For unweighted degree with `nbunch=None`, the sum of all degrees equals `2 * number_of_edges` (each edge contributes to two endpoints; self-loops add 2).
+
+3. **Non-negativity**: Every degree value must be non-negative.
+
+4. **Subset consistency**: The degree of a node when queried via `nbunch=None` must match its degree when queried individually.
+
+```python
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Build a random graph from generated nodes and weighted edges, then
+# randomly select nbunch (None / single node / subset) and weight (None / "weight").
+# Verify return-type behavior, the handshaking lemma, non-negativity, and
+# consistency between full-graph and per-node queries.
+@given(st.data())
+def test_networkx_degree(data):
+    # Generate nodes
+    nodes = data.draw(st.lists(st.integers(min_value=0, max_value=20),
+                               min_size=0, max_size=10, unique=True))
+
+    # Generate weighted edges only between existing nodes
+    if nodes:
+        edges = data.draw(st.lists(
+            st.tuples(st.sampled_from(nodes),
+                      st.sampled_from(nodes),
+                      st.floats(min_value=0.1, max_value=100,
+                                allow_nan=False, allow_infinity=False)),
+            min_size=0, max_size=15))
+    else:
+        edges = []
+
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+    for u, v, w in edges:
+        G.add_edge(u, v, weight=w)
+
+    # Choose weight parameter
+    weight = data.draw(st.sampled_from([None, "weight"]))
+
+    # Choose nbunch: None, a single node, or a subset of nodes
+    graph_nodes = list(G.nodes())
+    if graph_nodes:
+        nbunch_kind = data.draw(st.sampled_from(["none", "single", "subset"]))
+        if nbunch_kind == "none":
+            nbunch = None
+        elif nbunch_kind == "single":
+            nbunch = data.draw(st.sampled_from(graph_nodes))
+        else:
+            nbunch = data.draw(st.lists(st.sampled_from(graph_nodes),
+                                        min_size=0, max_size=len(graph_nodes),
+                                        unique=True))
+    else:
+        nbunch = None
+
+    result = nx.degree(G, nbunch=nbunch, weight=weight)
+
+    # Case 1: single node -> returns a scalar degree directly
+    if graph_nodes and not isinstance(nbunch, (list, type(None))):
+        deg = result
+        assert isinstance(deg, (int, float))
+        assert deg >= 0
+        # Consistency with full-graph query
+        full = dict(nx.degree(G, weight=weight))
+        assert deg == full[nbunch]
+    else:
+        # Case 2: None or subset -> iterable of (node, degree) pairs
+        deg_dict = dict(result)
+        # All degrees non-negative
+        for node, d in deg_dict.items():
+            assert d >= 0
+            assert node in G.nodes()
+
+        if nbunch is None:
+            # Covers exactly all nodes
+            assert set(deg_dict.keys()) == set(G.nodes())
+            # Handshaking lemma (only meaningful for unweighted degree)
+            if weight is None:
+                assert sum(deg_dict.values()) == 2 * G.number_of_edges()
+        else:
+            # Subset: keys are a subset of requested nodes
+            assert set(deg_dict.keys()).issubset(set(nbunch))
+            # Consistency with full-graph query
+            full = dict(nx.degree(G, weight=weight))
+            for node, d in deg_dict.items():
+                assert d == full[node]
+# End program
+```

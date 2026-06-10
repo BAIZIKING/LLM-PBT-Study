@@ -1,0 +1,83 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.mean(data)`, I'll use the following approach:
+
+1. **Numeric types diversity**: The documentation shows `mean` works with integers, floats, `Fraction`, and `Decimal`. I'll focus on integers and floats as the primary strategy, since mixing types can cause issues and pure-type lists give cleaner properties.
+
+2. **Non-empty lists**: Since empty data raises `StatisticsError`, I'll generate non-empty lists (`min_size=1`) to test the mathematical properties without triggering the error path.
+
+3. **Bounded floats**: To avoid `inf`, `nan`, and overflow issues that would invalidate mathematical properties, I'll exclude non-finite values and use reasonable bounds to keep arithmetic stable and avoid floating-point precision catastrophes.
+
+4. **Edge cases covered**: Single-element lists, lists with repeated values, negative numbers, zeros, and large/small magnitudes.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify these mathematically-guaranteed properties:
+
+1. **Definition property**: `mean(data) == sum(data) / len(data)` — the mean is the sum divided by the count (the core definition).
+
+2. **Bounds property**: `min(data) <= mean(data) <= max(data)` — the mean (a measure of central location) must lie between the minimum and maximum values.
+
+3. **Single element**: `mean([x]) == x` — the average of one value is that value.
+
+4. **Translation invariance**: `mean([x + c for x in data]) == mean(data) + c` — shifting all values by a constant shifts the mean by that constant.
+
+I use `pytest.approx` / tolerance for floating-point comparisons.
+
+```python
+from hypothesis import given, strategies as st
+from statistics import mean
+import math
+
+# Summary: Generate non-empty lists of finite floats (with bounded magnitude to
+# keep arithmetic stable). This covers single elements, repeated values, negatives,
+# zeros, and varied magnitudes. We then check the core mathematical properties of
+# mean: its definition (sum/len), its bounds (min <= mean <= max), the single-element
+# identity, and translation invariance.
+@given(st.data())
+def test_statistics_mean():
+    data = st.data  # placeholder to satisfy format; real draw below
+    # (The decorator passes a `data` object; reassign via inner draw.)
+
+
+@given(st.data())
+def test_statistics_mean(data):
+    values = data.draw(
+        st.lists(
+            st.floats(
+                allow_nan=False,
+                allow_infinity=False,
+                min_value=-1e6,
+                max_value=1e6,
+            ),
+            min_size=1,
+            max_size=50,
+        )
+    )
+
+    result = mean(values)
+    n = len(values)
+    tol = 1e-6 * max(1.0, abs(result), max(abs(v) for v in values))
+
+    # Property 1: Definition -- mean equals sum divided by count.
+    assert math.isclose(result, sum(values) / n, abs_tol=tol, rel_tol=1e-9)
+
+    # Property 2: Bounds -- mean lies between min and max.
+    assert min(values) - tol <= result <= max(values) + tol
+
+    # Property 3: Single-element identity.
+    if n == 1:
+        assert math.isclose(result, values[0], abs_tol=tol, rel_tol=1e-9)
+
+    # Property 4: Translation invariance -- shifting all values shifts the mean.
+    c = data.draw(
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e6, max_value=1e6)
+    )
+    shifted_mean = mean([v + c for v in values])
+    shift_tol = 1e-6 * max(1.0, abs(shifted_mean), abs(result), abs(c))
+    assert math.isclose(shifted_mean, result + c, abs_tol=shift_tol, rel_tol=1e-9)
+# End program
+```

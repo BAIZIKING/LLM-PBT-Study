@@ -1,0 +1,58 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `zlib.compress(data, level, wbits)`:
+
+1. **`data` parameter**: Use `st.binary()` to generate random bytes objects. This naturally covers edge cases like empty bytes (`b""`), single bytes, and large byte sequences. I'll allow a wide size range to test both tiny and substantial inputs.
+
+2. **`level` parameter**: Valid values are integers from `-1` to `9`. I'll use `st.integers(min_value=-1, max_value=9)` to cover all compression levels including the special values `-1` (default), `0` (no compression), `1` (best speed), and `9` (best compression).
+
+3. **`wbits` parameter**: According to the docs, valid ranges are:
+   - `+9` to `+15` (zlib header/trailer)
+   - `−9` to `−15` (raw stream)
+   - `+25` to `+31` (gzip header/trailer)
+   
+   I'll use `st.one_of()` combining these three integer ranges to ensure all three output formats are exercised.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The function must return a `bytes` object.
+
+2. **Round-trip correctness (most important)**: Compressing then decompressing must recover the original data. The decompression must use a compatible `wbits` value. Since the `wbits` ranges map to specific formats (zlib, raw, gzip), I can decompress using the same `wbits` value (`zlib.decompress` accepts the same wbits semantics). This verifies compression is lossless.
+
+3. **No unexpected exceptions**: Since all generated inputs are valid per the documentation, `zlib.compress` should not raise `zlib.error` for valid parameter combinations.
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random `data` as arbitrary bytes (covering empty and large inputs),
+# `level` as integers in [-1, 9] (all valid compression levels including special values),
+# and `wbits` from the three documented valid ranges: +9..+15 (zlib), -9..-15 (raw),
+# and +25..+31 (gzip). Check that compress returns bytes and that decompressing with
+# the same wbits losslessly recovers the original data.
+@given(st.data())
+def test_zlib_compress(data):
+    payload = data.draw(st.binary(min_size=0, max_size=4096))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(
+        st.one_of(
+            st.integers(min_value=9, max_value=15),    # zlib header/trailer
+            st.integers(min_value=-15, max_value=-9),  # raw stream
+            st.integers(min_value=25, max_value=31),   # gzip header/trailer
+        )
+    )
+
+    compressed = zlib.compress(payload, level, wbits)
+
+    # Property 1: Return type is bytes
+    assert isinstance(compressed, bytes)
+
+    # Property 2: Round-trip — decompressing with the same wbits recovers original data
+    decompressed = zlib.decompress(compressed, wbits)
+    assert decompressed == payload
+# End program
+```

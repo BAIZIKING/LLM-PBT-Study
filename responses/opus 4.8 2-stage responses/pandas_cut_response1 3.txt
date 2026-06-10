@@ -1,0 +1,9 @@
+1. **Output length preservation**: The length of the output (whether Series, Categorical, or ndarray) always equals the length of the input array `x`.
+
+2. **NA preservation and out-of-bounds handling**: Any NA value in the input `x` results in an NA value at the corresponding position in the output, and any value falling outside the range covered by the bins also results in NA (or NaN) in the output.
+
+3. **Bin count consistency**: When `bins` is an integer `n` (and `duplicates='raise'`), the number of resulting categories is exactly `n`; when `labels` are provided, the number of distinct categories equals the number of resulting bins.
+
+4. **Correct interval assignment respecting `right` and `include_lowest`**: Each value of `x` is assigned to an interval such that the value lies within that interval's bounds, honoring whether intervals are right-closed/left-closed (`right`) and whether the first interval includes its lower edge (`include_lowest`). With `labels=False`, the integer indicators are non-negative and strictly increase with the value's bin position.
+
+5. **retbins consistency and monotonicity**: When `retbins=True`, the function returns a tuple whose second element is an array of bin edges that is strictly monotonically increasing (after dropping duplicates if `duplicates='drop'`), and whose length is one greater than the number of resulting bins.

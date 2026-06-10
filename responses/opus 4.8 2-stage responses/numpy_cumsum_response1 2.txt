@@ -1,0 +1,11 @@
+Here are five properties of `numpy.cumsum` suitable for property-based testing:
+
+1. **Size preservation**: The output array always has the same total number of elements as the input array `a`, regardless of the `axis` argument.
+
+2. **Last element equals total sum**: For integer inputs (or when avoiding floating-point roundoff concerns), the last element of the flattened cumsum result equals the sum of all elements in `a`; more generally, when computed along an axis, the last slice along that axis equals the sum over that axis.
+
+3. **Monotonicity for non-negative inputs**: When all elements of `a` are non-negative, the cumulative sum is monotonically non-decreasing along the computed axis (each element is greater than or equal to the previous one).
+
+4. **First element equality**: The first element of the cumsum (along the flattened array or along the given axis) equals the first element of the input along that same position, since the cumulative sum starts with the original first value.
+
+5. **Successive difference recovers input**: Taking the discrete difference (`np.diff`) of the cumsum result along the computed axis recovers the original input elements (excluding the first), i.e., cumsum and diff are inverse operations along that axis.

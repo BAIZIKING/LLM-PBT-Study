@@ -1,0 +1,81 @@
+# Strategy Explanation
+
+## Input Generation Strategy
+
+The `zlib.compress` function takes three parameters: `data`, `level`, and `wbits`. To generate a wide variety of inputs and edge cases:
+
+1. **`data`**: Use `st.binary()` to generate random byte strings. This naturally covers edge cases like empty bytes (`b""`), single bytes, and large byte sequences with arbitrary content. We set a reasonable `max_size` to keep tests fast while still allowing variety.
+
+2. **`level`**: Use `st.integers(min_value=-1, max_value=9)`. This covers the full valid range:
+   - `-1` (Z_DEFAULT_COMPRESSION, the default)
+   - `0` (Z_NO_COMPRESSION)
+   - `1` (Z_BEST_SPEED)
+   - `9` (Z_BEST_COMPRESSION)
+   - and all intermediate values.
+
+3. **`wbits`**: Use `st.sampled_from()` to sample from all three valid ranges:
+   - `+9 to +15`: zlib header/trailer
+   - `-9 to -15`: raw stream (no header/trailer)
+   - `+25 to +31`: gzip header/trailer
+   
+   This ensures all output format types are exercised.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The result is always a `bytes` object.
+2. **Round-trip correctness**: Decompressing the compressed data (using `zlib.decompress` with the matching `wbits`) must reproduce the original `data`. This verifies compression is lossless and correct across all format types.
+3. **Format-specific headers**: When using gzip format (`wbits` in 25–31), the output should begin with the gzip magic bytes `\x1f\x8b`. When using zlib format (`wbits` in 9–15), the output is non-empty.
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random bytes for `data`, integers in [-1, 9] for `level`,
+# and `wbits` sampled from all three valid ranges (zlib: 9..15, raw: -15..-9,
+# gzip: 25..31). Check that the output is bytes, round-trips correctly via
+# zlib.decompress with the matching wbits, and has the correct format header.
+@given(st.data())
+def test_zlib_compress():
+    data = st.data()  # placeholder; real draws below
+```
+
+Let me provide the complete, correct version:
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate random bytes for `data`, integers in [-1, 9] for `level`,
+# and `wbits` sampled from all three valid ranges (zlib: 9..15, raw: -15..-9,
+# gzip: 25..31). Verify the output is bytes, round-trips correctly via
+# zlib.decompress with the matching wbits, and carries the correct format header.
+@given(st.data())
+def test_zlib_compress(data):
+    payload = data.draw(st.binary(max_size=2048))
+    level = data.draw(st.integers(min_value=-1, max_value=9))
+    wbits = data.draw(st.sampled_from(
+        list(range(9, 16)) +      # zlib header/trailer
+        list(range(-15, -8)) +    # raw, no header/trailer
+        list(range(25, 32))       # gzip header/trailer
+    ))
+
+    compressed = zlib.compress(payload, level, wbits)
+
+    # Property 1: result is always a bytes object
+    assert isinstance(compressed, bytes)
+
+    # Property 2: round-trip correctness with the matching wbits
+    decompressed = zlib.decompress(compressed, wbits)
+    assert decompressed == payload
+
+    # Property 3: format-specific header checks
+    if 25 <= wbits <= 31:
+        # gzip output begins with the gzip magic bytes
+        assert compressed[:2] == b"\x1f\x8b"
+    elif 9 <= wbits <= 15:
+        # zlib output includes a header/trailer, so it is non-empty
+        assert len(compressed) > 0
+# End program
+```

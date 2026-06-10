@@ -1,0 +1,9 @@
+1. For any valid input token decryptable by one of the `MultiFernet` keys, the returned value is `bytes`.
+
+2. The returned token is a valid Fernet token that can be decrypted by the same `MultiFernet` instance.
+
+3. Decrypting the returned token yields exactly the same plaintext as decrypting the original input token.
+
+4. The returned token preserves the original token’s Fernet timestamp.
+
+5. The returned token is encrypted under the `MultiFernet` instance’s primary key, meaning it can be decrypted by the first `Fernet` instance in the list.

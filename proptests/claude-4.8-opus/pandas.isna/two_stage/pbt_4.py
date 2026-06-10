@@ -1,0 +1,151 @@
+from hypothesis import given, strategies as st
+import numpy as np
+import pandas as pd
+import math
+
+
+# Strategy for scalar values that may or may not be missing
+scalar_values = st.one_of(
+    st.integers(min_value=-(10**9), max_value=10**9),
+    st.floats(allow_nan=True, allow_infinity=True, width=64),
+    st.text(max_size=20),
+    st.booleans(),
+    st.just(None),
+    st.just(np.nan),
+    st.just(pd.NA),
+    st.just(pd.NaT),
+)
+
+# Strategy for numeric array elements (controlled to avoid overflow)
+numeric_elements = st.one_of(
+    st.floats(allow_nan=True, allow_infinity=True, width=64,
+              min_value=-1e15, max_value=1e15),
+    st.just(np.nan),
+)
+
+# Strategy for object array elements
+object_elements = st.one_of(
+    st.text(max_size=10),
+    st.integers(min_value=-1000, max_value=1000),
+    st.just(None),
+    st.just(np.nan),
+)
+
+
+def _is_missing_scalar(x):
+    """Reference oracle for whether a scalar is considered missing."""
+    if x is None:
+        return True
+    if x is pd.NA:
+        return True
+    if x is pd.NaT:
+        return True
+    try:
+        if isinstance(x, float) and math.isnan(x):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+@given(st.data())
+def test_pandas_isna_property():
+    # Choose which property to test on this run
+    prop = st.sampled_from([1, 2, 3, 4, 5]).example()
+
+    if prop == 1:
+        # Property 1: Scalar input yields scalar boolean output with correct value
+        x = st.data().draw(scalar_values) if False else None
+        # draw via data
+        pass
+
+
+# The above approach with .example() is discouraged; rewrite below properly.
+# We provide a single combined test that draws everything inside.
+
+
+@given(st.data())
+def test_pandas_isna_properties(data):
+    prop = data.draw(st.sampled_from([1, 2, 3, 4, 5]))
+
+    if prop == 1:
+        # Property 1: Scalar input yields scalar boolean output
+        x = data.draw(scalar_values)
+        result = pd.isna(x)
+        assert np.isscalar(result) or isinstance(result, (bool, np.bool_))
+        assert bool(result) == _is_missing_scalar(x)
+
+    elif prop == 2:
+        # Property 2: Shape and type preservation for array-like input
+        kind = data.draw(st.sampled_from(["ndarray", "series", "dataframe"]))
+        if kind == "ndarray":
+            elems = data.draw(st.lists(numeric_elements, min_size=0, max_size=20))
+            arr = np.array(elems, dtype=float)
+            result = pd.isna(arr)
+            assert isinstance(result, np.ndarray)
+            assert result.shape == arr.shape
+            assert result.dtype == np.bool_
+        elif kind == "series":
+            elems = data.draw(st.lists(object_elements, min_size=0, max_size=20))
+            s = pd.Series(elems, dtype=object)
+            result = pd.isna(s)
+            assert isinstance(result, pd.Series)
+            assert len(result) == len(s)
+            assert result.index.equals(s.index)
+            assert result.dtype == np.bool_
+        else:  # dataframe
+            ncols = data.draw(st.integers(min_value=1, max_value=4))
+            nrows = data.draw(st.integers(min_value=0, max_value=10))
+            cols_data = {
+                c: data.draw(st.lists(object_elements, min_size=nrows, max_size=nrows))
+                for c in range(ncols)
+            }
+            df = pd.DataFrame(cols_data, dtype=object)
+            result = pd.isna(df)
+            assert isinstance(result, pd.DataFrame)
+            assert result.shape == df.shape
+            assert list(result.columns) == list(df.columns)
+            assert result.index.equals(df.index)
+            assert (result.dtypes == np.bool_).all()
+
+    elif prop == 3:
+        # Property 3: Element-wise correctness for object arrays
+        elems = data.draw(st.lists(object_elements, min_size=0, max_size=20))
+        arr = np.array(elems, dtype=object)
+        result = pd.isna(arr)
+        assert result.shape == arr.shape
+        for i, e in enumerate(elems):
+            assert bool(result[i]) == _is_missing_scalar(e)
+
+    elif prop == 4:
+        # Property 4: Inverse relationship with notna
+        kind = data.draw(st.sampled_from(["scalar", "ndarray", "series"]))
+        if kind == "scalar":
+            x = data.draw(scalar_values)
+            isna_res = pd.isna(x)
+            notna_res = pd.notna(x)
+            assert bool(isna_res) == (not bool(notna_res))
+        elif kind == "ndarray":
+            elems = data.draw(st.lists(object_elements, min_size=0, max_size=20))
+            arr = np.array(elems, dtype=object)
+            isna_res = pd.isna(arr)
+            notna_res = pd.notna(arr)
+            assert np.array_equal(isna_res, ~notna_res)
+        else:  # series
+            elems = data.draw(st.lists(numeric_elements, min_size=0, max_size=20))
+            s = pd.Series(elems, dtype=float)
+            isna_res = pd.isna(s)
+            notna_res = pd.notna(s)
+            assert (isna_res == ~notna_res).all()
+
+    elif prop == 5:
+        # Property 5: Boolean arrays have no missing values; double isna is all False
+        elems = data.draw(st.lists(st.booleans(), min_size=0, max_size=20))
+        arr = np.array(elems, dtype=bool)
+        first = pd.isna(arr)
+        assert first.shape == arr.shape
+        assert not first.any()
+        second = pd.isna(first)
+        assert second.shape == first.shape
+        assert not second.any()
+# End program

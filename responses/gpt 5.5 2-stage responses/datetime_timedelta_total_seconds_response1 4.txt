@@ -1,0 +1,9 @@
+1. The output is always a `float` representing the duration in seconds.
+
+2. For any `timedelta` value `td`, `td.total_seconds()` is equivalent to `td / timedelta(seconds=1)`.
+
+3. For any `timedelta` value `td`, the result equals `td.days * 86400 + td.seconds + td.microseconds / 1_000_000`, subject to floating-point precision limits.
+
+4. The sign of the output matches the sign of the duration: positive timedeltas produce positive values, negative timedeltas produce negative values, and a zero timedelta produces `0.0`.
+
+5. For timedeltas `a` and `b`, `(a + b).total_seconds()` is approximately equal to `a.total_seconds() + b.total_seconds()`, allowing for floating-point precision loss on very large intervals.

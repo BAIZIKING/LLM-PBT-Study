@@ -1,0 +1,9 @@
+1. For valid non-proportional inputs, the returned intercept equals `mean(y) - slope * mean(x)`.
+
+2. For valid non-proportional inputs, the fitted line passes through the centroid of the data: `mean(y) == slope * mean(x) + intercept`.
+
+3. For valid proportional inputs, the returned intercept is always `0.0`.
+
+4. For valid proportional inputs, the returned slope equals the least-squares origin-constrained estimate: `sum(x_i * y_i) / sum(x_i ** 2)`.
+
+5. If the input data lies exactly on a line `y = m * x + b`, then non-proportional regression returns slope `m` and intercept `b`; if `proportional=True` and `b == 0`, it returns slope `m` and intercept `0.0`.

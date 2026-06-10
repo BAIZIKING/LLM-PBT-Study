@@ -1,0 +1,9 @@
+1. The returned norm is always non-negative for valid inputs and valid `ord`/`axis` combinations.
+
+2. For an all-zero input array, the returned norm is zero for any supported norm order.
+
+3. Scaling the input by a scalar scales the norm by the scalar’s absolute value: for supported homogeneous norms, `norm(c * x)` equals `abs(c) * norm(x)`.
+
+4. When `ord=None` and `axis=None`, the result equals the Euclidean norm of the flattened input, i.e. the square root of the sum of squared absolute values of all elements.
+
+5. When `axis` is specified, the output shape reflects the reduced axes: reduced axes are removed when `keepdims=False`, and retained with size one when `keepdims=True`.

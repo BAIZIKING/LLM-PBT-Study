@@ -1,0 +1,9 @@
+1. For any successful call, the result is a `datetime.datetime` instance.
+
+2. If `tz` is `None` or omitted, the result is naive: its `tzinfo` is `None`.
+
+3. If `tz` is provided, the result is timezone-aware and represents the timestamp converted to that timezone.
+
+4. For `tz=datetime.timezone.utc`, converting the result back to a POSIX timestamp should approximately equal the input timestamp, allowing for microsecond rounding.
+
+5. The result’s `fold` attribute is always either `0` or `1`, and may be `1` for ambiguous local times.

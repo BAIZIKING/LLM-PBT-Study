@@ -1,0 +1,53 @@
+## Generation Strategy
+
+To generate a wide variety of inputs for `Fernet.encrypt`, I'll focus on the `data` parameter, which must be `bytes`. Using `st.binary()`, I can generate:
+- **Empty bytes** (`b""`) — an important edge case
+- **Small byte strings** — typical short messages
+- **Large byte strings** — by setting a generous `max_size`, testing larger payloads
+- **Arbitrary byte values** — including null bytes, high-value bytes (0-255), and non-UTF-8 sequences
+
+I use `min_size=0` to include the empty edge case and a reasonable `max_size` to also cover large inputs. The key is freshly generated via `Fernet.generate_key()` to ensure valid setup.
+
+## Properties to Check
+
+Based on the API documentation, the key properties are:
+
+1. **Return type is bytes** — The docs state encrypt "Returns bytes".
+2. **Round-trip correctness** — Decrypting the token must yield the original data exactly (the canonical example shows `f.decrypt(token) == original`).
+3. **URL-safe base64 encoding** — The token is "URL-safe base64-encoded", so it should only contain URL-safe base64 alphabet characters (`A-Z`, `a-z`, `0-9`, `-`, `_`, `=`).
+4. **Authenticity/different tokens** — Tokens embed a timestamp; verifying decryptability confirms authenticity guarantees hold.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from cryptography.fernet import Fernet
+
+# Summary: Generate arbitrary byte strings (including empty, small, large, and
+# arbitrary byte values) using st.binary(). For each, encrypt with a fresh Fernet
+# key and verify: (1) the result is bytes, (2) it is valid URL-safe base64,
+# and (3) decrypting the token recovers the original data exactly (round-trip).
+@given(st.data())
+def test_cryptography_fernet_Fernet_encrypt(data):
+    payload = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key = Fernet.generate_key()
+    f = Fernet(key)
+
+    token = f.encrypt(payload)
+
+    # Property 1: encrypt returns bytes
+    assert isinstance(token, bytes)
+
+    # Property 2: token is URL-safe base64-encoded (only valid alphabet chars)
+    urlsafe_b64_alphabet = set(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        b"abcdefghijklmnopqrstuvwxyz"
+        b"0123456789-_="
+    )
+    assert all(byte in urlsafe_b64_alphabet for byte in token)
+
+    # Property 3: round-trip decryption recovers the original data exactly
+    assert f.decrypt(token) == payload
+# End program
+```

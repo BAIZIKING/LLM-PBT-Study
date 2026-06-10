@@ -1,0 +1,106 @@
+from hypothesis import given, strategies as st
+import datetime
+from dateutil import tz
+from dateutil.parser import isoparse
+
+# Summary: Generate valid datetimes (naive or with fixed offset), format them into
+# randomly-chosen ISO-8601 variants (basic/extended date, varying time resolution,
+# optional fractional seconds with '.'/',' separators, and various tz offset
+# representations), then assert the roundtrip parse matches the original value at the
+# chosen precision, that the return type is datetime, and that UTC offsets are preserved.
+@given(st.data())
+def test_dateutil_parser_isoparse(data):
+    # Choose an optional timezone offset (None => naive)
+    offset_minutes = data.draw(st.one_of(
+        st.none(),
+        st.integers(min_value=-23 * 60, max_value=23 * 60),
+    ))
+    if offset_minutes is None:
+        tzinfo = None
+    else:
+        tzinfo = tz.tzoffset(None, offset_minutes * 60)
+
+    base_dt = data.draw(st.datetimes(
+        min_value=datetime.datetime(1, 1, 1),
+        max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+    ))
+    dt = base_dt.replace(tzinfo=tzinfo)
+
+    # Choose date format: extended (with '-') or basic (without)
+    use_extended_date = data.draw(st.booleans())
+    if use_extended_date:
+        date_str = "{:04d}-{:02d}-{:02d}".format(dt.year, dt.month, dt.day)
+    else:
+        date_str = "{:04d}{:02d}{:02d}".format(dt.year, dt.month, dt.day)
+
+    # Choose time resolution: 'h', 'hm', 'hms', 'hmsf'
+    resolution = data.draw(st.sampled_from(["h", "hm", "hms", "hmsf"]))
+    use_extended_time = data.draw(st.booleans())
+    tsep = ":" if use_extended_time else ""
+
+    # Build expected datetime truncated to the chosen resolution
+    if resolution == "h":
+        time_str = "{:02d}".format(dt.hour)
+        expected = dt.replace(minute=0, second=0, microsecond=0)
+    elif resolution == "hm":
+        time_str = "{:02d}{}{:02d}".format(dt.hour, tsep, dt.minute)
+        expected = dt.replace(second=0, microsecond=0)
+    elif resolution == "hms":
+        time_str = "{:02d}{}{:02d}{}{:02d}".format(
+            dt.hour, tsep, dt.minute, tsep, dt.second)
+        expected = dt.replace(microsecond=0)
+    else:  # hmsf
+        dec_sep = data.draw(st.sampled_from([".", ","]))
+        frac = "{:06d}".format(dt.microsecond)
+        time_str = "{:02d}{}{:02d}{}{:02d}{}{}".format(
+            dt.hour, tsep, dt.minute, tsep, dt.second, dec_sep, frac)
+        expected = dt
+
+    # Choose timezone representation
+    if tzinfo is None:
+        tz_str = ""
+    else:
+        sign = "+" if offset_minutes >= 0 else "-"
+        abs_min = abs(offset_minutes)
+        oh, om = divmod(abs_min, 60)
+        if offset_minutes == 0:
+            tz_str = data.draw(st.sampled_from([
+                "Z", "+00:00", "+0000", "+00",
+            ]))
+        elif om == 0:
+            tz_str = data.draw(st.sampled_from([
+                "{}{:02d}:{:02d}".format(sign, oh, om),
+                "{}{:02d}{:02d}".format(sign, oh, om),
+                "{}{:02d}".format(sign, oh),
+            ]))
+        else:
+            tz_str = data.draw(st.sampled_from([
+                "{}{:02d}:{:02d}".format(sign, oh, om),
+                "{}{:02d}{:02d}".format(sign, oh, om),
+            ]))
+
+    iso_str = date_str + "T" + time_str + tz_str
+
+    result = isoparse(iso_str)
+
+    # Property: return type is always datetime.datetime
+    assert isinstance(result, datetime.datetime)
+
+    # Property: roundtrip correctness at chosen precision (date/time components)
+    assert result.year == expected.year
+    assert result.month == expected.month
+    assert result.day == expected.day
+    assert result.hour == expected.hour
+    assert result.minute == expected.minute
+    assert result.second == expected.second
+    assert result.microsecond == expected.microsecond
+
+    # Property: timezone / UTC offset preservation and UTC normalization
+    if tzinfo is None:
+        assert result.tzinfo is None
+    else:
+        assert result.utcoffset() == datetime.timedelta(seconds=offset_minutes * 60)
+        if offset_minutes == 0:
+            # Offsets equivalent to UTC should normalize to a zero offset (tzutc)
+            assert result.utcoffset() == datetime.timedelta(0)
+# End program

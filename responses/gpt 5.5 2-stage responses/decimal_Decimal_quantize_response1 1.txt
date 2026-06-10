@@ -1,0 +1,9 @@
+1. For any successful quantize operation, the result has exactly the same exponent as the `exp` operand.
+
+2. For any successful quantize operation on finite operands, the result is the first operand rounded to the scale specified by `exp`.
+
+3. If the target exponent requires adding trailing zeros rather than discarding digits, the numeric value of the result is equal to the numeric value of the first operand, but with the exponent of `exp`.
+
+4. If rounding is required, the result is consistent with the rounding mode supplied by `rounding`, or otherwise the rounding mode from the provided/current context.
+
+5. For any successful quantize operation, the result’s exponent is not greater than `Emax` and not less than `Etiny()` for the active context.

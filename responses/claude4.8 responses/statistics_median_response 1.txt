@@ -1,0 +1,58 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `statistics.median`, I'll use the following approach:
+
+1. **Numeric variety**: Generate lists of numbers using `st.lists` combined with a mix of `st.integers()` and `st.floats()`. I'll restrict floats to finite values (no NaN, no infinity) since NaN breaks ordering comparisons and isn't meaningful for medians.
+2. **Non-empty lists**: Use `min_size=1` to avoid the empty-data case (which raises `StatisticsError`), so we can focus on validating the median's value properties.
+3. **Edge cases**: Hypothesis naturally explores single-element lists, lists with all identical values, lists with negative numbers, very large/small numbers, and duplicates.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Bounds property**: The median must lie between the minimum and maximum of the data (`min(data) <= median <= max(data)`).
+2. **Odd-length property**: When the number of data points is odd, the median is the actual middle value of the sorted data, and it must be a member of the data.
+3. **Even-length property**: When the number of data points is even, the median equals the average of the two middle sorted values.
+4. **Permutation invariance**: The median should not depend on the input order (median of data equals median of a sorted/shuffled copy).
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+
+# Summary: Generate non-empty lists of finite numbers (ints and floats mixed),
+# letting Hypothesis explore single elements, duplicates, negatives, and extreme
+# values. Check that the median lies within [min, max], matches the sorted-middle
+# definition for odd/even lengths, and is invariant under input ordering.
+@given(st.data())
+def test_statistics_median(data):
+    numbers = data.draw(
+        st.lists(
+            st.one_of(
+                st.integers(),
+                st.floats(allow_nan=False, allow_infinity=False),
+            ),
+            min_size=1,
+        )
+    )
+
+    result = statistics.median(numbers)
+    ordered = sorted(numbers)
+    n = len(ordered)
+
+    # Property 1: median lies within [min, max]
+    assert ordered[0] <= result <= ordered[-1]
+
+    # Property 2 & 3: matches the sorted-middle definition
+    if n % 2 == 1:
+        expected = ordered[n // 2]
+        assert result == expected
+        # odd-length median is an actual data point
+        assert result in numbers
+    else:
+        expected = (ordered[n // 2 - 1] + ordered[n // 2]) / 2
+        assert result == expected
+
+    # Property 4: permutation invariance (order should not matter)
+    assert statistics.median(ordered) == result
+# End program
+```

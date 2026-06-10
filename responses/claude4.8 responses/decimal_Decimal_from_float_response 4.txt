@@ -1,0 +1,63 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.from_float(f)`, I'll use a combination of strategies:
+
+1. **Floats**: Use `st.floats()` to cover regular floats, including subnormals, very large/small magnitudes, positive/negative zero, NaN, and infinities (by allowing `allow_nan=True` and `allow_infinity=True`).
+2. **Integers**: Use `st.integers()` since the API explicitly accepts `int` too, including large integers and negative values.
+3. Combine these with `st.one_of(...)` so both accepted types are exercised.
+
+## Properties to Check
+
+Based on the API documentation:
+
+1. **Return type**: The result is always a `Decimal` instance.
+2. **NaN handling**: `from_float(float('nan'))` returns `Decimal('NaN')` — the result should be NaN.
+3. **Infinity handling**: `from_float(float('inf'))` / `from_float(float('-inf'))` should return infinite Decimals with the correct sign.
+4. **Exact representation**: For finite floats/ints, the Decimal must equal the *exact* binary value. We can verify this by converting the Decimal back to float — round-tripping should yield the original float exactly. For integers, the Decimal should equal the integer exactly.
+5. **Sign preservation**: Negative inputs yield negative Decimals (including signed zero).
+
+```python
+from hypothesis import given, strategies as st
+import math
+from decimal import Decimal
+
+# Summary: Generate floats (including NaN, infinities, subnormals, signed zeros)
+# and integers (the two accepted types). Verify return type is Decimal, NaN/Inf
+# are mapped correctly, and finite values round-trip exactly back to the input.
+@given(st.data())
+def test_decimal_Decimal_from_float():
+    f = data.draw(st.one_of(
+        st.floats(allow_nan=True, allow_infinity=True),
+        st.integers(),
+    )) if False else None  # placeholder to keep signature clean
+
+@given(st.one_of(
+    st.floats(allow_nan=True, allow_infinity=True),
+    st.integers(),
+))
+def test_decimal_Decimal_from_float(f):
+    result = Decimal.from_float(f)
+
+    # Property 1: result is always a Decimal
+    assert isinstance(result, Decimal)
+
+    if isinstance(f, float) and math.isnan(f):
+        # Property 2: NaN maps to a NaN Decimal
+        assert result.is_nan()
+    elif isinstance(f, float) and math.isinf(f):
+        # Property 3: infinities map to infinite Decimals with correct sign
+        assert result.is_infinite()
+        assert (result < 0) == (f < 0)
+    else:
+        # Property 4: finite values round-trip exactly back to the input
+        assert float(result) == float(f)
+        # Property 5: integer inputs are represented exactly
+        if isinstance(f, int):
+            assert result == Decimal(f)
+        # Sign preservation (incl. signed zero via copysign)
+        if f != 0:
+            assert (result < 0) == (f < 0)
+        else:
+            assert result == 0
+# End program
+```

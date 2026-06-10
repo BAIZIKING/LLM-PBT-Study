@@ -1,0 +1,35 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate arbitrary byte strings, including empty bytes, short/long inputs,
+# repeated-byte patterns, and split inputs to exercise the optional starting checksum
+# value. Also generate valid unsigned 32-bit starting values and sometimes use the
+# documented default value implicitly.
+@given(st.data())
+def test_zlib_adler32(data):
+    byte_input = data.draw(
+        st.one_of(
+            st.binary(min_size=0, max_size=4096),
+            st.builds(lambda b, n: bytes([b]) * n, st.integers(0, 255), st.integers(0, 4096)),
+            st.sampled_from([b"", b"\x00", b"\xff", b"hello", bytes(range(256))]),
+        )
+    )
+
+    prefix = data.draw(st.binary(min_size=0, max_size=2048))
+    suffix = data.draw(st.binary(min_size=0, max_size=2048))
+    start_value = data.draw(st.integers(min_value=0, max_value=2**32 - 1))
+
+    result = zlib.adler32(byte_input, start_value)
+
+    # Property 1: The result is always an unsigned 32-bit integer.
+    assert isinstance(result, int)
+    assert 0 <= result <= 2**32 - 1
+
+    # Property 2: Omitting `value` is equivalent to using the documented default of 1.
+    assert zlib.adler32(byte_input) == zlib.adler32(byte_input, 1)
+
+    # Property 3: A running checksum over chunks equals the checksum of concatenated data.
+    running = zlib.adler32(suffix, zlib.adler32(prefix, start_value))
+    combined = zlib.adler32(prefix + suffix, start_value)
+    assert running == combined
+# End program

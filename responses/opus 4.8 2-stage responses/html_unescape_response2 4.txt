@@ -1,0 +1,47 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+# Property 1: Idempotence on text without character references.
+# If a string contains no '&', it cannot contain any character reference,
+# so unescaping should leave it unchanged.
+@given(st.text().filter(lambda s: '&' not in s))
+def test_no_references_unchanged(s):
+    assert html.unescape(s) == s
+
+# Property 2: Output is always a string and the function never raises.
+@given(st.text())
+def test_output_type_and_termination(s):
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+# Property 3: No remaining valid named references after unescaping.
+# Build a string from valid named references; none should remain in the output.
+@given(st.lists(st.sampled_from(['&amp;', '&gt;', '&lt;', '&quot;', '&copy;']),
+                min_size=1, max_size=50))
+def test_no_remaining_named_references(refs):
+    s = ''.join(refs)
+    result = html.unescape(s)
+    for ref in ['&amp;', '&gt;', '&lt;', '&quot;', '&copy;']:
+        assert ref not in result
+
+# Property 4: Decimal and hexadecimal numeric references decode to the same
+# character, namely chr(code_point).
+@given(st.integers(min_value=1, max_value=0x10FFFF).filter(
+    lambda c: not (0xD800 <= c <= 0xDFFF)))
+def test_numeric_references_equivalence(c):
+    dec = '&#{};'.format(c)
+    hexa = '&#x{:x};'.format(c)
+    assert html.unescape(dec) == html.unescape(hexa)
+    assert html.unescape(dec) == chr(c)
+
+# Property 5: For input containing valid references, output length does not
+# increase relative to input length.
+@given(st.lists(st.sampled_from(['&amp;', '&gt;', '&lt;', '&quot;', '&copy;']),
+                min_size=1, max_size=50))
+def test_length_non_increase(refs):
+    s = ''.join(refs)
+    result = html.unescape(s)
+    assert len(result) <= len(s)
+# End program
+```

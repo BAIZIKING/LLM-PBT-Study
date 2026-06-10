@@ -1,0 +1,9 @@
+1. For exact linear data `y = a*x + b` with non-constant `x`, the returned `slope` is `a` and `intercept` is `b`, up to numeric precision.
+
+2. For `proportional=True`, the returned `intercept` is always `0.0`, and for exact proportional data `y = a*x`, the returned `slope` is `a`, up to numeric precision.
+
+3. For non-proportional regression, the fitted line passes through the mean point: `mean(y) == slope * mean(x) + intercept`, up to numeric precision.
+
+4. For non-proportional regression, adding a constant to every `y` value leaves `slope` unchanged and increases `intercept` by that constant.
+
+5. For non-proportional regression, translating every `x` value by a constant leaves `slope` unchanged and changes `intercept` by `-slope * constant`.

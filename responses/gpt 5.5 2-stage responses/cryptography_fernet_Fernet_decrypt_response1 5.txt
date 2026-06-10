@@ -1,0 +1,9 @@
+1. For any bytes plaintext encrypted with the same `Fernet` key, `decrypt(token)` returns exactly the original plaintext bytes.
+
+2. The successful return value of `decrypt(...)` is always of type `bytes`, including when the original plaintext is empty.
+
+3. A valid token provided as `bytes` or as an equivalent `str` decrypts to the same plaintext.
+
+4. If `ttl` is `None`, the token’s age does not affect the returned plaintext; any otherwise-valid token decrypts successfully.
+
+5. If the token is malformed, tampered with, signed with a different key, or older than the provided `ttl`, `decrypt(...)` does not return plaintext and raises `InvalidToken`.

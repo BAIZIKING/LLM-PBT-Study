@@ -1,0 +1,121 @@
+from hypothesis import given, settings, strategies as st
+import networkx as nx
+from networkx.algorithms.flow import (
+    edmonds_karp,
+    shortest_augmenting_path,
+    preflow_push,
+    dinitz,
+    boykov_kolmogorov,
+)
+import math
+
+
+# Strategy to build a random DiGraph with capacities, along with chosen source and sink.
+@st.composite
+def flow_graphs(draw):
+    n = draw(st.integers(min_value=2, max_value=8))
+    nodes = list(range(n))
+
+    # Generate a set of edges with finite, reasonable capacities to avoid overflow.
+    possible_edges = [(u, v) for u in nodes for v in nodes if u != v]
+    edges = draw(
+        st.lists(
+            st.sampled_from(possible_edges),
+            unique=True,
+            max_size=len(possible_edges),
+        )
+    )
+
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    for (u, v) in edges:
+        cap = draw(st.integers(min_value=0, max_value=1000))
+        G.add_edge(u, v, capacity=cap)
+
+    s = draw(st.sampled_from(nodes))
+    t = draw(st.sampled_from([x for x in nodes if x != s]))
+    return G, s, t
+
+
+@settings(max_examples=200)
+@given(st.data())
+def test_networkx_maximum_flow_property():
+    data = st.data()  # placeholder; we use the passed-in data fixture below
+
+    # Property 1: flow_value equals net outflow from the source.
+    @given(flow_graphs())
+    def prop_net_outflow_source(args):
+        G, s, t = args
+        flow_value, flow_dict = nx.maximum_flow(G, s, t)
+        out_flow = sum(flow_dict.get(s, {}).values())
+        in_flow = sum(
+            flow_dict[u].get(s, 0) for u in flow_dict
+        )
+        net_outflow = out_flow - in_flow
+        assert math.isclose(net_outflow, flow_value, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Property 2: flow_value equals net inflow into the sink.
+    @given(flow_graphs())
+    def prop_net_inflow_sink(args):
+        G, s, t = args
+        flow_value, flow_dict = nx.maximum_flow(G, s, t)
+        in_flow = sum(
+            flow_dict[u].get(t, 0) for u in flow_dict
+        )
+        out_flow = sum(flow_dict.get(t, {}).values())
+        net_inflow = in_flow - out_flow
+        assert math.isclose(net_inflow, flow_value, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Property 3: flow conservation at every node other than source and sink.
+    @given(flow_graphs())
+    def prop_flow_conservation(args):
+        G, s, t = args
+        flow_value, flow_dict = nx.maximum_flow(G, s, t)
+        for node in G.nodes():
+            if node == s or node == t:
+                continue
+            out_flow = sum(flow_dict.get(node, {}).values())
+            in_flow = sum(
+                flow_dict[u].get(node, 0) for u in flow_dict
+            )
+            assert math.isclose(out_flow, in_flow, rel_tol=1e-9, abs_tol=1e-6)
+
+    # Property 4: every edge flow respects capacity and is non-negative.
+    @given(flow_graphs())
+    def prop_capacity_constraints(args):
+        G, s, t = args
+        flow_value, flow_dict = nx.maximum_flow(G, s, t)
+        for u in flow_dict:
+            for v, f in flow_dict[u].items():
+                assert f >= -1e-6
+                cap = G[u][v].get("capacity", float("inf"))
+                assert f <= cap + 1e-6
+
+    # Property 5: flow_value is independent of choice of flow_func.
+    @given(flow_graphs())
+    def prop_algorithm_independence(args):
+        G, s, t = args
+        default_value, _ = nx.maximum_flow(G, s, t)
+        for func in (
+            edmonds_karp,
+            shortest_augmenting_path,
+            preflow_push,
+            dinitz,
+            boykov_kolmogorov,
+        ):
+            value, fdict = nx.maximum_flow(G, s, t, flow_func=func)
+            assert math.isclose(
+                value, default_value, rel_tol=1e-9, abs_tol=1e-6
+            )
+            # The returned flow dict should also respect capacities.
+            for u in fdict:
+                for v, f in fdict[u].items():
+                    cap = G[u][v].get("capacity", float("inf"))
+                    assert -1e-6 <= f <= cap + 1e-6
+
+    prop_net_outflow_source()
+    prop_net_inflow_sink()
+    prop_flow_conservation()
+    prop_capacity_constraints()
+    prop_algorithm_independence()
+# End program

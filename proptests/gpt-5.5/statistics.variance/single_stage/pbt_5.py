@@ -1,0 +1,51 @@
+from hypothesis import given, strategies as st
+
+# Summary: Generate exact rational datasets using Fraction values, including empty lists,
+# singleton lists, duplicates, zeros, negatives, positives, integers, and non-integer
+# rationals. For valid datasets, optionally pass the true mean as xbar. Check that
+# fewer than two values raises StatisticsError; otherwise, variance equals the
+# sample-variance formula with N-1 degrees of freedom, agrees when xbar is supplied,
+# is non-negative, is zero exactly for constant data, and obeys translation/scaling laws.
+@given(st.data())
+def test_statistics_variance(data):
+    from fractions import Fraction
+    from statistics import StatisticsError, variance
+
+    rational = st.builds(
+        Fraction,
+        st.integers(min_value=-10_000, max_value=10_000),
+        st.integers(min_value=1, max_value=1_000),
+    )
+
+    values = data.draw(
+        st.lists(rational, min_size=0, max_size=20),
+        label="data",
+    )
+
+    if len(values) < 2:
+        try:
+            variance(values)
+        except StatisticsError:
+            return
+        assert False, "variance() should raise StatisticsError for fewer than two values"
+
+    xbar = sum(values, Fraction(0, 1)) / len(values)
+    expected = sum((x - xbar) ** 2 for x in values) / (len(values) - 1)
+
+    use_xbar = data.draw(st.booleans(), label="use_xbar")
+    result = variance(values, xbar) if use_xbar else variance(values)
+
+    assert result == expected
+    assert variance(values, xbar) == variance(values)
+    assert variance(iter(values), xbar) == expected
+
+    assert result >= 0
+    assert (result == 0) == all(x == values[0] for x in values)
+
+    shift = data.draw(rational, label="shift")
+    assert variance([x + shift for x in values]) == result
+
+    scale = data.draw(rational, label="scale")
+    assert variance([scale * x for x in values]) == scale * scale * result
+
+# End program

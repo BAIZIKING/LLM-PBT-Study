@@ -1,0 +1,9 @@
+1. For any scalar input, `pandas.isna(obj)` returns a scalar boolean value.
+
+2. For array-like inputs such as lists, tuples, NumPy arrays, or indexes, the output contains boolean values with the same shape/length as the input.
+
+3. For `Series` and `DataFrame` inputs, the output preserves the same type, index, columns, and shape as the input, with boolean values in corresponding positions.
+
+4. Values considered missing by pandas, such as `None`, `np.nan`, `pd.NA`, and `pd.NaT`, are marked as `True` in the output.
+
+5. For any input, `pandas.isna(obj)` is the elementwise boolean inverse of `pandas.notna(obj)`.

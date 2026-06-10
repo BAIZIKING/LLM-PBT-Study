@@ -1,0 +1,9 @@
+1. The output is always a Python string for any string input.
+
+2. If the input contains no ampersand character (`&`), the output is exactly the same as the input.
+
+3. Standard named references such as `&lt;`, `&gt;`, `&amp;`, and `&quot;` are replaced in the output by their corresponding Unicode characters.
+
+4. Decimal and hexadecimal numeric references representing the same code point produce the same output character, subject to the HTML 5 rules for invalid or specially remapped references.
+
+5. The output length is never greater than the input length, because recognized character references are replaced by one or more Unicode characters no longer than the original reference text.

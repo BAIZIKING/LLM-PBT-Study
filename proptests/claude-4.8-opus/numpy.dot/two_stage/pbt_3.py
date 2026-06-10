@@ -1,0 +1,85 @@
+from hypothesis import given, settings, strategies as st
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# Bounded element strategies to prevent overflow, nan, or inf.
+safe_floats = st.floats(
+    min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=64
+)
+safe_ints = st.integers(min_value=-100, max_value=100)
+safe_scalar = st.one_of(safe_floats, safe_ints)
+
+
+def arrays_of_shape(shape):
+    # Float64 arrays with bounded values to keep dot products finite & accurate.
+    return hnp.arrays(
+        dtype=np.float64,
+        shape=shape,
+        elements=safe_floats,
+    )
+
+
+@given(st.data())
+@settings(deadline=None)
+def test_numpy_dot_property(data):
+    # ---- Property 1: Scalar multiplication equivalence ----
+    scalar = data.draw(safe_floats, label="scalar")
+    other = data.draw(arrays_of_shape(data.draw(hnp.array_shapes(min_dims=0, max_dims=2, max_side=5))),
+                      label="other_for_scalar")
+    res_scalar = np.dot(scalar, other)
+    expected_scalar = np.multiply(scalar, other)
+    assert np.allclose(res_scalar, expected_scalar, rtol=1e-9, atol=1e-9)
+    assert res_scalar.shape == expected_scalar.shape
+
+    # ---- Property 2: 1-D inner product correctness ----
+    n = data.draw(st.integers(min_value=1, max_value=20), label="vec_len")
+    v1 = data.draw(arrays_of_shape((n,)), label="v1")
+    v2 = data.draw(arrays_of_shape((n,)), label="v2")
+    res_inner = np.dot(v1, v2)
+    expected_inner = np.sum(v1 * v2)
+    assert np.ndim(res_inner) == 0  # scalar result
+    assert np.allclose(res_inner, expected_inner, rtol=1e-7, atol=1e-7)
+
+    # ---- Property 3: 2-D matrix multiplication equivalence ----
+    m = data.draw(st.integers(min_value=1, max_value=6), label="m")
+    k = data.draw(st.integers(min_value=1, max_value=6), label="k")
+    p = data.draw(st.integers(min_value=1, max_value=6), label="p")
+    A = data.draw(arrays_of_shape((m, k)), label="A")
+    B = data.draw(arrays_of_shape((k, p)), label="B")
+    res_mat = np.dot(A, B)
+    expected_mat = A @ B
+    assert res_mat.shape == (m, p)
+    assert np.allclose(res_mat, expected_mat, rtol=1e-7, atol=1e-7)
+
+    # ---- Property 4: Output shape correctness for N-D x M-D ----
+    # a: N-D array, b: M-D array (M>=2), contracting last axis of a with
+    # second-to-last axis of b.
+    a_lead = data.draw(
+        st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=2),
+        label="a_lead",
+    )
+    contract = data.draw(st.integers(min_value=1, max_value=4), label="contract")
+    b_lead = data.draw(
+        st.lists(st.integers(min_value=1, max_value=3), min_size=0, max_size=1),
+        label="b_lead",
+    )
+    b_last = data.draw(st.integers(min_value=1, max_value=4), label="b_last")
+
+    a_shape = tuple(a_lead) + (contract,)
+    b_shape = tuple(b_lead) + (contract, b_last)
+    a = data.draw(arrays_of_shape(a_shape), label="a_nd")
+    b = data.draw(arrays_of_shape(b_shape), label="b_nd")
+    res_nd = np.dot(a, b)
+    expected_shape = a.shape[:-1] + b.shape[:-2] + b.shape[-1:]
+    assert res_nd.shape == expected_shape
+
+    # ---- Property 5: out parameter consistency ----
+    # Reuse the 2-D case (A, B) which produces a C-contiguous float64 result.
+    plain = np.dot(A, B)
+    out_arr = np.empty(plain.shape, dtype=plain.dtype, order="C")
+    returned = np.dot(A, B, out=out_arr)
+    # The returned object must be the same as the provided out array.
+    assert returned is out_arr
+    # Its contents must match the result computed without out.
+    assert np.allclose(out_arr, plain, rtol=1e-7, atol=1e-7)
+# End program

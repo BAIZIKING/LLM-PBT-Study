@@ -1,0 +1,9 @@
+1. When `axis=None`, the output is a scalar equal to the sum of all included elements of `a`, plus `initial` if provided.
+
+2. When `axis` is an integer or tuple of integers, the output shape is the input shape with those axes removed; if `keepdims=True`, those axes remain with size `1`.
+
+3. Negative axis values are equivalent to their corresponding positive axis indices, so summing over `axis=-1` gives the same result as summing over the last axis.
+
+4. Elements excluded by `where=False` do not affect the result; if no elements are included in a reduction slice, the result is the additive identity `0` or `initial` if provided.
+
+5. If `dtype` is provided, the output and accumulator use that dtype; otherwise the output dtype follows NumPy’s default sum dtype promotion rules, including promotion of small integer dtypes to platform integer precision.

@@ -1,0 +1,9 @@
+1. For any non-empty dataset of strictly positive values, the result is a positive `float`.
+
+2. For any non-empty positive dataset, the result lies between the minimum and maximum input values, inclusive.
+
+3. For any non-empty positive dataset, the logarithm of the result is approximately equal to the arithmetic mean of the logarithms of the input values.
+
+4. Reordering the input data does not change the result, except for possible floating-point roundoff differences.
+
+5. Scaling every input value by the same positive constant scales the result by that same constant, approximately.

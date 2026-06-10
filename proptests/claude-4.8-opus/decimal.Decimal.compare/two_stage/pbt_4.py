@@ -1,0 +1,55 @@
+from hypothesis import given, strategies as st
+import decimal
+from decimal import Decimal
+
+decimal_strategy = st.one_of(
+    st.decimals(allow_nan=True, allow_infinity=True),
+    st.sampled_from([
+        Decimal('NaN'), Decimal('-NaN'),
+        Decimal('Infinity'), Decimal('-Infinity'),
+        Decimal('0'), Decimal('-0'),
+        Decimal('1E+1000'), Decimal('-1E+1000'),
+        Decimal('1E-1000'), Decimal('-1E-1000'),
+    ]),
+)
+
+
+@given(st.data())
+def test_decimal_Decimal_compare_property(data):
+    a = data.draw(decimal_strategy)
+    b = data.draw(decimal_strategy)
+
+    result = a.compare(b)
+    valid_results = {Decimal('-1'), Decimal('0'), Decimal('1'), Decimal('NaN')}
+
+    # Property 1: The output is always a Decimal instance.
+    assert isinstance(result, Decimal)
+
+    # Property 2: Output is one of exactly four values (-1, 0, 1, or NaN).
+    if result.is_nan():
+        assert any(result.compare(v).is_nan() or result == v for v in valid_results)
+        # explicit NaN membership
+        assert result.is_nan()
+    else:
+        assert result in {Decimal('-1'), Decimal('0'), Decimal('1')}
+
+    # Property 3: If either operand is NaN, result is NaN; otherwise it's -1/0/1.
+    if a.is_nan() or b.is_nan():
+        assert result.is_nan()
+    else:
+        assert result in {Decimal('-1'), Decimal('0'), Decimal('1')}
+
+    # Property 4: When neither operand is NaN, the sign of result matches ordering.
+    if not a.is_nan() and not b.is_nan():
+        if a < b:
+            assert result == Decimal('-1')
+        elif a == b:
+            assert result == Decimal('0')
+        else:  # a > b
+            assert result == Decimal('1')
+
+    # Property 5: Antisymmetry when neither operand is NaN.
+    if not a.is_nan() and not b.is_nan():
+        reverse = b.compare(a)
+        assert result + reverse == Decimal('0')
+# End program

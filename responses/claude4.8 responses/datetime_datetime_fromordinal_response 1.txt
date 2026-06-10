@@ -1,0 +1,61 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `datetime.fromordinal(ordinal)`, I'll use the following approach:
+
+1. **Valid range**: The documentation states the valid range is `1 <= ordinal <= datetime.max.toordinal()`. I'll use `st.integers()` to generate values across this range.
+
+2. **Edge cases**: I'll include the boundary values `1` (minimum valid) and `datetime.max.toordinal()` (maximum valid) by using these as the bounds of `st.integers(min_value=1, max_value=datetime.max.toordinal())`. Hypothesis naturally explores boundary values within integer ranges.
+
+3. **Variety**: Integer strategy will produce small values (near year 1), large values (near year 9999), and everything in between, covering many different dates including leap years, month boundaries, etc.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify:
+
+1. **Type**: The result is a `datetime` instance.
+2. **Time fields are zero**: The `hour`, `minute`, `second`, and `microsecond` are all `0`.
+3. **tzinfo is None**: The returned datetime has no timezone info.
+4. **Round-trip / Ordinal correspondence**: Calling `.toordinal()` on the result returns the original input ordinal (this verifies "the datetime corresponding to the proleptic Gregorian ordinal").
+5. **Year 1, January 1 special case**: When ordinal is 1, the result should be January 1 of year 1 (this is implicitly covered by the round-trip, but the date components confirm correctness).
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import datetime
+
+# Summary: Generate integer ordinals across the entire valid range
+# [1, datetime.max.toordinal()] using st.integers, which naturally explores
+# boundary values (1 and the max) as well as a wide variety of intermediate
+# dates. Then verify type, zeroed time fields, absent tzinfo, and the
+# round-trip correspondence between ordinal -> datetime -> ordinal.
+@given(st.data())
+def test_datetime_datetime_fromordinal(data):
+    ordinal = data.draw(
+        st.integers(min_value=1, max_value=datetime.max.toordinal())
+    )
+
+    result = datetime.fromordinal(ordinal)
+
+    # Property 1: result is a datetime instance
+    assert isinstance(result, datetime)
+
+    # Property 2: hour, minute, second, microsecond are all 0
+    assert result.hour == 0
+    assert result.minute == 0
+    assert result.second == 0
+    assert result.microsecond == 0
+
+    # Property 3: tzinfo is None
+    assert result.tzinfo is None
+
+    # Property 4: round-trip correspondence (ordinal -> datetime -> ordinal)
+    assert result.toordinal() == ordinal
+
+    # Property 5: ordinal 1 corresponds to January 1 of year 1
+    if ordinal == 1:
+        assert result.year == 1
+        assert result.month == 1
+        assert result.day == 1
+# End program
+```

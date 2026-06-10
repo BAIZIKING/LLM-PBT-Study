@@ -1,0 +1,101 @@
+from hypothesis import given, strategies as st
+import zlib
+
+# Strategy for input data: bounded to avoid very large inputs
+data_strategy = st.binary(min_size=0, max_size=4096)
+
+# Strategy for compression level: -1 to 9
+level_strategy = st.integers(min_value=-1, max_value=9)
+
+# Strategies for wbits ranges
+wbits_zlib_strategy = st.integers(min_value=9, max_value=15)      # zlib header/trailer
+wbits_raw_strategy = st.integers(min_value=-15, max_value=-9)     # raw stream
+wbits_gzip_strategy = st.integers(min_value=25, max_value=31)     # gzip header/trailer
+
+
+# Property 1: The output is always a bytes object.
+@given(
+    data=data_strategy,
+    level=level_strategy,
+    wbits=st.one_of(wbits_zlib_strategy, wbits_raw_strategy, wbits_gzip_strategy),
+)
+def test_zlib_compress_returns_bytes(data, level, wbits):
+    result = zlib.compress(data, level, wbits)
+    assert isinstance(result, bytes)
+# End program
+
+
+# Property 2: Round-trip - decompressing yields back the original data.
+@given(
+    data=data_strategy,
+    level=level_strategy,
+    wbits=st.one_of(wbits_zlib_strategy, wbits_raw_strategy, wbits_gzip_strategy),
+)
+def test_zlib_compress_roundtrip(data, level, wbits):
+    compressed = zlib.compress(data, level, wbits)
+    decompressed = zlib.decompress(compressed, wbits)
+    assert decompressed == data
+# End program
+
+
+# Property 3: Output format depends on wbits range (zlib header, gzip magic, or raw).
+@given(
+    data=data_strategy,
+    level=level_strategy,
+    fmt=st.sampled_from(["zlib", "gzip", "raw"]),
+    raw_logbits=st.integers(min_value=9, max_value=15),
+)
+def test_zlib_compress_header_format(data, level, fmt, raw_logbits):
+    if fmt == "zlib":
+        wbits = raw_logbits
+        compressed = zlib.compress(data, level, wbits)
+        # zlib header: first byte low 4 bits = 8 (deflate), and (CMF*256+FLG) % 31 == 0
+        assert len(compressed) >= 2
+        cmf = compressed[0]
+        flg = compressed[1]
+        assert (cmf & 0x0F) == 8
+        assert ((cmf << 8) | flg) % 31 == 0
+        # Should NOT be a gzip stream
+        assert not (compressed[0] == 0x1F and compressed[1] == 0x8B)
+    elif fmt == "gzip":
+        wbits = 16 + raw_logbits
+        compressed = zlib.compress(data, level, wbits)
+        # gzip magic bytes
+        assert len(compressed) >= 2
+        assert compressed[0] == 0x1F and compressed[1] == 0x8B
+    else:  # raw
+        wbits = -raw_logbits
+        compressed = zlib.compress(data, level, wbits)
+        # Raw stream: no gzip magic
+        if len(compressed) >= 2:
+            assert not (compressed[0] == 0x1F and compressed[1] == 0x8B)
+# End program
+
+
+# Property 4: Compression is deterministic.
+@given(
+    data=data_strategy,
+    level=level_strategy,
+    wbits=st.one_of(wbits_zlib_strategy, wbits_raw_strategy, wbits_gzip_strategy),
+)
+def test_zlib_compress_deterministic(data, level, wbits):
+    first = zlib.compress(data, level, wbits)
+    second = zlib.compress(data, level, wbits)
+    assert first == second
+# End program
+
+
+# Property 5: Higher levels do not produce larger output; level 0 >= original size.
+@given(
+    data=data_strategy,
+    wbits=st.one_of(wbits_zlib_strategy, wbits_raw_strategy, wbits_gzip_strategy),
+)
+def test_zlib_compress_level_size(data, wbits):
+    out_level_1 = zlib.compress(data, 1, wbits)
+    out_level_9 = zlib.compress(data, 9, wbits)
+    out_level_0 = zlib.compress(data, 0, wbits)
+    # Higher compression should be no larger than lower compression
+    assert len(out_level_9) <= len(out_level_1)
+    # Level 0 (no compression) output is at least as large as the input data
+    assert len(out_level_0) >= len(data)
+# End program

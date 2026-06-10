@@ -1,0 +1,122 @@
+```python
+from hypothesis import given, strategies as st, settings, assume
+import networkx as nx
+
+
+# Strategy to build a random DiGraph with a modest number of nodes/edges.
+@st.composite
+def dags(draw):
+    n = draw(st.integers(min_value=1, max_value=12))
+    nodes = list(range(n))
+    G = nx.DiGraph()
+    G.add_nodes_from(nodes)
+    # Build a DAG by only allowing edges from lower-index to higher-index nodes.
+    possible_edges = [(i, j) for i in range(n) for j in range(n) if i < j]
+    if possible_edges:
+        k = draw(st.integers(min_value=0, max_value=len(possible_edges)))
+        chosen = draw(
+            st.lists(
+                st.sampled_from(possible_edges),
+                min_size=k,
+                max_size=k,
+                unique=True,
+            )
+        )
+        G.add_edges_from(chosen)
+    return G
+
+
+# Helper: set of ancestors of a node including the node itself.
+def ancestors_incl(G, node):
+    return nx.ancestors(G, node) | {node}
+
+
+# Helper: compute the set of all common ancestors of two nodes.
+def common_ancestors(G, n1, n2):
+    return ancestors_incl(G, n1) & ancestors_incl(G, n2)
+
+
+# Property 1: If a value other than default is returned, it must be a common
+# ancestor of both node1 and node2 (where a node is its own ancestor).
+@settings(max_examples=200)
+@given(st.data())
+def test_returned_value_is_common_ancestor(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes)
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    if result is not sentinel:
+        common = common_ancestors(G, n1, n2)
+        assert result in common
+# End program
+
+
+# Property 2: If there is no common ancestor, the default value must be returned.
+@settings(max_examples=200)
+@given(st.data())
+def test_no_common_ancestor_returns_default(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes)
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    common = common_ancestors(G, n1, n2)
+    result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    if not common:
+        assert result is sentinel
+# End program
+
+
+# Property 3: The returned LCA must be "lowest": no other common ancestor is a
+# strict descendant of it.
+@settings(max_examples=200)
+@given(st.data())
+def test_returned_is_lowest(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes)
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    assume(result is not sentinel)
+    common = common_ancestors(G, n1, n2)
+    descendants_of_result = nx.descendants(G, result)
+    # No other common ancestor should be a strict descendant of the result.
+    for c in common:
+        if c != result:
+            assert c not in descendants_of_result
+# End program
+
+
+# Property 4: Symmetry with respect to the node arguments.
+@settings(max_examples=200)
+@given(st.data())
+def test_symmetry(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes)
+    n1 = data.draw(st.sampled_from(nodes))
+    n2 = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    r1 = nx.lowest_common_ancestor(G, n1, n2, default=sentinel)
+    r2 = nx.lowest_common_ancestor(G, n2, n1, default=sentinel)
+    assert r1 == r2
+# End program
+
+
+# Property 5: When node1 == node2 and that node has an ancestor (including
+# itself), the result must be that node itself.
+@settings(max_examples=200)
+@given(st.data())
+def test_same_node(data):
+    G = data.draw(dags())
+    nodes = list(G.nodes)
+    n = data.draw(st.sampled_from(nodes))
+    sentinel = object()
+    result = nx.lowest_common_ancestor(G, n, n, default=sentinel)
+    # A node is always its own ancestor in this context, so common ancestors
+    # are non-empty and the LCA should be the node itself.
+    assert result == n
+# End program
+```

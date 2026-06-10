@@ -1,0 +1,9 @@
+1. For any non-empty numeric iterable, the median is always between the minimum and maximum input values, inclusive.
+
+2. Reordering the input data does not change the median.
+
+3. For an odd number of data points, the median equals the middle element of the sorted data and is one of the original data values.
+
+4. For an even number of data points, the median equals the arithmetic mean of the two middle elements of the sorted data.
+
+5. Adding the same numeric constant to every input value increases the median by that same constant.

@@ -1,0 +1,9 @@
+1. For valid non-proportional inputs, the residuals `y_i - (slope * x_i + intercept)` should sum to zero, up to numerical tolerance.
+
+2. For valid non-proportional inputs, the residuals should be orthogonal to `x`: the sum of `x_i * residual_i` should be zero, up to numerical tolerance.
+
+3. If the data lies exactly on a line `y = a * x + b`, then `linear_regression(x, y)` should return `slope == a` and `intercept == b`, up to numerical tolerance.
+
+4. Translating all dependent values by a constant `c` should leave the slope unchanged and increase the intercept by `c`.
+
+5. When `proportional=True`, the returned intercept should always be `0.0`, and the fitted slope should satisfy `slope == sum(x_i * y_i) / sum(x_i ** 2)`, up to numerical tolerance.

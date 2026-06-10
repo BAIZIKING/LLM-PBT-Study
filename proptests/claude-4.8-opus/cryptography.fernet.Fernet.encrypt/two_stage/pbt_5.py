@@ -1,0 +1,55 @@
+from hypothesis import given, strategies as st
+import base64
+from cryptography.fernet import Fernet
+
+@given(st.binary(max_size=10000))
+def test_cryptography_fernet_Fernet_encrypt_returns_bytes(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert isinstance(token, bytes)
+# End program
+
+
+@given(st.binary(max_size=10000))
+def test_cryptography_fernet_Fernet_encrypt_is_urlsafe_base64(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    # Should decode without error using URL-safe base64
+    decoded = base64.urlsafe_b64decode(token)
+    assert isinstance(decoded, bytes)
+    # Re-encoding should produce the same token (canonical form)
+    assert base64.urlsafe_b64encode(decoded) == token
+# End program
+
+
+@given(st.binary(max_size=10000))
+def test_cryptography_fernet_Fernet_encrypt_roundtrip(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert f.decrypt(token) == data
+# End program
+
+
+@given(st.binary(max_size=10000))
+def test_cryptography_fernet_Fernet_encrypt_nondeterministic(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token1 = f.encrypt(data)
+    token2 = f.encrypt(data)
+    assert token1 != token2
+# End program
+
+
+@given(st.binary(max_size=10000))
+def test_cryptography_fernet_Fernet_encrypt_minimum_length(data):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(data)
+    assert len(token) > 0
+    decoded = base64.urlsafe_b64decode(token)
+    # version(1) + timestamp(8) + IV(16) + ciphertext(>=16) + HMAC(32) = >= 73
+    assert len(decoded) >= 73
+# End program

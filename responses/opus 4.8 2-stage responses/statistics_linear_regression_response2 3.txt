@@ -1,0 +1,187 @@
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+import pytest
+
+# A reasonable strategy for finite floats that avoids overflows in sums of squares.
+# Bounding magnitude keeps slope*x + intercept and x*x within safe ranges.
+safe_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(
+    x=st.lists(safe_floats, min_size=2, max_size=50),
+    proportional=st.booleans(),
+    data=st.data(),
+)
+def test_output_is_two_finite_numbers(x, proportional, data):
+    # Property 1: returns slope and intercept, both finite real numbers.
+    # Ensure x is not constant (otherwise StatisticsError is expected).
+    assume(len(set(x)) > 1)
+    y = data.draw(st.lists(safe_floats, min_size=len(x), max_size=len(x)))
+    result = statistics.linear_regression(x, y, proportional=proportional)
+    slope = result.slope
+    intercept = result.intercept
+    assert isinstance(slope, float) and math.isfinite(slope)
+    assert isinstance(intercept, float) and math.isfinite(intercept)
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+
+safe_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(
+    x=st.lists(safe_floats, min_size=2, max_size=50),
+    data=st.data(),
+)
+def test_proportional_intercept_is_zero(x, data):
+    # Property 2: when proportional=True, intercept is always exactly 0.0.
+    assume(len(set(x)) > 1)
+    y = data.draw(st.lists(safe_floats, min_size=len(x), max_size=len(x)))
+    result = statistics.linear_regression(x, y, proportional=True)
+    assert result.intercept == 0.0
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+
+coeff_floats = st.floats(
+    min_value=-1e3,
+    max_value=1e3,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+x_floats = st.floats(
+    min_value=-1e3,
+    max_value=1e3,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(
+    xs=st.lists(x_floats, min_size=2, max_size=50, unique=True),
+    a=coeff_floats,
+    b=coeff_floats,
+    proportional=st.booleans(),
+)
+def test_recovers_true_line_parameters(xs, a, b, proportional):
+    # Property 3: for data exactly on a line, recover the true parameters.
+    assume(len(set(xs)) > 1)
+    # In the proportional case, the data must pass through origin (b = 0).
+    intercept_true = 0.0 if proportional else b
+    ys = [a * xi + intercept_true for xi in xs]
+    # Guard against any non-finite generated y values.
+    assume(all(math.isfinite(yi) for yi in ys))
+    result = statistics.linear_regression(xs, ys, proportional=proportional)
+    # Tolerances account for floating point error.
+    assert math.isclose(result.slope, a, rel_tol=1e-6, abs_tol=1e-6)
+    if not proportional:
+        assert math.isclose(result.intercept, intercept_true, rel_tol=1e-6, abs_tol=1e-6)
+    else:
+        assert result.intercept == 0.0
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import math
+
+safe_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(
+    x=st.lists(safe_floats, min_size=2, max_size=50),
+    data=st.data(),
+)
+def test_line_passes_through_centroid(x, data):
+    # Property 4: for non-proportional regression, the line passes through
+    # the centroid (mean(x), mean(y)).
+    assume(len(set(x)) > 1)
+    y = data.draw(st.lists(safe_floats, min_size=len(x), max_size=len(x)))
+    result = statistics.linear_regression(x, y, proportional=False)
+    mean_x = statistics.fmean(x)
+    mean_y = statistics.fmean(y)
+    predicted = result.slope * mean_x + result.intercept
+    # Use absolute and relative tolerance scaled by magnitudes involved.
+    scale = max(1.0, abs(mean_y), abs(result.slope * mean_x), abs(result.intercept))
+    assert math.isclose(predicted, mean_y, rel_tol=1e-6, abs_tol=1e-6 * scale)
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, assume
+import statistics
+import pytest
+
+safe_floats = st.floats(
+    min_value=-1e6,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+
+@given(
+    x=st.lists(safe_floats, min_size=0, max_size=50),
+    proportional=st.booleans(),
+    data=st.data(),
+)
+def test_raises_statistics_error_on_invalid_input(x, proportional, data):
+    # Property 5: StatisticsError raised when inputs too short, length mismatch,
+    # or x is constant.
+    # Decide which invalid scenario to construct.
+    scenario = data.draw(st.sampled_from(["too_short", "mismatch", "constant"]))
+
+    if scenario == "too_short":
+        # Use 0 or 1 elements.
+        n = data.draw(st.sampled_from([0, 1]))
+        xs = data.draw(st.lists(safe_floats, min_size=n, max_size=n))
+        ys = data.draw(st.lists(safe_floats, min_size=n, max_size=n))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(xs, ys, proportional=proportional)
+
+    elif scenario == "mismatch":
+        # Different lengths, each at least length 2.
+        len_x = data.draw(st.integers(min_value=2, max_value=10))
+        len_y = data.draw(st.integers(min_value=2, max_value=10))
+        assume(len_x != len_y)
+        xs = data.draw(st.lists(safe_floats, min_size=len_x, max_size=len_x))
+        ys = data.draw(st.lists(safe_floats, min_size=len_y, max_size=len_y))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(xs, ys, proportional=proportional)
+
+    else:  # constant x
+        n = data.draw(st.integers(min_value=2, max_value=10))
+        const = data.draw(safe_floats)
+        xs = [const] * n
+        ys = data.draw(st.lists(safe_floats, min_size=n, max_size=n))
+        with pytest.raises(statistics.StatisticsError):
+            statistics.linear_regression(xs, ys, proportional=proportional)
+# End program
+```

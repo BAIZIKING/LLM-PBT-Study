@@ -1,0 +1,9 @@
+1. The function returns a result with two components, `slope` and `intercept`, both of which are finite real numbers.
+
+2. When `proportional=True`, the returned `intercept` is always exactly 0.0, regardless of the input data.
+
+3. For data that lies exactly on a line (i.e., y = a*x + b for all points), the returned `slope` and `intercept` should recover the true parameters `a` and `b` (within floating-point tolerance), and in the proportional case where the data lies on a line through the origin, the recovered slope should match the true slope.
+
+4. The fitted line minimizes the residuals such that scaling/shifting consistency holds: for non-proportional regression, the regression line passes through the centroid of the data (i.e., mean(y) equals slope * mean(x) + intercept).
+
+5. The function raises a `StatisticsError` when the inputs have fewer than two elements, when `x` and `y` differ in length, or when the independent variable `x` is constant.

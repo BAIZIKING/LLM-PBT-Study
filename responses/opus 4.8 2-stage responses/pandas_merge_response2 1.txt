@@ -1,0 +1,221 @@
+```python
+from hypothesis import given, strategies as st, settings, assume
+import pandas as pd
+import numpy as np
+
+
+# Strategy for generating small "safe" scalar values used as keys / data.
+# Keep values small to avoid overflow and limit row explosion.
+key_values = st.integers(min_value=0, max_value=5)
+data_values = st.integers(min_value=-1000, max_value=1000)
+
+
+def column_strategy(n_rows, elements):
+    """Generate a list of length n_rows from the given element strategy."""
+    return st.lists(elements, min_size=n_rows, max_size=n_rows)
+
+
+@st.composite
+def two_frames_shared_key(draw, max_rows=6):
+    """
+    Generate two DataFrames that share a key column 'k' plus some
+    other (possibly overlapping) data columns.
+    """
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+
+    left_key = draw(column_strategy(n_left, key_values))
+    right_key = draw(column_strategy(n_right, key_values))
+
+    # left has data column 'b', right has data column 'c' (no overlap besides key)
+    left_b = draw(column_strategy(n_left, data_values))
+    right_c = draw(column_strategy(n_right, data_values))
+
+    left = pd.DataFrame({"k": left_key, "b": left_b})
+    right = pd.DataFrame({"k": right_key, "c": right_c})
+    return left, right
+
+
+@st.composite
+def two_frames_overlapping_cols(draw, max_rows=6):
+    """
+    Generate two DataFrames sharing a key column 'k' AND an overlapping
+    non-key data column 'v'.
+    """
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+
+    left_key = draw(column_strategy(n_left, key_values))
+    right_key = draw(column_strategy(n_right, key_values))
+
+    left_v = draw(column_strategy(n_left, data_values))
+    right_v = draw(column_strategy(n_right, data_values))
+
+    left = pd.DataFrame({"k": left_key, "v": left_v})
+    right = pd.DataFrame({"k": right_key, "v": right_v})
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 1: Cross merge row count = len(left) * len(right)
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_cross_merge_row_count():
+    data = st.data
+    # Build two frames with non-overlapping column names (besides nothing).
+    n_left = _draw_int(0, 6)
+    n_right = _draw_int(0, 6)
+
+    # Use the data() fixture via a wrapper below.
+    pass
+# End program
+```
+
+I realize the output format requires a single test using `st.data()`. Let me rewrite the suite properly, with each property as its own test function but each conforming to the required signature.
+
+```python
+from hypothesis import given, strategies as st, settings, assume
+import pandas as pd
+import numpy as np
+
+
+# ---- shared strategies --------------------------------------------------
+key_values = st.integers(min_value=0, max_value=5)
+data_values = st.integers(min_value=-1000, max_value=1000)
+
+
+def _column(data, n_rows, elements):
+    return data.draw(st.lists(elements, min_size=n_rows, max_size=n_rows))
+
+
+def _shared_key_frames(data, max_rows=6):
+    """Two frames sharing key 'k', with disjoint data columns 'b' and 'c'."""
+    n_left = data.draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = data.draw(st.integers(min_value=0, max_value=max_rows))
+    left = pd.DataFrame({
+        "k": _column(data, n_left, key_values),
+        "b": _column(data, n_left, data_values),
+    })
+    right = pd.DataFrame({
+        "k": _column(data, n_right, key_values),
+        "c": _column(data, n_right, data_values),
+    })
+    return left, right
+
+
+def _overlap_frames(data, max_rows=6):
+    """Two frames sharing key 'k' and an overlapping data column 'v'."""
+    n_left = data.draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = data.draw(st.integers(min_value=0, max_value=max_rows))
+    left = pd.DataFrame({
+        "k": _column(data, n_left, key_values),
+        "v": _column(data, n_left, data_values),
+    })
+    right = pd.DataFrame({
+        "k": _column(data, n_right, key_values),
+        "v": _column(data, n_right, data_values),
+    })
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 1: Cross merge row count == len(left) * len(right)
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_cross_merge_row_count(data):
+    # Frames with disjoint column names so cross merge is well-defined.
+    n_left = data.draw(st.integers(min_value=0, max_value=8))
+    n_right = data.draw(st.integers(min_value=0, max_value=8))
+    left = pd.DataFrame({"a": _column(data, n_left, data_values)})
+    right = pd.DataFrame({"b": _column(data, n_right, data_values)})
+
+    result = pd.merge(left, right, how="cross")
+    assert len(result) == len(left) * len(right)
+
+
+# ---------------------------------------------------------------------------
+# Property 2: inner <= {left,right,outer} <= outer (in row counts)
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_merge_row_count_ordering(data):
+    left, right = _shared_key_frames(data)
+
+    n_inner = len(pd.merge(left, right, how="inner", on="k"))
+    n_left = len(pd.merge(left, right, how="left", on="k"))
+    n_right = len(pd.merge(left, right, how="right", on="k"))
+    n_outer = len(pd.merge(left, right, how="outer", on="k"))
+
+    assert n_inner <= n_left <= n_outer
+    assert n_inner <= n_right <= n_outer
+
+
+# ---------------------------------------------------------------------------
+# Property 3: Output columns and suffix behaviour
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_output_columns_and_suffixes(data):
+    # Case A: no overlapping non-key columns -> no suffixes.
+    left, right = _shared_key_frames(data)
+    result = pd.merge(left, right, how="inner", on="k")
+    assert set(result.columns) == {"k", "b", "c"}
+
+    # Case B: overlapping non-key column 'v' -> suffixes applied.
+    left2, right2 = _overlap_frames(data)
+    result2 = pd.merge(left2, right2, how="inner", on="k",
+                       suffixes=("_x", "_y"))
+    assert set(result2.columns) == {"k", "v_x", "v_y"}
+
+
+# ---------------------------------------------------------------------------
+# Property 4: indicator column correctness
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_indicator_column(data):
+    left, right = _shared_key_frames(data)
+
+    allowed = {"left_only", "right_only", "both"}
+
+    inner = pd.merge(left, right, how="inner", on="k", indicator=True)
+    assert "_merge" in inner.columns
+    assert set(inner["_merge"].astype(str)).issubset(allowed)
+    if len(inner) > 0:
+        assert set(inner["_merge"].astype(str)) == {"both"}
+
+    left_m = pd.merge(left, right, how="left", on="k", indicator=True)
+    assert "right_only" not in set(left_m["_merge"].astype(str))
+
+    right_m = pd.merge(left, right, how="right", on="k", indicator=True)
+    assert "left_only" not in set(right_m["_merge"].astype(str))
+
+    outer = pd.merge(left, right, how="outer", on="k", indicator=True)
+    assert set(outer["_merge"].astype(str)).issubset(allowed)
+
+
+# ---------------------------------------------------------------------------
+# Property 5: left merge preserves all left keys and fills NaN for unmatched
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(max_examples=200)
+def test_left_merge_preserves_keys(data):
+    left, right = _shared_key_frames(data)
+
+    result = pd.merge(left, right, how="left", on="k")
+
+    # At least as many rows as the left frame.
+    assert len(result) >= len(left)
+
+    # Every key in left appears in the result.
+    assert set(left["k"]) == set(result["k"])
+
+    # Keys in left not present in right must have NaN in right's column 'c'.
+    right_keys = set(right["k"])
+    unmatched = result[~result["k"].isin(right_keys)]
+    if len(unmatched) > 0:
+        assert unmatched["c"].isna().all()
+# End program
+```

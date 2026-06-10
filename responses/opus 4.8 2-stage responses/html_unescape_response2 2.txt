@@ -1,0 +1,71 @@
+```python
+from hypothesis import given, strategies as st
+import html
+
+# A mapping of some well-known named references to their Unicode characters.
+KNOWN_REFS = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&apos;": "'",
+    "&copy;": "\u00A9",
+    "&reg;": "\u00AE",
+    "&nbsp;": "\u00A0",
+    "&euro;": "\u20AC",
+    "&hellip;": "\u2026",
+}
+
+
+# Property 1: The output is always a string.
+@given(st.text(max_size=1000))
+def test_output_is_always_string(s):
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+
+# Property 2: If the input contains no character references (no '&'),
+# the output equals the input unchanged.
+@given(st.text(alphabet=st.characters(blacklist_characters="&"), max_size=1000))
+def test_no_references_unchanged(s):
+    assert html.unescape(s) == s
+
+
+# Property 3: Idempotence — applying unescape to an already-unescaped string
+# that contains no further decodable references returns it unchanged.
+@given(st.text(max_size=1000))
+def test_idempotence(s):
+    once = html.unescape(s)
+    twice = html.unescape(once)
+    assert once == twice
+
+
+# Property 4: The output never contains any of the known valid named
+# references that were present in the input.
+@given(st.data())
+def test_known_references_removed(data):
+    # Build a string from a mix of known references and plain (no-'&') text.
+    parts = data.draw(
+        st.lists(
+            st.one_of(
+                st.sampled_from(list(KNOWN_REFS.keys())),
+                st.text(alphabet=st.characters(blacklist_characters="&"), max_size=20),
+            ),
+            max_size=50,
+        )
+    )
+    s = "".join(parts)
+    result = html.unescape(s)
+    for ref in KNOWN_REFS:
+        assert ref not in result
+
+
+# Property 5: Known named references unescape to their correct Unicode
+# characters, and concatenations unescape to the concatenation of characters.
+@given(st.lists(st.sampled_from(list(KNOWN_REFS.keys())), max_size=50))
+def test_known_references_correct_mapping(refs):
+    s = "".join(refs)
+    expected = "".join(KNOWN_REFS[r] for r in refs)
+    assert html.unescape(s) == expected
+# End program
+```

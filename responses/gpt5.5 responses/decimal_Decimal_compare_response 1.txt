@@ -1,0 +1,50 @@
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal
+
+# Summary: Generate two Decimal operands using a mix of arbitrary finite Decimals and explicit edge cases:
+# NaN values, infinities, signed zeros, very small/large exponents, and common comparison boundaries.
+# The test checks that compare(other, context=None) returns a Decimal NaN if either operand is NaN,
+# otherwise Decimal("-1"), Decimal("0"), or Decimal("1") according to the normal ordering of the operands.
+@given(st.data())
+def test_decimal_Decimal_compare(data):
+    decimal_values = st.one_of(
+        st.decimals(allow_nan=False, allow_infinity=False),
+        st.sampled_from(
+            [
+                Decimal("NaN"),
+                Decimal("-NaN"),
+                Decimal("NaN123"),
+                Decimal("Infinity"),
+                Decimal("-Infinity"),
+                Decimal("0"),
+                Decimal("-0"),
+                Decimal("1"),
+                Decimal("-1"),
+                Decimal("1E-999999"),
+                Decimal("-1E-999999"),
+                Decimal("1E+999999"),
+                Decimal("-1E+999999"),
+            ]
+        ),
+    )
+
+    a = data.draw(decimal_values)
+    b = data.draw(decimal_values)
+
+    result = a.compare(b, context=None)
+
+    assert isinstance(result, Decimal)
+
+    if a.is_nan() or b.is_nan():
+        assert result.is_nan()
+    elif a < b:
+        assert result == Decimal("-1")
+    elif a == b:
+        assert result == Decimal("0")
+    else:
+        assert a > b
+        assert result == Decimal("1")
+
+# End program
+```

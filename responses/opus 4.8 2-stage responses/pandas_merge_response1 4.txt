@@ -1,0 +1,11 @@
+Here are five properties of the output of `pandas.merge` suitable for property-based testing:
+
+1. **Cross merge row count**: When `how='cross'`, the number of rows in the output equals the product of the number of rows in `left` and `right` (i.e., `len(left) * len(right)`), and the output columns are exactly the union of left and right columns (with suffixes applied to overlaps).
+
+2. **Inner merge is a subset / row count bound**: For `how='inner'`, every join-key value in the output exists in both `left` and `right`, and the number of output rows is at most `len(left) * len(right)`. For unique keys on both sides (1:1), the inner result row count is at most `min(len(left), len(right))`.
+
+3. **Left/Right merge key preservation**: For `how='left'`, every join-key value from `left` appears in the output (no left keys are dropped), and the output has at least `len(left)` rows; symmetrically for `how='right'` with respect to `right`. For a 1:1 or m:1 left merge, the output has exactly `len(left)` rows.
+
+4. **Outer merge equals union of keys**: For `how='outer'`, the set of join-key values in the output equals the union of the join-key values in `left` and `right`, and both an inner result and the left-only/right-only rows are contained within it (the outer result is a superset of left, right, and inner results in terms of keys).
+
+5. **Indicator and suffix correctness**: When `indicator=True`, the output contains a `_merge` column whose values are drawn from {`left_only`, `right_only`, `both`}, consistent with the join type (e.g., `inner` yields only `both`, `left` yields only `both`/`left_only`); and overlapping non-key column names in the result are renamed with the specified `suffixes` rather than appearing duplicated.

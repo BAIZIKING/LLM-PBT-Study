@@ -1,0 +1,9 @@
+1. The output is always a float (real number) bounded within the closed interval [-1, +1].
+
+2. The correlation is symmetric: correlation(x, y) equals correlation(y, x) for both methods.
+
+3. The correlation of a sequence with itself (x correlated with x) equals +1.0 (for any non-constant input, with either method).
+
+4. The correlation is invariant under positive linear transformations of the inputs: scaling and shifting each input by positive constants (e.g., correlation(a*x + b, c*y + d) for a, c > 0) yields the same result as correlation(x, y) for the linear method.
+
+5. A perfectly monotonic but non-linear relationship (e.g., y = x³ for distinct increasing values) yields a ranked correlation of exactly 1.0, while a perfectly negatively monotonic relationship yields -1.0.

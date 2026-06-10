@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `statistics.variance`:
+
+1. **Non-negativity:** The variance of any valid input data (at least two real-valued numbers) is always greater than or equal to zero.
+
+2. **Zero variance for constant data:** If all values in the input data are identical, the variance is exactly zero.
+
+3. **Equivalence with explicit mean:** Calling `variance(data)` produces the same result (within numerical tolerance) as calling `variance(data, xbar)` where `xbar` is the true mean of `data`.
+
+4. **Translation invariance:** Adding a constant `c` to every element of the data leaves the variance unchanged (within numerical tolerance), since variance measures spread, not location.
+
+5. **Scaling property:** Multiplying every element of the data by a constant `k` scales the variance by `k²` (within numerical tolerance).

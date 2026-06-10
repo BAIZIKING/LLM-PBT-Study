@@ -1,0 +1,131 @@
+from hypothesis import given, strategies as st, settings
+import networkx as nx
+
+
+# Strategy for building a graph (with optional weights) and an optional nbunch.
+@st.composite
+def graph_strategy(draw, weighted=False):
+    n = draw(st.integers(min_value=0, max_value=30))
+    nodes = list(range(n))
+
+    # Generate edges between existing nodes (self-loops allowed).
+    if n > 0:
+        edges = draw(
+            st.lists(
+                st.tuples(
+                    st.integers(min_value=0, max_value=n - 1),
+                    st.integers(min_value=0, max_value=n - 1),
+                ),
+                max_size=60,
+            )
+        )
+    else:
+        edges = []
+
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+
+    if weighted:
+        for (u, v) in edges:
+            w = draw(st.integers(min_value=1, max_value=1000))
+            G.add_edge(u, v, weight=w)
+    else:
+        G.add_edges_from(edges)
+
+    return G
+
+
+@st.composite
+def graph_with_nbunch(draw, weighted=False):
+    G = draw(graph_strategy(weighted=weighted))
+    nodes = list(G.nodes())
+    if nodes:
+        use_nbunch = draw(st.booleans())
+        if use_nbunch:
+            nbunch = draw(
+                st.lists(st.sampled_from(nodes), max_size=len(nodes))
+            )
+            # Deduplicate while preserving membership.
+            nbunch = list(dict.fromkeys(nbunch))
+        else:
+            nbunch = None
+    else:
+        nbunch = None
+    return G, nbunch
+
+
+# Property 1: Sum of unweighted degrees over the whole graph equals 2 * |E|.
+@given(graph_strategy(weighted=False))
+@settings(max_examples=200)
+def test_networkx_degree_sum_equals_twice_edges():
+    pass  # placeholder replaced below
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_networkx_degree_property(data):
+    # ---- Property 1: sum of degrees == 2 * number of edges ----
+    G1 = data.draw(graph_strategy(weighted=False))
+    degrees = dict(nx.degree(G1))
+    total = sum(degrees.values())
+    assert total == 2 * G1.number_of_edges()
+
+    # ---- Property 2: degrees are non-negative integers (unweighted) ----
+    G2, nbunch2 = data.draw(graph_with_nbunch(weighted=False))
+    if nbunch2 is None:
+        view2 = nx.degree(G2)
+    else:
+        view2 = nx.degree(G2, nbunch2)
+    for _, d in view2:
+        assert isinstance(d, int)
+        assert d >= 0
+
+    # ---- Property 3: unweighted degree == #neighbors + 2*(self-loop) ----
+    G3 = data.draw(graph_strategy(weighted=False))
+    deg3 = dict(nx.degree(G3))
+    for node in G3.nodes():
+        neighbors = set(G3.neighbors(node))
+        expected = len(neighbors)
+        if G3.has_edge(node, node):
+            # self-loop counts as 2 in degree; neighbor set already
+            # includes the node once, so add 1 more.
+            expected += 1
+        assert deg3[node] == expected
+
+    # ---- Property 4: coverage / correspondence with nbunch ----
+    G4, nbunch4 = data.draw(graph_with_nbunch(weighted=False))
+    full4 = dict(nx.degree(G4))
+    if nbunch4 is None:
+        view4 = dict(nx.degree(G4))
+        assert set(view4.keys()) == set(G4.nodes())
+        for node, d in view4.items():
+            assert d == full4[node]
+    else:
+        view4 = dict(nx.degree(G4, nbunch4))
+        assert set(view4.keys()) == set(nbunch4)
+        for node in nbunch4:
+            assert view4[node] == full4[node]
+
+    # ---- Property 5: weighted degree == sum of incident edge weights ----
+    G5 = data.draw(graph_strategy(weighted=True))
+    wdeg = dict(nx.degree(G5, weight="weight"))
+    udeg = dict(nx.degree(G5))
+    for node in G5.nodes():
+        expected_w = 0
+        for nbr in G5.neighbors(node):
+            w = G5[node][nbr].get("weight", 1)
+            if nbr == node:
+                expected_w += 2 * w  # self-loop counted twice
+            else:
+                expected_w += w
+        assert wdeg[node] == expected_w
+
+    # When all weights are 1, weighted degree reduces to unweighted degree.
+    G6 = data.draw(graph_strategy(weighted=False))
+    for (u, v) in G6.edges():
+        G6[u][v]["weight"] = 1
+    wdeg6 = dict(nx.degree(G6, weight="weight"))
+    udeg6 = dict(nx.degree(G6))
+    for node in G6.nodes():
+        assert wdeg6[node] == udeg6[node]
+# End program

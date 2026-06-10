@@ -1,0 +1,182 @@
+```python
+from hypothesis import given, strategies as st
+import pandas as pd
+from pandas.testing import assert_frame_equal
+from datetime import datetime
+
+# Summary: Generate small DataFrames with 1-5 columns, 0-25 rows, arbitrary duplicate-prone
+# row values, and varied indexes including RangeIndex, duplicate integer/string indexes, and
+# DatetimeIndex-like values. Randomly generate every documented drop_duplicates parameter:
+# subset=None, a single column label, or a non-empty sequence of labels; keep='first',
+# keep='last', or keep=False; inplace True/False; and ignore_index True/False.
+# Properties checked: duplicates are identified only from subset/all columns, never from the
+# index; keep selects exactly first/last/no duplicated rows as documented; ignore_index resets
+# the result index; inplace returns None and mutates the DataFrame, while non-inplace returns a
+# new DataFrame and leaves the input unchanged.
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates(data):
+    ncols = data.draw(st.integers(min_value=1, max_value=5))
+    nrows = data.draw(st.integers(min_value=0, max_value=25))
+    columns = [f"c{i}" for i in range(ncols)]
+
+    cell_strategy = st.one_of(
+        st.none(),
+        st.integers(min_value=-3, max_value=3),
+        st.floats(allow_nan=False, allow_infinity=True, width=16),
+        st.text(min_size=0, max_size=3),
+    )
+    row_strategy = st.tuples(*(cell_strategy for _ in range(ncols)))
+
+    if nrows == 0:
+        rows = []
+    else:
+        pool = data.draw(
+            st.lists(
+                row_strategy,
+                min_size=1,
+                max_size=min(6, nrows),
+            )
+        )
+        rows = data.draw(
+            st.lists(
+                st.sampled_from(pool),
+                min_size=nrows,
+                max_size=nrows,
+            )
+        )
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    index_kind = data.draw(st.sampled_from(["range", "integers", "strings", "datetimes"]))
+    if index_kind == "range":
+        df.index = pd.RangeIndex(start=0, stop=nrows)
+    elif index_kind == "integers":
+        df.index = pd.Index(
+            data.draw(
+                st.lists(
+                    st.integers(min_value=-5, max_value=5),
+                    min_size=nrows,
+                    max_size=nrows,
+                )
+            )
+        )
+    elif index_kind == "strings":
+        df.index = pd.Index(
+            data.draw(
+                st.lists(
+                    st.text(min_size=0, max_size=3),
+                    min_size=nrows,
+                    max_size=nrows,
+                )
+            )
+        )
+    else:
+        df.index = pd.Index(
+            data.draw(
+                st.lists(
+                    st.datetimes(
+                        min_value=datetime(2000, 1, 1),
+                        max_value=datetime(2000, 1, 10),
+                    ),
+                    min_size=nrows,
+                    max_size=nrows,
+                )
+            )
+        )
+
+    subset_mode = data.draw(st.sampled_from(["none", "single", "list", "tuple"]))
+    if subset_mode == "none":
+        subset = None
+        considered_columns = columns
+    elif subset_mode == "single":
+        subset = data.draw(st.sampled_from(columns))
+        considered_columns = [subset]
+    else:
+        subset_size = data.draw(st.integers(min_value=1, max_value=ncols))
+        subset_columns = data.draw(
+            st.lists(
+                st.sampled_from(columns),
+                min_size=subset_size,
+                max_size=subset_size,
+                unique=True,
+            )
+        )
+        subset = subset_columns if subset_mode == "list" else tuple(subset_columns)
+        considered_columns = subset_columns
+
+    keep = data.draw(st.sampled_from(["first", "last", False]))
+    inplace = data.draw(st.booleans())
+    ignore_index = data.draw(st.booleans())
+
+    missing_sentinel = object()
+    column_positions = [df.columns.get_loc(col) for col in considered_columns]
+
+    def canonical(value):
+        if bool(pd.isna(value)):
+            return missing_sentinel
+        return value
+
+    def row_key(frame, row_pos):
+        return tuple(canonical(frame.iloc[row_pos, col_pos]) for col_pos in column_positions)
+
+    keys = [row_key(df, i) for i in range(len(df))]
+
+    if keep == "first":
+        seen = set()
+        keep_indices = []
+        for i, key in enumerate(keys):
+            if key not in seen:
+                seen.add(key)
+                keep_indices.append(i)
+    elif keep == "last":
+        seen = set()
+        keep_indices_reversed = []
+        for i in range(len(keys) - 1, -1, -1):
+            key = keys[i]
+            if key not in seen:
+                seen.add(key)
+                keep_indices_reversed.append(i)
+        keep_indices = list(reversed(keep_indices_reversed))
+    else:
+        counts = {}
+        for key in keys:
+            counts[key] = counts.get(key, 0) + 1
+        keep_indices = [i for i, key in enumerate(keys) if counts[key] == 1]
+
+    expected = df.iloc[keep_indices].copy()
+    if ignore_index:
+        expected = expected.reset_index(drop=True)
+
+    target = df.copy(deep=True)
+    target_before = target.copy(deep=True)
+
+    result = target.drop_duplicates(
+        subset=subset,
+        keep=keep,
+        inplace=inplace,
+        ignore_index=ignore_index,
+    )
+
+    if inplace:
+        assert result is None
+        actual = target
+    else:
+        assert result is not None
+        assert_frame_equal(target, target_before)
+        actual = result
+
+    assert_frame_equal(actual, expected)
+
+    result_keys = [row_key(actual, i) for i in range(len(actual))]
+    assert len(result_keys) == len(set(result_keys))
+
+    if keep is False:
+        original_counts = {}
+        for key in keys:
+            original_counts[key] = original_counts.get(key, 0) + 1
+        assert all(original_counts[key] == 1 for key in result_keys)
+
+    if ignore_index:
+        assert list(actual.index) == list(range(len(actual)))
+# End program
+```

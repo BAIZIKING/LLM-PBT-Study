@@ -1,0 +1,9 @@
+1. **Commutativity**: The result of `np.add(x1, x2)` is element-wise equal to `np.add(x2, x1)`.
+
+2. **Equivalence to the `+` operator**: The output of `np.add(x1, x2)` is element-wise equal to `x1 + x2` for array inputs.
+
+3. **Output shape matches broadcast shape**: The shape of the result equals the broadcasted shape of `x1` and `x2` (and a scalar is returned only when both inputs are scalars).
+
+4. **Identity element**: Adding zero leaves values unchanged, so `np.add(x1, 0)` is element-wise equal to `x1`.
+
+5. **Selective assignment with `where`**: When an `out` array and a `where` mask are provided, output locations where `where` is True hold the element-wise sum, while locations where `where` is False retain the original values of `out`.

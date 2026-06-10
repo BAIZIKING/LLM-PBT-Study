@@ -1,0 +1,188 @@
+```python
+from hypothesis import given, strategies as st, settings
+import pandas as pd
+import numpy as np
+import math
+
+
+# Strategy for generating column values that are safely sortable
+@st.composite
+def sortable_dataframes(draw, min_rows=0, max_rows=30):
+    n_rows = draw(st.integers(min_value=min_rows, max_value=max_rows))
+
+    # Number of columns
+    n_cols = draw(st.integers(min_value=1, max_value=4))
+
+    # Column dtype options: integers, floats (with NaN), strings
+    col_kinds = ['int', 'float', 'str']
+
+    data = {}
+    for c in range(n_cols):
+        kind = draw(st.sampled_from(col_kinds))
+        col_name = f"col{c}"
+        if kind == 'int':
+            values = draw(st.lists(
+                st.integers(min_value=-10000, max_value=10000),
+                min_size=n_rows, max_size=n_rows))
+        elif kind == 'float':
+            values = draw(st.lists(
+                st.one_of(
+                    st.floats(min_value=-1e6, max_value=1e6,
+                              allow_nan=False, allow_infinity=False),
+                    st.just(np.nan)),
+                min_size=n_rows, max_size=n_rows))
+        else:  # str
+            values = draw(st.lists(
+                st.text(alphabet="abcdeABCDE", min_size=0, max_size=4),
+                min_size=n_rows, max_size=n_rows))
+        data[col_name] = values
+
+    df = pd.DataFrame(data, index=list(range(n_rows)))
+    return df
+
+
+def record_multiset(df):
+    """Convert DataFrame rows to a hashable multiset, treating NaN equally."""
+    records = []
+    for _, row in df.iterrows():
+        rec = tuple(
+            ("__NaN__" if (isinstance(v, float) and math.isnan(v)) else v)
+            for v in row
+        )
+        records.append(rec)
+    return sorted(records, key=lambda r: repr(r))
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_pandas_DataFrame_sort_values_property(data):
+    df = data.draw(sortable_dataframes())
+
+    columns = list(df.columns)
+    n_cols = len(columns)
+
+    # Choose by: a single column or a list of columns
+    by_is_list = data.draw(st.booleans())
+    if by_is_list:
+        by = data.draw(st.lists(st.sampled_from(columns),
+                                 min_size=1, max_size=n_cols, unique=True))
+    else:
+        by = data.draw(st.sampled_from(columns))
+
+    # ascending: bool or list of bools matching length of by
+    if isinstance(by, list):
+        asc_is_list = data.draw(st.booleans())
+        if asc_is_list:
+            ascending = data.draw(st.lists(st.booleans(),
+                                           min_size=len(by), max_size=len(by)))
+        else:
+            ascending = data.draw(st.booleans())
+    else:
+        ascending = data.draw(st.booleans())
+
+    na_position = data.draw(st.sampled_from(['first', 'last']))
+    ignore_index = data.draw(st.booleans())
+    inplace = data.draw(st.booleans())
+
+    # Optional key function (only when no string columns to keep it simple/safe)
+    use_key = data.draw(st.booleans())
+    key = None
+    if use_key:
+        # Use a vectorized, value-preserving-order-on-string-lower or identity key
+        by_cols = by if isinstance(by, list) else [by]
+        all_str = all(df[c].dtype == object for c in by_cols)
+        if all_str:
+            key = lambda col: col.str.lower() if col.dtype == object else col
+        else:
+            key = lambda col: col  # identity, safe for all types
+
+    # Work on a copy for inplace testing
+    df_input = df.copy()
+
+    result = df_input.sort_values(
+        by=by,
+        ascending=ascending,
+        na_position=na_position,
+        ignore_index=ignore_index,
+        inplace=inplace,
+        key=key,
+    )
+
+    if inplace:
+        # Property 5: inplace returns None
+        assert result is None
+        out = df_input
+    else:
+        out = result
+
+    # Property 2: same shape and columns
+    assert out.shape == df.shape
+    assert list(out.columns) == list(df.columns)
+
+    # Property 1: same multiset of rows
+    assert record_multiset(out) == record_multiset(df)
+
+    # Property 5: index behavior
+    if ignore_index:
+        assert list(out.index) == list(range(len(out)))
+    else:
+        assert sorted(out.index.tolist()) == sorted(df.index.tolist())
+
+    # Properties 3 & 4: sort order on the 'by' columns (after applying key)
+    by_cols = by if isinstance(by, list) else [by]
+
+    if isinstance(ascending, list):
+        asc_list = ascending
+    else:
+        asc_list = [ascending] * len(by_cols)
+
+    # Apply key to the output columns to compare on the keyed values
+    keyed = {}
+    for c in by_cols:
+        col = out[c]
+        if key is not None:
+            col = key(col)
+        keyed[c] = list(col)
+
+    n = len(out)
+
+    def is_nan(v):
+        return isinstance(v, float) and math.isnan(v)
+
+    # Compare adjacent rows lexicographically over the by_cols
+    for i in range(n - 1):
+        # determine ordering between row i and row i+1
+        for c, asc in zip(by_cols, asc_list):
+            a = keyed[c][i]
+            b = keyed[c][i + 1]
+            a_nan = is_nan(a)
+            b_nan = is_nan(b)
+
+            if a_nan and b_nan:
+                # tie on this column, move to next
+                continue
+            if a_nan or b_nan:
+                # Property 4: NaN placement
+                if na_position == 'last':
+                    # the NaN one must be 'b' (later), not 'a'
+                    assert not a_nan, (
+                        f"NaN not last in column {c} at rows {i},{i+1}")
+                else:  # first
+                    assert not b_nan, (
+                        f"NaN not first in column {c} at rows {i},{i+1}")
+                # decided ordering by NaN, stop comparing further columns
+                break
+
+            if a == b:
+                # tie; check next column
+                continue
+            # strict ordering determined
+            if asc:
+                assert a <= b, (
+                    f"Not ascending in column {c} at rows {i},{i+1}: {a} > {b}")
+            else:
+                assert a >= b, (
+                    f"Not descending in column {c} at rows {i},{i+1}: {a} < {b}")
+            break
+# End program
+```

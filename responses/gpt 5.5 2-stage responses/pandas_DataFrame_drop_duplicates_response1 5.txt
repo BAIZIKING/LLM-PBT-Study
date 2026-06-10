@@ -1,0 +1,9 @@
+1. The output has the same columns and column order as the input DataFrame.
+
+2. The output rows are always selected from the input rows, preserving their original relative order.
+
+3. For `keep='first'` or `keep='last'`, the output contains exactly one row for each unique combination of values in `subset` columns, or all columns if `subset=None`.
+
+4. For `keep='first'`, the retained row is the first occurrence of each duplicate group; for `keep='last'`, it is the last occurrence; for `keep=False`, no row from any duplicate group is retained.
+
+5. If `ignore_index=True`, the output index is reset to `0, 1, ..., n-1`; otherwise, the output preserves the original index labels of the retained rows.

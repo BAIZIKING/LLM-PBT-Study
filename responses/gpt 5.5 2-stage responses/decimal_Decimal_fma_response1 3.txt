@@ -1,0 +1,9 @@
+1. For finite, non-exceptional inputs, the result is a `Decimal` representing `self * other + third` with the multiplication and addition fused, i.e. with no rounding of `self * other` before adding `third`.
+
+2. Under the same context, the result is symmetric in the two multiplicands: `self.fma(other, third)` should produce the same value as `other.fma(self, third)`.
+
+3. If either multiplicand is zero, the result should be the appropriately context-rounded value of `third`.
+
+4. If `third` is zero, the result should be the appropriately context-rounded value of the exact product `self * other`.
+
+5. When the exact value of `self * other + third` is representable in the active context, the result should equal that exact value with no loss of precision.

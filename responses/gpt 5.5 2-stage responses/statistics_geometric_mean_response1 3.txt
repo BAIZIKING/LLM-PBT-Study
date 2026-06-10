@@ -1,0 +1,9 @@
+1. For any non-empty dataset of positive numbers, the result is a positive `float`.
+
+2. For any non-empty dataset of positive numbers, the result lies between the minimum and maximum input values, inclusive.
+
+3. For a dataset containing a single positive value `x`, the result is equal to `float(x)`.
+
+4. Reordering the input data does not change the result.
+
+5. Multiplying every input value by the same positive constant `k` multiplies the result by `k`.

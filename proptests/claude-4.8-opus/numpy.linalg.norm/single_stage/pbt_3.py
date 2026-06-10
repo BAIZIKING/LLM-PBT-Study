@@ -1,0 +1,91 @@
+from hypothesis import given, strategies as st, assume, settings
+import hypothesis.extra.numpy as hnp
+import numpy as np
+
+# Summary: Generate finite 1-D/2-D float arrays, then draw a compatible `ord`,
+# `axis`, and `keepdims` based on the array's dimensionality so all inputs are
+# legal. Verify defining norm properties: non-negativity & finiteness for true
+# norms, absolute homogeneity (norm(s*x) == |s|*norm(x)), zero-array gives 0,
+# and keepdims shape consistency.
+@settings(deadline=None)
+@given(st.data())
+def test_numpy_linalg_norm(data):
+    ndim = data.draw(st.sampled_from([1, 2]), label="ndim")
+    shape = data.draw(
+        hnp.array_shapes(min_dims=ndim, max_dims=ndim, min_side=1, max_side=5),
+        label="shape",
+    )
+    x = data.draw(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=shape,
+            elements=st.floats(
+                min_value=-1e3, max_value=1e3,
+                allow_nan=False, allow_infinity=False, width=64,
+            ),
+        ),
+        label="x",
+    )
+
+    # Choose a valid ord depending on dimensionality.
+    if ndim == 1:
+        ord_choices = [None, 1, -1, 2, -2, np.inf, -np.inf, 3, -3, 0.5]
+    else:  # ndim == 2
+        ord_choices = [None, 'fro', 'nuc', 1, -1, 2, -2, np.inf, -np.inf]
+    ord_val = data.draw(st.sampled_from(ord_choices), label="ord")
+
+    # Choose a valid axis. For most ord values, axis=None works.
+    axis = data.draw(st.sampled_from([None]), label="axis")
+    keepdims = data.draw(st.booleans(), label="keepdims")
+
+    # --- Compute the norm ---
+    result = np.linalg.norm(x, ord=ord_val, axis=axis, keepdims=keepdims)
+    result_arr = np.asarray(result)
+
+    # Property 1: result must be finite for finite inputs.
+    assert np.all(np.isfinite(result_arr)), \
+        f"Non-finite norm {result} for ord={ord_val}"
+
+    # Determine whether this is a "true norm" (positive order) for which
+    # non-negativity and homogeneity must hold.
+    is_true_norm = ord_val in (None, 'fro', 'nuc') or (
+        isinstance(ord_val, (int, float))
+        and not isinstance(ord_val, bool)
+        and ord_val > 0
+    )
+
+    # Property 2: non-negativity for true norms.
+    if is_true_norm:
+        assert np.all(result_arr >= -1e-9), \
+            f"Negative norm {result} for true-norm ord={ord_val}"
+
+    # Property 3: keepdims shape consistency.
+    base = np.linalg.norm(x, ord=ord_val, axis=axis, keepdims=False)
+    if keepdims:
+        expected_ndim = x.ndim if axis is None else np.asarray(base).ndim + 1
+        # With axis=None, keepdims keeps all reduced axes as size-1.
+        assert result_arr.ndim == x.ndim, \
+            f"keepdims ndim {result_arr.ndim} != {x.ndim}"
+        assert all(s == 1 for s in result_arr.shape), \
+            f"keepdims shape {result_arr.shape} not all ones"
+
+    # Property 4: norm of zeros is zero.
+    zeros = np.zeros_like(x)
+    zres = np.asarray(np.linalg.norm(zeros, ord=ord_val, axis=axis))
+    assert np.allclose(zres, 0.0, atol=1e-9), \
+        f"norm of zeros = {zres} for ord={ord_val}"
+
+    # Property 5: absolute homogeneity  norm(s*x) == |s| * norm(x).
+    # Holds for all positive-order norms (and Frobenius/nuclear).
+    if is_true_norm:
+        s = data.draw(
+            st.floats(min_value=-10, max_value=10,
+                      allow_nan=False, allow_infinity=False),
+            label="scale",
+        )
+        scaled = np.linalg.norm(s * x, ord=ord_val, axis=axis)
+        expected = abs(s) * base
+        assert np.allclose(np.asarray(scaled), np.asarray(expected),
+                           rtol=1e-6, atol=1e-6), \
+            f"Homogeneity failed: norm({s}*x)={scaled} vs |s|*norm(x)={expected}"
+# End program

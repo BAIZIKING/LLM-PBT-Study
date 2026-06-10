@@ -1,0 +1,63 @@
+from hypothesis import given, strategies as st
+import zlib
+
+UINT32_MIN = 0
+UINT32_MAX = 0xFFFFFFFF
+BYTES = st.binary(max_size=4096)
+UINT32 = st.integers(min_value=UINT32_MIN, max_value=UINT32_MAX)
+
+
+@given(st.data())
+def test_zlib_adler32_result_is_unsigned_32_bit_integer(data):
+    input_data = data.draw(BYTES)
+    value = data.draw(UINT32)
+
+    result = zlib.adler32(input_data, value)
+
+    assert isinstance(result, int)
+    assert UINT32_MIN <= result <= UINT32_MAX
+
+
+@given(st.data())
+def test_zlib_adler32_is_deterministic(data):
+    input_data = data.draw(BYTES)
+    value = data.draw(UINT32)
+
+    result_1 = zlib.adler32(input_data, value)
+    result_2 = zlib.adler32(input_data, value)
+
+    assert result_1 == result_2
+
+
+@given(st.data())
+def test_zlib_adler32_default_value_is_one(data):
+    input_data = data.draw(BYTES)
+
+    result_with_default = zlib.adler32(input_data)
+    result_with_explicit_one = zlib.adler32(input_data, 1)
+
+    assert result_with_default == result_with_explicit_one
+
+
+@given(st.data())
+def test_zlib_adler32_empty_data_returns_starting_value(data):
+    value = data.draw(UINT32)
+
+    result = zlib.adler32(b"", value)
+
+    assert result == value
+
+
+@given(st.data())
+def test_zlib_adler32_can_be_computed_incrementally(data):
+    data_1 = data.draw(BYTES)
+    data_2 = data.draw(BYTES)
+    value = data.draw(UINT32)
+
+    checksum_concatenated = zlib.adler32(data_1 + data_2, value)
+    checksum_incremental = zlib.adler32(data_2, zlib.adler32(data_1, value))
+
+    assert checksum_concatenated == checksum_incremental
+
+
+# End program

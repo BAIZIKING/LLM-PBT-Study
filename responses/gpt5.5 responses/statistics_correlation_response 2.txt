@@ -1,0 +1,139 @@
+```python
+from hypothesis import given, strategies as st
+from statistics import StatisticsError, correlation
+import math
+
+# Summary: Generate both valid and invalid inputs for x, y, and method. Values include finite
+# ints/floats, duplicates/ties, constants, too-short lists, unequal lengths, and valid
+# non-constant equal-length lists. Check documented bounds, symmetry, default linear behavior,
+# perfect self/reversed correlation, Spearman ranking with averaged ties, and StatisticsError
+# for invalid lengths or constant inputs.
+@given(st.data())
+def test_statistics_correlation(data):
+    value = st.one_of(
+        st.integers(min_value=-20, max_value=20),
+        st.floats(
+            min_value=-1_000,
+            max_value=1_000,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+            width=32,
+        ),
+    )
+
+    method = data.draw(st.sampled_from(["linear", "ranked"]))
+    case = data.draw(
+        st.sampled_from(
+            ["valid", "too_short", "unequal_length", "constant_x", "constant_y"]
+        )
+    )
+
+    def non_constant_list(length):
+        return st.lists(value, min_size=length, max_size=length).filter(
+            lambda xs: any(x != xs[0] for x in xs)
+        )
+
+    def assert_raises_statistics_error(x, y):
+        try:
+            correlation(x, y, method=method)
+        except StatisticsError:
+            pass
+        else:
+            assert False, "Expected StatisticsError"
+
+    def averaged_ranks(seq):
+        ordered = sorted(enumerate(seq), key=lambda item: item[1])
+        ranks = [None] * len(seq)
+        i = 0
+
+        while i < len(ordered):
+            j = i + 1
+            while j < len(ordered) and ordered[j][1] == ordered[i][1]:
+                j += 1
+
+            # Ranks are 1-based; ties receive the average rank.
+            avg_rank = (i + 1 + j) / 2
+            for original_index, _ in ordered[i:j]:
+                ranks[original_index] = avg_rank
+
+            i = j
+
+        return ranks
+
+    if case == "valid":
+        n = data.draw(st.integers(min_value=2, max_value=10))
+        x = data.draw(non_constant_list(n))
+        y = data.draw(non_constant_list(n))
+
+        r = correlation(x, y, method=method)
+
+        assert math.isfinite(r)
+        assert -1.000000000001 <= r <= 1.000000000001
+
+        assert math.isclose(
+            r,
+            correlation(y, x, method=method),
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+
+        assert math.isclose(
+            correlation(x, x, method=method),
+            1.0,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+
+        assert math.isclose(
+            correlation(x, [-v for v in x], method=method),
+            -1.0,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+
+        if method == "linear":
+            assert math.isclose(
+                r,
+                correlation(x, y),
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+
+        if method == "ranked":
+            assert math.isclose(
+                r,
+                correlation(averaged_ranks(x), averaged_ranks(y), method="linear"),
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+
+    elif case == "too_short":
+        n = data.draw(st.integers(min_value=0, max_value=1))
+        x = data.draw(st.lists(value, min_size=n, max_size=n))
+        y = data.draw(st.lists(value, min_size=n, max_size=n))
+        assert_raises_statistics_error(x, y)
+
+    elif case == "unequal_length":
+        n = data.draw(st.integers(min_value=2, max_value=10))
+        m = data.draw(st.integers(min_value=2, max_value=10).filter(lambda m: m != n))
+        x = data.draw(non_constant_list(n))
+        y = data.draw(non_constant_list(m))
+        assert_raises_statistics_error(x, y)
+
+    elif case == "constant_x":
+        n = data.draw(st.integers(min_value=2, max_value=10))
+        c = data.draw(value)
+        x = [c] * n
+        y = data.draw(non_constant_list(n))
+        assert_raises_statistics_error(x, y)
+
+    else:
+        n = data.draw(st.integers(min_value=2, max_value=10))
+        x = data.draw(non_constant_list(n))
+        c = data.draw(value)
+        y = [c] * n
+        assert_raises_statistics_error(x, y)
+
+# End program
+```

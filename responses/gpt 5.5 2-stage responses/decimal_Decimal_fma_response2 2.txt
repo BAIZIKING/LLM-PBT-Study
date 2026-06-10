@@ -1,0 +1,135 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+
+
+ROUNDING_MODES = [
+    decimal.ROUND_CEILING,
+    decimal.ROUND_DOWN,
+    decimal.ROUND_FLOOR,
+    decimal.ROUND_HALF_DOWN,
+    decimal.ROUND_HALF_EVEN,
+    decimal.ROUND_HALF_UP,
+    decimal.ROUND_UP,
+    decimal.ROUND_05UP,
+]
+
+
+@st.composite
+def finite_decimals(draw):
+    return draw(
+        st.decimals(
+            min_value=decimal.Decimal("-1000000"),
+            max_value=decimal.Decimal("1000000"),
+            places=6,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+    )
+
+
+@st.composite
+def safe_contexts(draw):
+    ctx = decimal.Context(
+        prec=draw(st.integers(min_value=1, max_value=30)),
+        rounding=draw(st.sampled_from(ROUNDING_MODES)),
+        Emin=-999999,
+        Emax=999999,
+    )
+    for signal in ctx.traps:
+        ctx.traps[signal] = False
+    return ctx
+
+
+def round_once_exact_product_sum(a, b, c, ctx):
+    high_ctx = decimal.Context(prec=100, Emin=-999999, Emax=999999)
+    for signal in high_ctx.traps:
+        high_ctx.traps[signal] = False
+
+    with decimal.localcontext(high_ctx):
+        exact_value = a * b + c
+
+    return ctx.plus(exact_value)
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_correctly_rounds_exact_product_sum(data):
+    a = data.draw(finite_decimals())
+    b = data.draw(finite_decimals())
+    c = data.draw(finite_decimals())
+    ctx = data.draw(safe_contexts())
+
+    result = a.fma(b, c, context=ctx)
+    expected = round_once_exact_product_sum(a, b, c, ctx)
+
+    assert result == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_does_not_round_intermediate_product(data):
+    scale = data.draw(st.integers(min_value=-20, max_value=20))
+
+    a = decimal.Decimal("1.2345").scaleb(scale)
+    b = decimal.Decimal("1")
+    c = decimal.Decimal("0.0049").scaleb(scale)
+
+    ctx = decimal.Context(
+        prec=3,
+        rounding=decimal.ROUND_HALF_EVEN,
+        Emin=-999999,
+        Emax=999999,
+    )
+    for signal in ctx.traps:
+        ctx.traps[signal] = False
+
+    result = a.fma(b, c, context=ctx)
+    expected = round_once_exact_product_sum(a, b, c, ctx)
+    separately_rounded = ctx.add(ctx.multiply(a, b), c)
+
+    assert result == expected
+    assert result != separately_rounded
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_is_commutative_in_first_two_operands(data):
+    a = data.draw(finite_decimals())
+    b = data.draw(finite_decimals())
+    c = data.draw(finite_decimals())
+    ctx = data.draw(safe_contexts())
+
+    assert a.fma(b, c, context=ctx) == b.fma(a, c, context=ctx)
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_with_zero_third_argument_equals_context_product(data):
+    a = data.draw(finite_decimals())
+    b = data.draw(finite_decimals())
+    ctx = data.draw(safe_contexts())
+
+    zero = decimal.Decimal("0")
+
+    result = a.fma(b, zero, context=ctx)
+    expected = ctx.multiply(a, b)
+
+    assert result == expected
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_with_zero_multiplicand_equals_context_rounded_third(data):
+    zero_on_left = data.draw(st.booleans())
+    nonzero_operand = data.draw(finite_decimals())
+    third = data.draw(finite_decimals())
+    ctx = data.draw(safe_contexts())
+
+    zero = decimal.Decimal("0")
+
+    if zero_on_left:
+        result = zero.fma(nonzero_operand, third, context=ctx)
+    else:
+        result = nonzero_operand.fma(zero, third, context=ctx)
+
+    expected = ctx.plus(third)
+
+    assert result == expected
+# End program
+```

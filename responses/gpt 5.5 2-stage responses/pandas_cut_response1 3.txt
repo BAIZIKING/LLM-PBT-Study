@@ -1,0 +1,9 @@
+1. The output has the same length as `x`; if `x` is a `Series`, the output is also indexed like `x`.
+
+2. Every non-missing input value that falls inside exactly one bin is assigned to the corresponding bin; values outside all bins, and missing input values, produce missing output values.
+
+3. When `labels=False`, the output contains integer bin indicators in the range `0` to `number_of_bins - 1`, with missing values where no bin applies.
+
+4. When labels are provided, every non-missing output value is one of those labels; when `labels=None`, every non-missing output value is an interval matching the computed or supplied bins.
+
+5. When `retbins=True`, the returned bins match the bin edges used to categorize the data; if `duplicates="drop"`, duplicate bin edges are absent from the returned bins.

@@ -1,0 +1,93 @@
+# Strategy for Generating Inputs
+
+To exercise `dateutil.parser.parse` broadly, I want to generate **valid datetime strings** so that round-trip properties can be checked, while also varying the keyword arguments (`dayfirst`, `yearfirst`, `fuzzy`, `ignoretz`, `default`, `fuzzy_with_tokens`).
+
+1. **Generate real datetimes** using `st.datetimes()` over a safe year range (to avoid `OverflowError` and out-of-range issues). I bound years to roughly 1000–9999.
+2. **Format those datetimes** into unambiguous ISO-like strings (`YYYY-MM-DD HH:MM:SS`). ISO format is unambiguous, so `dayfirst`/`yearfirst` won't change interpretation, allowing a clean round-trip check.
+3. **Optionally wrap the string with fuzzy filler text** ("Today is ... blah") and pair that with `fuzzy=True` to exercise the fuzzy path.
+4. **Vary keyword arguments** with booleans/None for `dayfirst`, `yearfirst`, `ignoretz`, `fuzzy_with_tokens`, and sometimes pass a `default` datetime.
+
+# Properties to Check (from the API docs)
+
+- **Return type**: `parse` returns a `datetime.datetime` normally; if `fuzzy_with_tokens=True`, it returns a tuple `(datetime, tuple)`.
+- **Round-trip correctness**: Parsing an unambiguous ISO-formatted string yields back the same year/month/day/hour/minute/second.
+- **ignoretz**: When `ignoretz=True`, the resulting datetime should be naive (`tzinfo is None`).
+- **fuzzy_with_tokens tuple structure**: second element is a tuple of strings.
+
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+from dateutil.parser import parse
+
+# Summary: Generate valid datetimes in a safe year range, format them as unambiguous
+# ISO-like strings (optionally embedded in fuzzy filler text), and vary keyword
+# arguments (ignoretz, fuzzy, fuzzy_with_tokens, dayfirst, yearfirst, default).
+# Check return type, round-trip equality, naive-datetime under ignoretz, and the
+# tuple structure returned under fuzzy_with_tokens.
+@given(st.data())
+def test_dateutil_parser_parse(data):
+    # A real datetime in a safe range to avoid OverflowError / out-of-range issues.
+    dt = data.draw(
+        st.datetimes(
+            min_value=datetime.datetime(1000, 1, 1, 0, 0, 0),
+            max_value=datetime.datetime(9999, 12, 31, 23, 59, 59),
+        )
+    )
+
+    # Unambiguous ISO-like string: parsing should not depend on dayfirst/yearfirst.
+    base_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Decide whether to use the fuzzy path with surrounding filler text.
+    use_fuzzy = data.draw(st.booleans())
+    if use_fuzzy:
+        timestr = "Today is " + base_str + " for sure"
+    else:
+        timestr = base_str
+
+    fuzzy_with_tokens = use_fuzzy and data.draw(st.booleans())
+
+    # Vary the keyword arguments.
+    kwargs = {}
+    kwargs["dayfirst"] = data.draw(st.one_of(st.none(), st.booleans()))
+    kwargs["yearfirst"] = data.draw(st.one_of(st.none(), st.booleans()))
+    kwargs["ignoretz"] = data.draw(st.booleans())
+    if use_fuzzy:
+        kwargs["fuzzy"] = True
+    if fuzzy_with_tokens:
+        kwargs["fuzzy_with_tokens"] = True
+    if data.draw(st.booleans()):
+        kwargs["default"] = data.draw(
+            st.datetimes(
+                min_value=datetime.datetime(1000, 1, 1),
+                max_value=datetime.datetime(9999, 12, 31),
+            )
+        )
+
+    result = parse(timestr, **kwargs)
+
+    if fuzzy_with_tokens:
+        # Property: fuzzy_with_tokens returns a (datetime, tuple-of-str) tuple.
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        parsed_dt, tokens = result
+        assert isinstance(parsed_dt, datetime.datetime)
+        assert isinstance(tokens, tuple)
+        assert all(isinstance(tok, str) for tok in tokens)
+    else:
+        # Property: normal parse returns a datetime.datetime.
+        assert isinstance(result, datetime.datetime)
+        parsed_dt = result
+
+    # Property: round-trip correctness for our unambiguous ISO string.
+    assert parsed_dt.year == dt.year
+    assert parsed_dt.month == dt.month
+    assert parsed_dt.day == dt.day
+    assert parsed_dt.hour == dt.hour
+    assert parsed_dt.minute == dt.minute
+    assert parsed_dt.second == dt.second
+
+    # Property: ignoretz=True yields a naive datetime (no tzinfo).
+    if kwargs["ignoretz"]:
+        assert parsed_dt.tzinfo is None
+# End program
+```

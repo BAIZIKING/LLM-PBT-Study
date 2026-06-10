@@ -1,0 +1,107 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+
+def finite_number_lists(min_size=2, max_size=50):
+    return st.lists(
+        st.integers(min_value=-10_000, max_value=10_000),
+        min_size=min_size,
+        max_size=max_size,
+    ).filter(lambda values: len(set(values)) > 1)
+
+
+def same_length_nonconstant_pairs():
+    return st.data().map(
+        lambda data: (
+            data.draw(st.integers(min_value=2, max_value=50)),
+            data,
+        )
+    ).map(
+        lambda item: (
+            item[1].draw(
+                st.lists(
+                    st.integers(min_value=-10_000, max_value=10_000),
+                    min_size=item[0],
+                    max_size=item[0],
+                ).filter(lambda values: len(set(values)) > 1)
+            ),
+            item[1].draw(
+                st.lists(
+                    st.integers(min_value=-10_000, max_value=10_000),
+                    min_size=item[0],
+                    max_size=item[0],
+                ).filter(lambda values: len(set(values)) > 1)
+            ),
+        )
+    )
+
+
+@given(
+    same_length_nonconstant_pairs(),
+    st.sampled_from(["linear", "ranked"]),
+)
+def test_statistics_correlation_result_is_between_minus_one_and_one(pair, method):
+    x, y = pair
+    result = statistics.correlation(x, y, method=method)
+
+    assert math.isfinite(result)
+    assert -1.0 - 1e-12 <= result <= 1.0 + 1e-12
+
+
+@given(
+    same_length_nonconstant_pairs(),
+    st.sampled_from(["linear", "ranked"]),
+)
+def test_statistics_correlation_is_symmetric(pair, method):
+    x, y = pair
+
+    result_xy = statistics.correlation(x, y, method=method)
+    result_yx = statistics.correlation(y, x, method=method)
+
+    assert math.isclose(result_xy, result_yx, rel_tol=1e-12, abs_tol=1e-12)
+
+
+@given(
+    finite_number_lists(),
+    st.sampled_from(["linear", "ranked"]),
+)
+def test_statistics_correlation_of_input_with_itself_is_one(x, method):
+    result = statistics.correlation(x, x, method=method)
+
+    assert math.isclose(result, 1.0, rel_tol=1e-12, abs_tol=1e-12)
+
+
+@given(
+    same_length_nonconstant_pairs(),
+    st.integers(min_value=-10, max_value=10).filter(lambda value: value != 0),
+    st.integers(min_value=-1_000, max_value=1_000),
+)
+def test_statistics_correlation_linear_scaling_and_translation(pair, scale, shift):
+    x, y = pair
+    transformed_x = [scale * value + shift for value in x]
+
+    original = statistics.correlation(x, y)
+    transformed = statistics.correlation(transformed_x, y)
+
+    expected = original if scale > 0 else -original
+    assert math.isclose(transformed, expected, rel_tol=1e-12, abs_tol=1e-12)
+
+
+@given(
+    same_length_nonconstant_pairs(),
+    st.integers(min_value=-10, max_value=10).filter(lambda value: value != 0),
+    st.integers(min_value=-1_000, max_value=1_000),
+)
+def test_statistics_correlation_ranked_monotonic_transformation(pair, scale, shift):
+    x, y = pair
+    transformed_x = [scale * value + shift for value in x]
+
+    original = statistics.correlation(x, y, method="ranked")
+    transformed = statistics.correlation(transformed_x, y, method="ranked")
+
+    expected = original if scale > 0 else -original
+    assert math.isclose(transformed, expected, rel_tol=1e-12, abs_tol=1e-12)
+
+
+# End program

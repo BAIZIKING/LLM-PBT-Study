@@ -1,0 +1,9 @@
+1. The flow value must equal the net outflow from the source `_s`, i.e., the sum of flows leaving the source minus the sum of flows entering the source (as computed from `flow_dict`), and likewise equal the net inflow into the sink `_t`.
+
+2. Flow conservation must hold at every node other than the source and sink: the total flow into each such node equals the total flow out of it, as derived from `flow_dict`.
+
+3. For every edge (u, v) in the graph, the flow on that edge in `flow_dict` must not exceed the edge's capacity (or the high finite value used for infinite capacity), and flows must be non-negative on directed edges.
+
+4. The maximum flow value must be independent of the chosen `flow_func` algorithm; calling `maximum_flow` with different valid flow functions (e.g., `edmonds_karp`, `shortest_augmenting_path`, `preflow_push`) yields the same `flow_value`.
+
+5. The maximum flow value must equal the minimum cut value of the same graph between `_s` and `_t` (as returned by `minimum_cut_value`).

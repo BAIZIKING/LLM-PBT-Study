@@ -1,0 +1,70 @@
+from hypothesis import given, strategies as st
+import html
+
+NAMED_REFERENCES = [
+    ("&gt;", ">"),
+    ("&lt;", "<"),
+    ("&amp;", "&"),
+    ("&quot;", '"'),
+    ("&apos;", "'"),
+    ("&nbsp;", "\xa0"),
+    ("&copy;", "©"),
+    ("&NotEqualTilde;", "\u2242\u0338"),
+]
+
+TEXT = st.text(max_size=1000)
+TEXT_WITHOUT_AMPERSAND = st.text(
+    alphabet=st.characters(blacklist_characters="&"),
+    max_size=1000,
+)
+SAFE_CODEPOINT = st.integers(min_value=0x20, max_value=0x7E)
+
+
+@given(st.data())
+def test_html_unescape_output_is_string(data):
+    s = data.draw(TEXT)
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+
+@given(st.data())
+def test_html_unescape_without_ampersand_is_unchanged(data):
+    s = data.draw(TEXT_WITHOUT_AMPERSAND)
+    result = html.unescape(s)
+    assert result == s
+
+
+@given(st.data())
+def test_html_unescape_preserves_text_around_references(data):
+    prefix = data.draw(TEXT_WITHOUT_AMPERSAND)
+    suffix = data.draw(TEXT_WITHOUT_AMPERSAND)
+    reference, expected_character = data.draw(st.sampled_from(NAMED_REFERENCES))
+
+    s = prefix + reference + suffix
+    result = html.unescape(s)
+
+    assert result == prefix + expected_character + suffix
+
+
+@given(st.data())
+def test_html_unescape_replaces_named_decimal_and_hex_references(data):
+    named_reference, expected_named_character = data.draw(st.sampled_from(NAMED_REFERENCES))
+    codepoint = data.draw(SAFE_CODEPOINT)
+
+    decimal_reference = f"&#{codepoint};"
+    hex_reference = f"&#x{codepoint:x};"
+    expected_numeric_character = chr(codepoint)
+
+    assert html.unescape(named_reference) == expected_named_character
+    assert html.unescape(decimal_reference) == expected_numeric_character
+    assert html.unescape(hex_reference) == expected_numeric_character
+
+
+@given(st.data())
+def test_html_unescape_output_length_is_not_greater_than_input_length(data):
+    s = data.draw(TEXT)
+    result = html.unescape(s)
+    assert len(result) <= len(s)
+
+
+# End program

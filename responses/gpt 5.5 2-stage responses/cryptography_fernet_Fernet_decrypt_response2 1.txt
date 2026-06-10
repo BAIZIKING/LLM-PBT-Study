@@ -1,0 +1,90 @@
+```python
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import pytest
+import time
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt_round_trip_property(data):
+    plaintext = data.draw(st.binary(max_size=4096))
+
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(plaintext)
+    decrypted = fernet.decrypt(token)
+
+    assert decrypted == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt_returns_bytes_property(data):
+    plaintext = data.draw(st.binary(max_size=4096))
+
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(plaintext)
+    decrypted = fernet.decrypt(token)
+
+    assert isinstance(decrypted, bytes)
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt_same_token_same_output_property(data):
+    plaintext = data.draw(st.binary(max_size=4096))
+
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token = fernet.encrypt(plaintext)
+
+    decrypted_once = fernet.decrypt(token)
+    decrypted_twice = fernet.decrypt(token)
+    decrypted_third = fernet.decrypt(token)
+
+    assert decrypted_once == decrypted_twice == decrypted_third == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt_bytes_and_str_token_property(data):
+    plaintext = data.draw(st.binary(max_size=4096))
+
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    token_as_bytes = fernet.encrypt(plaintext)
+    token_as_str = token_as_bytes.decode("ascii")
+
+    decrypted_from_bytes = fernet.decrypt(token_as_bytes)
+    decrypted_from_str = fernet.decrypt(token_as_str)
+
+    assert decrypted_from_bytes == decrypted_from_str == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_Fernet_decrypt_ttl_property(data):
+    plaintext = data.draw(st.binary(max_size=4096))
+    age_seconds = data.draw(st.integers(min_value=0, max_value=1000))
+    valid_ttl = data.draw(
+        st.integers(min_value=age_seconds + 60, max_value=age_seconds + 100000)
+    )
+    expired_ttl = data.draw(st.integers(min_value=0, max_value=1000))
+
+    key = Fernet.generate_key()
+    fernet = Fernet(key)
+
+    now = int(time.time())
+
+    valid_token = fernet.encrypt_at_time(plaintext, now - age_seconds)
+    assert fernet.decrypt(valid_token, ttl=valid_ttl) == plaintext
+
+    expired_token = fernet.encrypt_at_time(plaintext, now - expired_ttl - 60)
+    with pytest.raises(InvalidToken):
+        fernet.decrypt(expired_token, ttl=expired_ttl)
+
+
+# End program
+```

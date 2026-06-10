@@ -1,0 +1,73 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `Decimal.compare()`, I will create a custom strategy that produces `Decimal` instances covering:
+
+1. **Regular finite decimals**: Generated from floats, integers, and strings to cover a broad numeric range, including negative numbers, zero, and very large/small magnitudes.
+2. **Special values**: `NaN`, `sNaN` (signaling NaN), `Infinity`, and `-Infinity`, which are critical edge cases per the API documentation.
+3. **Edge cases**: positive/negative zero (`0` vs `-0`), values with differing exponents but equal value (e.g., `1.0` vs `1.00`).
+
+I'll build a composite `decimals` strategy combining `st.decimals()` (with NaN and Infinity allowed) plus explicitly sampled special-value strings. I generate two such decimals (`a` and `b`) for comparison.
+
+## Properties to Check
+
+Based on the API documentation, I'll verify:
+
+1. **Result is always a Decimal instance.**
+2. **NaN handling**: If either operand is a NaN (quiet NaN; signaling NaN raises an error so we filter those out for this property), the result must be `Decimal('NaN')`.
+3. **Ordering correctness** (when neither is NaN):
+   - If `a < b`, result is `Decimal('-1')`.
+   - If `a == b`, result is `Decimal('0')`.
+   - If `a > b`, result is `Decimal('1')`.
+4. **Result domain**: The non-NaN result is always one of `-1`, `0`, `1`.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, InvalidOperation
+
+# Summary: Generate two Decimals using st.decimals() (allowing NaN/Infinity)
+# combined with explicitly sampled special-value strings (NaN, sNaN, Infinity,
+# -Infinity, -0). Then verify compare() returns a Decimal, yields NaN when an
+# operand is NaN, and otherwise returns -1/0/1 consistent with the ordering.
+@given(st.data())
+def test_decimal_Decimal_compare(data):
+    def make_decimal():
+        special = st.sampled_from(
+            ["NaN", "-NaN", "sNaN", "Infinity", "-Infinity",
+             "0", "-0", "1.0", "1.00", "-1", "1e10", "1e-10"]
+        ).map(Decimal)
+        normal = st.decimals(allow_nan=True, allow_infinity=True)
+        return st.one_of(normal, special)
+
+    a = data.draw(make_decimal())
+    b = data.draw(make_decimal())
+
+    # Signaling NaNs raise InvalidOperation under default context; that is
+    # valid behavior, so we skip those cases for the value-based properties.
+    try:
+        result = a.compare(b)
+    except InvalidOperation:
+        assert a.is_snan() or b.is_snan()
+        return
+
+    # Property 1: result is always a Decimal instance.
+    assert isinstance(result, Decimal)
+
+    # Property 2: if either operand is a (quiet) NaN, result is NaN.
+    if a.is_nan() or b.is_nan():
+        assert result.is_nan()
+        return
+
+    # Property 3 & 4: result must be -1, 0, or 1, consistent with ordering.
+    assert result in (Decimal("-1"), Decimal("0"), Decimal("1"))
+    if a < b:
+        assert result == Decimal("-1")
+    elif a == b:
+        assert result == Decimal("0")
+    else:  # a > b
+        assert result == Decimal("1")
+# End program
+```

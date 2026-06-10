@@ -1,0 +1,59 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+# Strategy for positive floats that avoid overflow/underflow issues
+positive_floats = st.floats(
+    min_value=1e-3,
+    max_value=1e6,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+@given(st.lists(positive_floats, min_size=1, max_size=50))
+def test_statistics_geometric_mean_output_is_positive_float():
+    pass
+
+@given(st.lists(positive_floats, min_size=1, max_size=50))
+def test_geometric_mean_positive(data):
+    result = statistics.geometric_mean(data)
+    assert isinstance(result, float)
+    assert result > 0
+
+
+@given(
+    st.floats(min_value=1e-3, max_value=1e6, allow_nan=False, allow_infinity=False),
+    st.integers(min_value=1, max_value=50),
+)
+def test_geometric_mean_constant_data(c, n):
+    data = [c] * n
+    result = statistics.geometric_mean(data)
+    assert math.isclose(result, c, rel_tol=1e-6, abs_tol=1e-9)
+
+
+@given(st.lists(positive_floats, min_size=1, max_size=50))
+def test_geometric_mean_bounded_by_min_max(data):
+    result = statistics.geometric_mean(data)
+    lo = min(data)
+    hi = max(data)
+    # allow small tolerance for floating point errors at the boundaries
+    assert lo * (1 - 1e-6) - 1e-9 <= result <= hi * (1 + 1e-6) + 1e-9
+
+
+@given(
+    st.lists(positive_floats, min_size=1, max_size=50),
+    st.floats(min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False),
+)
+def test_geometric_mean_scaling(data, k):
+    base = statistics.geometric_mean(data)
+    scaled = statistics.geometric_mean([k * x for x in data])
+    assert math.isclose(scaled, k * base, rel_tol=1e-6, abs_tol=1e-9)
+
+
+@given(st.lists(positive_floats, min_size=1, max_size=50))
+def test_geometric_mean_less_than_arithmetic_mean(data):
+    gm = statistics.geometric_mean(data)
+    am = statistics.fmean(data)
+    # AM-GM inequality, with tolerance for floating point error
+    assert gm <= am * (1 + 1e-6) + 1e-9
+# End program

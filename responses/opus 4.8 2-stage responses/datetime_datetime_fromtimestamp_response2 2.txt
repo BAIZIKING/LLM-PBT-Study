@@ -1,0 +1,67 @@
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+
+# Strategy for safe timestamps that won't cause OverflowError/OSError.
+# Restrict to a conservative range (well within 1970-2038 and beyond
+# but safe for most platforms): use 0 to ~2^31 to be cautious.
+safe_timestamps = st.floats(
+    min_value=0,
+    max_value=2_000_000_000,  # year ~2033, safely within platform limits
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+# A few timezone instances to test the aware case.
+timezones = st.sampled_from([
+    datetime.timezone.utc,
+    datetime.timezone(datetime.timedelta(hours=5, minutes=30)),
+    datetime.timezone(datetime.timedelta(hours=-8)),
+    datetime.timezone(datetime.timedelta(hours=14)),
+    datetime.timezone(datetime.timedelta(hours=-12)),
+])
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_property(data):
+    timestamp = data.draw(safe_timestamps)
+    use_tz = data.draw(st.booleans())
+    tz = data.draw(timezones) if use_tz else None
+
+    try:
+        if tz is None:
+            result = datetime.datetime.fromtimestamp(timestamp)
+        else:
+            result = datetime.datetime.fromtimestamp(timestamp, tz)
+    except (OverflowError, OSError):
+        # Out-of-range or platform failure; not a property violation.
+        assume(False)
+        return
+
+    # Property 1: The output is always a datetime instance.
+    assert isinstance(result, datetime.datetime)
+
+    # Property 2: When tz is None, the result is naive.
+    if tz is None:
+        assert result.tzinfo is None
+
+    # Property 3: When tz is provided, the result is aware with that tz.
+    if tz is not None:
+        assert result.tzinfo is not None
+        assert result.tzinfo is tz
+
+    # Property 4: Round-trip consistency (within sub-second tolerance).
+    # For naive datetimes, .timestamp() uses local time which inverts
+    # fromtimestamp() correctly; for aware datetimes it is unambiguous.
+    try:
+        roundtrip = result.timestamp()
+        assert abs(roundtrip - timestamp) < 1e-3
+    except (OverflowError, OSError, ValueError):
+        # Edge cases (e.g. DST folds for naive times) can make the
+        # round-trip ambiguous; skip those.
+        pass
+
+    # Property 5: The fold attribute is always 0 or 1.
+    assert result.fold in (0, 1)
+# End program
+```

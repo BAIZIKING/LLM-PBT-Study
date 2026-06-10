@@ -1,0 +1,9 @@
+1. For any valid input, the returned norm is non-negative; for an all-zero input array, the returned norm is `0`.
+
+2. When `ord=None` and `axis=None`, the result equals the Euclidean 2-norm of `x.ravel()`, i.e. `sqrt(sum(abs(x)**2))`.
+
+3. For any scalar `c`, supported norm order, and valid `axis`, scaling the input scales the output by `abs(c)`: `norm(c * x, ord, axis) == abs(c) * norm(x, ord, axis)`.
+
+4. For vector norms, `ord=np.inf` returns the maximum absolute value along the normed axis, `ord=-np.inf` returns the minimum absolute value, and `ord=0` returns the count of non-zero elements.
+
+5. The shape of the output matches the `axis` and `keepdims` arguments: normed axes are removed when `keepdims=False`, and retained as size-one dimensions when `keepdims=True`.

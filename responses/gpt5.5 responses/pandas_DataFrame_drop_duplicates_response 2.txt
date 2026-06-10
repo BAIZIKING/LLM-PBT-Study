@@ -1,0 +1,153 @@
+```python
+from hypothesis import given, strategies as st
+import pandas as pd
+
+# Summary: Generate duplicate-prone random DataFrames with 1-5 uniquely labeled columns,
+# 0-12 rows, mixed scalar values including None and NaN, arbitrary possibly-duplicate
+# indexes, and random valid drop_duplicates parameters: subset, keep, inplace, and
+# ignore_index. Check the result against an independent model of duplicate keys that
+# ignores the index, preserves the documented first/last/unique-only rows, verifies
+# inplace return behavior, and verifies ignore_index relabeling.
+@given(st.data())
+def test_pandas_DataFrame_drop_duplicates(data):
+    n_cols = data.draw(st.integers(min_value=1, max_value=5), label="n_cols")
+    n_rows = data.draw(st.integers(min_value=0, max_value=12), label="n_rows")
+
+    column_label_strategy = st.one_of(
+        st.integers(min_value=-5, max_value=5),
+        st.text(min_size=0, max_size=4),
+    )
+    columns = data.draw(
+        st.lists(
+            column_label_strategy,
+            min_size=n_cols,
+            max_size=n_cols,
+            unique=True,
+        ),
+        label="columns",
+    )
+
+    cell_strategy = st.one_of(
+        st.none(),
+        st.integers(min_value=-3, max_value=3),
+        st.floats(allow_nan=True, allow_infinity=False, width=32),
+        st.text(min_size=0, max_size=4),
+    )
+    rows = data.draw(
+        st.lists(
+            st.lists(cell_strategy, min_size=n_cols, max_size=n_cols),
+            min_size=n_rows,
+            max_size=n_rows,
+        ),
+        label="rows",
+    )
+
+    index_strategy = st.one_of(
+        st.none(),
+        st.integers(min_value=-3, max_value=3),
+        st.text(min_size=0, max_size=4),
+    )
+    index = data.draw(
+        st.lists(index_strategy, min_size=n_rows, max_size=n_rows),
+        label="index",
+    )
+
+    df = pd.DataFrame(rows, columns=columns, index=index)
+
+    subset = data.draw(
+        st.one_of(
+            st.none(),
+            st.sampled_from(columns),
+            st.lists(
+                st.sampled_from(columns),
+                min_size=1,
+                max_size=n_cols,
+                unique=True,
+            ),
+        ),
+        label="subset",
+    )
+    keep = data.draw(st.sampled_from(["first", "last", False]), label="keep")
+    inplace = data.draw(st.booleans(), label="inplace")
+    ignore_index = data.draw(st.booleans(), label="ignore_index")
+
+    considered_columns = columns if subset is None else subset
+    if not isinstance(considered_columns, list):
+        considered_columns = [considered_columns]
+
+    missing_sentinel = ("__PANDAS_MISSING_VALUE_SENTINEL__",)
+
+    def normalize(value):
+        try:
+            if pd.isna(value):
+                return missing_sentinel
+        except (TypeError, ValueError):
+            pass
+        return value
+
+    def row_key(frame, row_position):
+        row = frame.iloc[row_position]
+        return tuple(normalize(row.loc[col]) for col in considered_columns)
+
+    keys = [row_key(df, i) for i in range(len(df))]
+
+    if keep == "first":
+        seen = set()
+        expected_positions = []
+        for i, key in enumerate(keys):
+            if key not in seen:
+                seen.add(key)
+                expected_positions.append(i)
+    elif keep == "last":
+        last_position = {}
+        for i, key in enumerate(keys):
+            last_position[key] = i
+        expected_positions = [
+            i for i, key in enumerate(keys) if last_position[key] == i
+        ]
+    else:
+        counts = {}
+        for key in keys:
+            counts[key] = counts.get(key, 0) + 1
+        expected_positions = [
+            i for i, key in enumerate(keys) if counts[key] == 1
+        ]
+
+    expected = df.iloc[expected_positions].copy()
+    if ignore_index:
+        expected = expected.reset_index(drop=True)
+
+    original = df.copy(deep=True)
+    target = df.copy(deep=True)
+
+    result = target.drop_duplicates(
+        subset=subset,
+        keep=keep,
+        inplace=inplace,
+        ignore_index=ignore_index,
+    )
+
+    if inplace:
+        assert result is None
+        observed = target
+    else:
+        assert isinstance(result, pd.DataFrame)
+        observed = result
+        pd.testing.assert_frame_equal(target, original)
+
+    pd.testing.assert_frame_equal(observed, expected)
+
+    if ignore_index:
+        pd.testing.assert_index_equal(observed.index, pd.RangeIndex(len(observed)))
+
+    observed_keys = [row_key(observed, i) for i in range(len(observed))]
+    assert len(observed_keys) == len(set(observed_keys))
+
+    if keep is False:
+        original_counts = {}
+        for key in keys:
+            original_counts[key] = original_counts.get(key, 0) + 1
+        assert all(original_counts[key] == 1 for key in observed_keys)
+
+# End program
+```

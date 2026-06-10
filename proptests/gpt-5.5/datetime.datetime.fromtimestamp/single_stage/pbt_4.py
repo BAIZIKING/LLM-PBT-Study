@@ -1,0 +1,80 @@
+from hypothesis import given, strategies as st
+from datetime import datetime, timezone, timedelta
+import math
+
+# Summary: Generate finite POSIX timestamps from ordinary ranges plus boundary-like
+# values around the Unix epoch, 32-bit time_t limits, datetime min/max-ish limits,
+# and deliberately huge out-of-platform-range values. Generate tz as either None
+# for local naive conversion or fixed-offset timezone instances including UTC and
+# near +/-24-hour offsets. If conversion succeeds, check the documented shape of
+# the result: datetime instance, naive when tz is None, aware in the supplied tz
+# when tz is provided, valid fold value, and approximate timestamp round-trip for
+# fixed-offset aware datetimes. If the platform cannot represent the timestamp,
+# accept the documented OverflowError/OSError.
+@given(st.data())
+def test_datetime_datetime_fromtimestamp(data):
+    timestamp = data.draw(
+        st.one_of(
+            st.integers(min_value=-10**12, max_value=10**12),
+            st.floats(
+                min_value=-10**12,
+                max_value=10**12,
+                allow_nan=False,
+                allow_infinity=False,
+                width=64,
+            ),
+            st.sampled_from(
+                [
+                    0,
+                    1,
+                    -1,
+                    2**31 - 1,
+                    2**31,
+                    -(2**31),
+                    -(2**31) - 1,
+                    253402300799,
+                    -62135596800,
+                    10**20,
+                    -10**20,
+                ]
+            ),
+        )
+    )
+
+    tz = data.draw(
+        st.one_of(
+            st.none(),
+            st.just(timezone.utc),
+            st.sampled_from(
+                [
+                    timezone(timedelta(hours=23, minutes=59)),
+                    timezone(timedelta(hours=-23, minutes=-59)),
+                    timezone(timedelta(hours=5, minutes=30)),
+                    timezone(timedelta(hours=-4)),
+                ]
+            ),
+            st.integers(min_value=-86399, max_value=86399).map(
+                lambda seconds: timezone(timedelta(seconds=seconds))
+            ),
+        )
+    )
+
+    try:
+        result = datetime.fromtimestamp(timestamp, tz=tz)
+    except (OverflowError, OSError):
+        return
+
+    assert isinstance(result, datetime)
+    assert result.fold in (0, 1)
+
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is tz
+        assert result.utcoffset() == tz.utcoffset(result)
+
+        round_tripped = result.timestamp()
+        expected = float(timestamp)
+        tolerance = max(1e-6, abs(expected) * 1e-15)
+        assert math.isclose(round_tripped, expected, rel_tol=0.0, abs_tol=tolerance)
+# End program

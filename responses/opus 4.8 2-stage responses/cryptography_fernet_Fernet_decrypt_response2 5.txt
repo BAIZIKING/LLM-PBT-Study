@@ -1,0 +1,107 @@
+```python
+from hypothesis import given, strategies as st, assume
+import cryptography
+from cryptography.fernet import Fernet, InvalidToken
+import pytest
+
+
+# Property 1: The output of decrypt is always of type bytes, regardless of
+# whether the input token was passed as bytes or str.
+@given(st.binary(max_size=1024), st.booleans())
+def test_cryptography_fernet_Fernet_decrypt_output_is_bytes(plaintext, as_str):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(plaintext)
+    if as_str:
+        token = token.decode("utf-8")
+    result = f.decrypt(token)
+    assert isinstance(result, bytes)
+# End program
+
+
+# Property 2: Round-trip property: decrypt(encrypt(m)) == m for any bytes m.
+@given(st.binary(max_size=4096))
+def test_cryptography_fernet_Fernet_decrypt_roundtrip(plaintext):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(plaintext)
+    assert f.decrypt(token) == plaintext
+# End program
+
+
+# Property 3: With a ttl, decryption succeeds when age <= ttl and raises
+# InvalidToken when age > ttl (tested via decrypt_at_time with explicit times).
+@given(
+    st.binary(max_size=1024),
+    st.integers(min_value=0, max_value=2**31 - 1),  # creation time
+    st.integers(min_value=0, max_value=2**31 - 1),  # ttl
+    st.integers(min_value=0, max_value=2**31 - 1),  # elapsed offset
+)
+def test_cryptography_fernet_Fernet_decrypt_ttl(plaintext, create_time, ttl, elapsed):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt_at_time(plaintext, create_time)
+    # current_time is create_time + elapsed, guard against overflow
+    current_time = create_time + elapsed
+    assume(current_time <= 2**63 - 1)
+    age = current_time - create_time
+    if age <= ttl:
+        result = f.decrypt_at_time(token, ttl=ttl, current_time=current_time)
+        assert result == plaintext
+    else:
+        with pytest.raises(InvalidToken):
+            f.decrypt_at_time(token, ttl=ttl, current_time=current_time)
+# End program
+
+
+# Property 4: Decrypting a tampered token, a malformed token, or a token
+# created with a different key always raises InvalidToken.
+@given(
+    st.binary(max_size=1024),
+    st.integers(min_value=0),  # index to tamper
+    st.sampled_from(["tamper", "wrong_key", "malformed"]),
+)
+def test_cryptography_fernet_Fernet_decrypt_invalid(plaintext, idx, mode):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    token = f.encrypt(plaintext)
+
+    if mode == "tamper":
+        token_ba = bytearray(token)
+        i = idx % len(token_ba)
+        token_ba[i] = (token_ba[i] + 1) % 256
+        bad_token = bytes(token_ba)
+        # Ensure it actually changed (it always does given +1 mod 256)
+        with pytest.raises(InvalidToken):
+            f.decrypt(bad_token)
+    elif mode == "wrong_key":
+        other_key = Fernet.generate_key()
+        assume(other_key != key)
+        other_f = Fernet(other_key)
+        with pytest.raises(InvalidToken):
+            other_f.decrypt(token)
+    else:  # malformed
+        bad_token = b"this-is-not-a-valid-fernet-token!!!"
+        with pytest.raises(InvalidToken):
+            f.decrypt(bad_token)
+# End program
+
+
+# Property 5: Passing a token that is not bytes or str raises TypeError.
+@given(
+    st.one_of(
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+        st.lists(st.integers()),
+        st.none(),
+        st.dictionaries(st.text(), st.integers()),
+        st.tuples(st.integers()),
+    )
+)
+def test_cryptography_fernet_Fernet_decrypt_typeerror(bad_token):
+    key = Fernet.generate_key()
+    f = Fernet(key)
+    with pytest.raises(TypeError):
+        f.decrypt(bad_token)
+# End program
+```

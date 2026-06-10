@@ -1,0 +1,77 @@
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `date.isocalendar()`, I'll use hypothesis's built-in `st.dates()` strategy, which generates `datetime.date` objects across the full supported range (from `date.min` to `date.max`). This automatically covers edge cases such as:
+- Year boundaries (Dec 29 - Jan 4) where the ISO year differs from the Gregorian year
+- Leap years
+- Years with 53 ISO weeks
+- The minimum and maximum representable dates
+
+## Properties to Check
+
+Based on the API documentation, I'll verify the following properties:
+
+1. **Return structure**: The result has three components accessible as `year`, `week`, and `weekday`, and behaves like a 3-element named tuple.
+2. **Week range**: The ISO week number is between 1 and 53 (since an ISO year has 52 or 53 full weeks).
+3. **Weekday range**: The weekday is between 1 (Monday) and 7 (Sunday).
+4. **ISO year proximity**: The ISO year is the same as the Gregorian year, or differs by at most 1 (since the first/last week can spill into the adjacent Gregorian year).
+5. **Round-trip consistency**: Reconstructing a date from the ISO calendar values via `date.fromisocalendar()` returns the original date.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+from datetime import date
+
+# Summary: Generate arbitrary date objects spanning the full supported range
+# (date.min to date.max), naturally covering year boundaries, leap years,
+# and 53-week years. Verify the returned named tuple's structure, the valid
+# ranges of week/weekday, ISO-vs-Gregorian year proximity, and round-trip
+# consistency with date.fromisocalendar().
+@given(st.data())
+def test_datetime_date_isocalendar():
+    d = st.data()  # placeholder to satisfy decorator; real draw below
+    # Draw an actual date using the data strategy
+    # (re-draw properly using the injected data object)
+    pass
+
+# End program
+```
+
+Let me correct the format to properly use the injected `data` object:
+
+```python
+from hypothesis import given, strategies as st
+from datetime import date
+
+# Summary: Generate arbitrary date objects spanning the full supported range
+# (date.min to date.max), naturally covering year boundaries, leap years,
+# and 53-week years. Verify the returned named tuple's structure, the valid
+# ranges of week/weekday, ISO-vs-Gregorian year proximity, and round-trip
+# consistency with date.fromisocalendar().
+@given(st.data())
+def test_datetime_date_isocalendar(data):
+    d = data.draw(st.dates())
+
+    result = d.isocalendar()
+
+    # Property 1: Result behaves like a 3-element tuple with named fields
+    assert len(result) == 3
+    iso_year, iso_week, iso_weekday = result
+    assert result.year == iso_year
+    assert result.week == iso_week
+    assert result.weekday == iso_weekday
+
+    # Property 2: Week is between 1 and 53
+    assert 1 <= iso_week <= 53
+
+    # Property 3: Weekday is between 1 (Monday) and 7 (Sunday)
+    assert 1 <= iso_weekday <= 7
+
+    # Property 4: ISO year differs from Gregorian year by at most 1
+    assert abs(iso_year - d.year) <= 1
+
+    # Property 5: Round-trip consistency via fromisocalendar
+    reconstructed = date.fromisocalendar(iso_year, iso_week, iso_weekday)
+    assert reconstructed == d
+# End program
+```

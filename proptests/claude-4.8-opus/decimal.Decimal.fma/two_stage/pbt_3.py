@@ -1,0 +1,90 @@
+from hypothesis import given, strategies as st, assume
+import decimal
+from decimal import Decimal, Context, localcontext
+
+
+# A reasonable strategy for generating Decimal values that avoids
+# extremely large exponents / overflows while still exercising edge cases.
+def decimal_strategy():
+    return st.one_of(
+        st.integers(min_value=-10**6, max_value=10**6).map(Decimal),
+        st.floats(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=-1e6,
+            max_value=1e6,
+        ).map(lambda f: Decimal(repr(f))),
+        st.decimals(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=Decimal("-1e6"),
+            max_value=Decimal("1e6"),
+            places=10,
+        ),
+    )
+
+
+@given(st.data())
+def test_decimal_Decimal_fma_property():
+    # Use a high-precision context to make "no rounding" reasoning meaningful.
+    ctx = Context(prec=50, Emax=10**6, Emin=-(10**6))
+
+    a = data = data_a = None  # placeholder to satisfy linter style
+    data = None
+
+    # Draw inputs
+    data = None
+    a = None
+
+    # Actually draw via the data() strategy
+    a = (yield_value := None)
+
+    # Draw three decimals
+    self_val = (lambda d: d)(None)
+
+
+# The above scaffold is awkward; rewrite cleanly below.
+
+@given(
+    a=decimal_strategy(),
+    b=decimal_strategy(),
+    c=decimal_strategy(),
+)
+def test_decimal_Decimal_fma_property(a, b, c):
+    ctx = Context(prec=50, Emax=10**6, Emin=-(10**6))
+
+    # Property 1 & 2: fma equals self*other+third computed with a single
+    # rounding on the intermediate product. We emulate the "no rounding of
+    # intermediate product" by computing the exact product in a much higher
+    # precision context, then adding third and rounding once.
+    result = a.fma(b, c, ctx)
+
+    # Compute exact product using a very large precision so no rounding occurs.
+    exact_ctx = Context(prec=200, Emax=10**6, Emin=-(10**6))
+    exact_product = exact_ctx.multiply(a, b)
+    # Now add third and round once using the original context.
+    expected = ctx.add(exact_product, c)
+    assert result == expected
+
+    # Property 3: when third is zero, result equals self*other (single rounding).
+    zero = Decimal(0)
+    res_zero = a.fma(b, zero, ctx)
+    expected_zero = ctx.multiply(a, b)
+    assert res_zero == expected_zero
+
+    # Property 4: when other is one, result equals third + self.
+    one = Decimal(1)
+    res_one = a.fma(one, c, ctx)
+    expected_one = ctx.add(c, a)
+    assert res_one == expected_one
+
+    # And when self is one, result equals third + other.
+    res_one2 = one.fma(b, c, ctx)
+    expected_one2 = ctx.add(c, b)
+    assert res_one2 == expected_one2
+
+    # Property 5: commutativity in the first two arguments.
+    res_ab = a.fma(b, c, ctx)
+    res_ba = b.fma(a, c, ctx)
+    assert res_ab == res_ba
+# End program

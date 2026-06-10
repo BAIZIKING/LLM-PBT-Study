@@ -1,0 +1,9 @@
+1. The output is always a bytes object.
+
+2. Decompressing data that was previously compressed with `zlib.compress` (round-trip) returns the original uncompressed bytes exactly.
+
+3. Decompressing valid compressed data with a compatible `wbits` value produces output whose length is greater than or equal to zero, and is independent of the `bufsize` argument (the same valid input yields identical output regardless of the buffer size chosen).
+
+4. Decompressing data compressed with a given window size succeeds when `wbits` specifies a window size at least as large as the one used for compression, and the output matches the original data.
+
+5. Supplying invalid, corrupted, or truncated compressed data (or an incompatible `wbits` format/window size) raises a `zlib.error` exception rather than returning a value.

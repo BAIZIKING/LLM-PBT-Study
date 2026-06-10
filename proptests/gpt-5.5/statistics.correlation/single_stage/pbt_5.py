@@ -1,0 +1,72 @@
+from hypothesis import given, strategies as st
+import math
+import pytest
+import statistics
+from statistics import StatisticsError
+
+# Summary: Generate both valid and invalid inputs for statistics.correlation:
+# same-length and mismatched-length lists, lengths from 0 upward, constant and
+# non-constant data, many ties for ranked correlation, finite ints/floats, and
+# both documented methods ("linear" and "ranked"). Check that invalid inputs
+# raise StatisticsError; valid inputs return a finite coefficient in [-1, 1],
+# are symmetric, give 1.0 for correlation with self, and give +/-1.0 for
+# perfect monotonic/affine transformations.
+@given(st.data())
+def test_statistics_correlation(data):
+    scalar = st.one_of(
+        st.integers(min_value=-10, max_value=10),
+        st.floats(
+            min_value=-1_000_000,
+            max_value=1_000_000,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+    )
+
+    method = data.draw(st.sampled_from(["linear", "ranked"]))
+
+    len_x = data.draw(st.integers(min_value=0, max_value=20))
+    len_y = data.draw(
+        st.one_of(
+            st.just(len_x),
+            st.integers(min_value=0, max_value=20),
+        )
+    )
+
+    x = data.draw(st.lists(scalar, min_size=len_x, max_size=len_x))
+    y = data.draw(st.lists(scalar, min_size=len_y, max_size=len_y))
+
+    valid = (
+        len(x) == len(y)
+        and len(x) >= 2
+        and len(set(x)) > 1
+        and len(set(y)) > 1
+    )
+
+    if not valid:
+        with pytest.raises(StatisticsError):
+            statistics.correlation(x, y, method=method)
+        return
+
+    r = statistics.correlation(x, y, method=method)
+
+    assert math.isfinite(r)
+    assert -1.000000000001 <= r <= 1.000000000001
+
+    reverse_r = statistics.correlation(y, x, method=method)
+    assert math.isclose(r, reverse_r, rel_tol=1e-12, abs_tol=1e-12)
+
+    self_x = statistics.correlation(x, x, method=method)
+    self_y = statistics.correlation(y, y, method=method)
+    assert math.isclose(self_x, 1.0, rel_tol=1e-12, abs_tol=1e-12)
+    assert math.isclose(self_y, 1.0, rel_tol=1e-12, abs_tol=1e-12)
+
+    scale = data.draw(st.sampled_from([-3.0, -1.0, 0.5, 2.0]))
+    shift = data.draw(st.floats(min_value=-100, max_value=100, allow_nan=False, allow_infinity=False))
+    transformed_x = [scale * value + shift for value in x]
+
+    perfect_r = statistics.correlation(x, transformed_x, method=method)
+    expected = 1.0 if scale > 0 else -1.0
+    assert math.isclose(perfect_r, expected, rel_tol=1e-12, abs_tol=1e-12)
+# End program

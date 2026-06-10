@@ -1,0 +1,119 @@
+```python
+from hypothesis import given, strategies as st, assume
+import datetime
+
+# Safe timestamp range: roughly years 1970..2038 to avoid platform OverflowError/OSError.
+# Use a conservative range that works across platforms.
+safe_timestamps = st.floats(
+    min_value=0,
+    max_value=2_000_000_000,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+# A small set of fixed timezones to test the aware case.
+timezones = st.sampled_from([
+    None,
+    datetime.timezone.utc,
+    datetime.timezone(datetime.timedelta(hours=5)),
+    datetime.timezone(datetime.timedelta(hours=-8)),
+    datetime.timezone(datetime.timedelta(hours=0)),
+])
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_property():
+    # Property 1: The function always returns a datetime.datetime instance.
+    ts = data.draw(safe_timestamps)
+    tz = data.draw(timezones)
+    result = datetime.datetime.fromtimestamp(ts, tz)
+    assert isinstance(result, datetime.datetime)
+
+    # Property 2: tzinfo correctness depending on tz argument.
+    if tz is None:
+        assert result.tzinfo is None  # naive
+    else:
+        assert result.tzinfo is not None  # aware
+        assert result.tzinfo == tz
+
+    # Property 3: Round-trip back to a timestamp yields (approximately) the input.
+    # Allow tolerance for floating-point and fold ambiguity (>= 1 second).
+    roundtrip = result.timestamp()
+    assert abs(roundtrip - ts) <= 1.0 + 1e-6
+
+    # Property 4: The fold attribute is always 0 or 1.
+    assert result.fold in (0, 1)
+
+    # Property 5: Ordering is preserved between two timestamps with the same tz.
+    ts2 = data.draw(safe_timestamps)
+    result2 = datetime.datetime.fromtimestamp(ts2, tz)
+    if ts <= ts2:
+        assert result <= result2
+    else:
+        assert result >= result2
+
+
+# Note: this test uses st.data() so all draws happen inside the body,
+# matching the required signature (no parameters in the test function).
+test_datetime_datetime_fromtimestamp_property = given(st.data())(
+    lambda data: test_datetime_datetime_fromtimestamp_property.hypothesis.inner_test(data)
+)
+# End program
+```
+
+Wait — let me correct the structure to strictly match the required format (the body must use the injected `data` parameter from `st.data()`):
+
+```python
+from hypothesis import given, strategies as st
+import datetime
+
+# Safe timestamp range (~1970..2033) to avoid platform OverflowError/OSError.
+safe_timestamps = st.floats(
+    min_value=0,
+    max_value=2_000_000_000,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+# Fixed set of timezones, including None for the naive case.
+timezones = st.sampled_from([
+    None,
+    datetime.timezone.utc,
+    datetime.timezone(datetime.timedelta(hours=5)),
+    datetime.timezone(datetime.timedelta(hours=-8)),
+    datetime.timezone(datetime.timedelta(hours=0)),
+])
+
+
+@given(st.data())
+def test_datetime_datetime_fromtimestamp_property(data):
+    ts = data.draw(safe_timestamps)
+    tz = data.draw(timezones)
+    result = datetime.datetime.fromtimestamp(ts, tz)
+
+    # Property 1: always returns a datetime.datetime instance.
+    assert isinstance(result, datetime.datetime)
+
+    # Property 2: tzinfo correctness depending on tz argument.
+    if tz is None:
+        assert result.tzinfo is None
+    else:
+        assert result.tzinfo is not None
+        assert result.tzinfo == tz
+
+    # Property 3: round-trip back to a timestamp ~ input (tolerance for fold/float).
+    roundtrip = result.timestamp()
+    assert abs(roundtrip - ts) <= 1.0 + 1e-6
+
+    # Property 4: fold is always 0 or 1.
+    assert result.fold in (0, 1)
+
+    # Property 5: ordering preserved between two timestamps with the same tz.
+    ts2 = data.draw(safe_timestamps)
+    result2 = datetime.datetime.fromtimestamp(ts2, tz)
+    if ts <= ts2:
+        assert result <= result2
+    else:
+        assert result >= result2
+# End program
+```

@@ -1,0 +1,42 @@
+```python
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, MultiFernet
+import base64
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_property(data):
+    raw_keys = data.draw(
+        st.lists(
+            st.binary(min_size=32, max_size=32),
+            min_size=1,
+            max_size=5,
+            unique=True,
+        )
+    )
+    plaintext = data.draw(st.binary(min_size=0, max_size=2048))
+    encrypting_key_index = data.draw(
+        st.integers(min_value=0, max_value=len(raw_keys) - 1)
+    )
+
+    fernets = [
+        Fernet(base64.urlsafe_b64encode(raw_key))
+        for raw_key in raw_keys
+    ]
+    multi_fernet = MultiFernet(fernets)
+
+    original_token = fernets[encrypting_key_index].encrypt(plaintext)
+    original_timestamp = fernets[encrypting_key_index].extract_timestamp(
+        original_token
+    )
+
+    rotated_token = multi_fernet.rotate(original_token)
+
+    assert isinstance(rotated_token, bytes)
+    assert multi_fernet.decrypt(rotated_token) == plaintext
+    assert multi_fernet.decrypt(rotated_token) == multi_fernet.decrypt(original_token)
+    assert fernets[0].extract_timestamp(rotated_token) == original_timestamp
+    assert fernets[0].decrypt(rotated_token) == plaintext
+
+# End program
+```

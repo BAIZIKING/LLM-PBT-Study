@@ -1,0 +1,9 @@
+1. When `nbunch` is omitted, the returned degree view contains an entry for every node in the graph G, and no extra nodes; the total number of entries equals the number of nodes in G.
+
+2. The sum of all node degrees returned (when `nbunch` is omitted and `weight=None`) equals twice the number of edges in G (the handshaking lemma), accounting for self-loops counting twice.
+
+3. Every degree value returned is a non-negative number; when `weight=None` each degree is a non-negative integer, and when a `weight` attribute is specified the degree equals the sum of incident edge weights for that node.
+
+4. When `nbunch` specifies a single node, the function returns a single numeric degree value, and this value matches the corresponding entry in the full degree view obtained when `nbunch` is omitted.
+
+5. When `nbunch` specifies a subset of nodes, the returned degrees correspond exactly to those nodes and each value equals the degree of that same node in the full degree view (consistency across different `nbunch` selections).

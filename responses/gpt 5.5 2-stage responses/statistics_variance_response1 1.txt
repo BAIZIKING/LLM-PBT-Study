@@ -1,0 +1,9 @@
+1. For any iterable with at least two real-valued items, the result equals `sum((x - mean(data))**2 for x in data) / (len(data) - 1)` when `xbar` is omitted or `None`.
+
+2. The result is always non-negative when `xbar` is omitted, `None`, or the true mean of the data.
+
+3. The result is zero if and only if all data values are equal, assuming `xbar` is omitted, `None`, or the true mean of the data.
+
+4. Adding the same constant to every data value does not change the result.
+
+5. Multiplying every data value by a constant `k` multiplies the result by `k**2`.

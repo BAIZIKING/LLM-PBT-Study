@@ -1,0 +1,113 @@
+from hypothesis import given, strategies as st
+import cryptography
+from cryptography.fernet import Fernet, MultiFernet, InvalidToken
+import base64
+import binascii
+import re
+
+
+_URLSAFE_BASE64_RE = re.compile(rb"^[A-Za-z0-9_-]+={0,2}$")
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_returns_urlsafe_base64_bytes(data):
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key1 = Fernet(Fernet.generate_key())
+    key2 = Fernet(Fernet.generate_key())
+    key3 = Fernet(Fernet.generate_key())
+
+    original_multi = MultiFernet([key1, key2])
+    rotation_multi = MultiFernet([key3, key1, key2])
+
+    token = original_multi.encrypt(plaintext)
+    rotated = rotation_multi.rotate(token)
+
+    assert isinstance(rotated, bytes)
+    assert _URLSAFE_BASE64_RE.match(rotated) is not None
+
+    try:
+        decoded = base64.urlsafe_b64decode(rotated)
+    except (binascii.Error, ValueError):
+        assert False, "rotated token is not valid URL-safe base64"
+
+    assert isinstance(decoded, bytes)
+    assert len(decoded) > 0
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_preserves_plaintext(data):
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key1 = Fernet(Fernet.generate_key())
+    key2 = Fernet(Fernet.generate_key())
+    key3 = Fernet(Fernet.generate_key())
+
+    original_multi = MultiFernet([key1, key2])
+    rotation_multi = MultiFernet([key3, key1, key2])
+
+    token = original_multi.encrypt(plaintext)
+    rotated = rotation_multi.rotate(token)
+
+    assert rotation_multi.decrypt(rotated) == original_multi.decrypt(token)
+    assert rotation_multi.decrypt(rotated) == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_preserves_timestamp(data):
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+
+    key1 = Fernet(Fernet.generate_key())
+    key2 = Fernet(Fernet.generate_key())
+    key3 = Fernet(Fernet.generate_key())
+
+    original_multi = MultiFernet([key1, key2])
+    rotation_multi = MultiFernet([key3, key1, key2])
+
+    token = original_multi.encrypt(plaintext)
+    original_timestamp = key1.extract_timestamp(token)
+
+    rotated = rotation_multi.rotate(token)
+    rotated_timestamp = key3.extract_timestamp(rotated)
+
+    assert rotated_timestamp == original_timestamp
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_uses_primary_key(data):
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+
+    old_key1 = Fernet(Fernet.generate_key())
+    old_key2 = Fernet(Fernet.generate_key())
+    primary_key = Fernet(Fernet.generate_key())
+
+    old_multi = MultiFernet([old_key1, old_key2])
+    rotation_multi = MultiFernet([primary_key, old_key1, old_key2])
+
+    token = old_multi.encrypt(plaintext)
+    rotated = rotation_multi.rotate(token)
+
+    assert primary_key.decrypt(rotated) == plaintext
+
+
+@given(st.data())
+def test_cryptography_fernet_MultiFernet_rotate_repeated_rotation_preserves_plaintext_and_timestamp(data):
+    plaintext = data.draw(st.binary(min_size=0, max_size=4096))
+    rotation_count = data.draw(st.integers(min_value=1, max_value=5))
+
+    key1 = Fernet(Fernet.generate_key())
+    key2 = Fernet(Fernet.generate_key())
+    key3 = Fernet(Fernet.generate_key())
+
+    original_multi = MultiFernet([key1, key2])
+    rotation_multi = MultiFernet([key3, key1, key2])
+
+    token = original_multi.encrypt(plaintext)
+    original_timestamp = key1.extract_timestamp(token)
+
+    rotated = token
+    for _ in range(rotation_count):
+        rotated = rotation_multi.rotate(rotated)
+        assert rotation_multi.decrypt(rotated) == plaintext
+        assert key3.extract_timestamp(rotated) == original_timestamp
+# End program

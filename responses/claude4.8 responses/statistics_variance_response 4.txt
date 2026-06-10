@@ -1,0 +1,91 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To exercise `statistics.variance` thoroughly, I want to generate a wide variety of inputs:
+
+1. **Variety of data sizes**: Lists with at least 2 elements (the minimum valid size), up to larger lists.
+2. **Variety of numeric values**: Use floats with controlled bounds (avoiding NaN/infinity which break variance math), including negatives, zeros, and large/small magnitudes.
+3. **Edge cases**: 
+   - Lists where all elements are identical (variance should be 0).
+   - Two-element lists (minimum valid case).
+   - Both passing and not passing `xbar`.
+
+I'll use `st.lists` of `st.floats` (with `allow_nan=False`, `allow_infinity=False`, and reasonable bounds to avoid overflow/precision blowups), with `min_size=2`. I'll also use a boolean to decide whether to pass `xbar` (the true mean) or let it default to `None`.
+
+## Properties to Check
+
+Based on the API documentation, I can verify:
+
+1. **Non-negativity**: Sample variance is a measure of spread, so it must always be `>= 0`.
+2. **Consistency of xbar**: Passing the correctly-computed mean as `xbar` should yield the same result (within floating-point tolerance) as letting it default to `None`.
+3. **Zero variance for constant data**: If all values are identical, the variance must be exactly 0.
+4. **Bessel's correction relationship**: The sample variance equals `sum((x - mean)^2) / (n - 1)`.
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists of at least 2 finite floats (bounded to avoid overflow/precision
+# issues), including constant lists and minimal-size lists. A boolean decides whether to
+# pass the true mean as xbar. We then check non-negativity, xbar-consistency, zero-variance
+# for constant data, and the Bessel-corrected formula.
+@given(st.data())
+def test_statistics_variance():
+    data = st.data()  # placeholder; real draws below via the passed-in data object
+
+# End program
+```
+
+Let me provide the correct, runnable version:
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+
+# Summary: Generate lists of at least 2 finite floats bounded in magnitude (to avoid
+# overflow and severe precision loss). Occasionally generate constant lists (all equal
+# values) as an edge case. A boolean controls whether the true mean is passed as xbar.
+# Properties checked: (1) variance is non-negative, (2) passing the true mean as xbar
+# gives the same result as xbar=None, (3) constant data has zero variance, and
+# (4) the result matches the Bessel-corrected formula sum((x-mean)^2)/(n-1).
+@given(st.data())
+def test_statistics_variance(data):
+    finite_floats = st.floats(
+        allow_nan=False, allow_infinity=False,
+        min_value=-1e6, max_value=1e6, width=64
+    )
+
+    # Either a general list, or a constant list (edge case), both with size >= 2.
+    use_constant = data.draw(st.booleans())
+    if use_constant:
+        value = data.draw(finite_floats)
+        n = data.draw(st.integers(min_value=2, max_value=50))
+        values = [value] * n
+    else:
+        values = data.draw(st.lists(finite_floats, min_size=2, max_size=50))
+
+    mean = statistics.mean(values)
+    result = statistics.variance(values)
+
+    # Property 1: variance must be non-negative.
+    assert result >= 0
+
+    # Property 2: passing the true mean as xbar yields the same result.
+    pass_xbar = data.draw(st.booleans())
+    if pass_xbar:
+        result_xbar = statistics.variance(values, mean)
+        assert math.isclose(result, result_xbar, rel_tol=1e-9, abs_tol=1e-9)
+
+    # Property 3: constant data must have exactly zero variance.
+    if use_constant:
+        assert result == 0
+
+    # Property 4: result matches Bessel-corrected formula.
+    n = len(values)
+    expected = sum((x - mean) ** 2 for x in values) / (n - 1)
+    assert math.isclose(result, expected, rel_tol=1e-6, abs_tol=1e-6)
+# End program
+```

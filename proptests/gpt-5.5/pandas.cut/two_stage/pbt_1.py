@@ -1,0 +1,225 @@
+from hypothesis import given, strategies as st
+import pandas
+
+
+FINITE_FLOAT = st.floats(
+    min_value=-2000,
+    max_value=2000,
+    allow_nan=False,
+    allow_infinity=False,
+    width=64,
+)
+
+
+def _interval_contains(interval, value):
+    left_ok = value > interval.left or (
+        value == interval.left and interval.closed_left
+    )
+    right_ok = value < interval.right or (
+        value == interval.right and interval.closed_right
+    )
+    return left_ok and right_ok
+
+
+@given(st.data())
+def test_pandas_cut_preserves_length_and_series_index(data):
+    values = data.draw(
+        st.lists(
+            st.integers(min_value=-1_000_000, max_value=1_000_000),
+            min_size=1,
+            max_size=50,
+        )
+    )
+    bins = data.draw(st.integers(min_value=1, max_value=10))
+
+    index = [f"row_{i}" for i in range(len(values))]
+    series = pandas.Series(values, index=index)
+
+    series_result = pandas.cut(series, bins)
+    array_result = pandas.cut(values, bins)
+
+    assert len(series_result) == len(series)
+    assert list(series_result.index) == index
+    assert len(array_result) == len(values)
+
+
+@given(st.data())
+def test_pandas_cut_assigns_values_to_expected_explicit_bins(data):
+    edges = sorted(
+        data.draw(
+            st.lists(
+                st.integers(min_value=-1000, max_value=1000),
+                min_size=2,
+                max_size=12,
+                unique=True,
+            )
+        )
+    )
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                FINITE_FLOAT,
+                st.sampled_from([float(edge) for edge in edges]),
+                st.just(float("nan")),
+            ),
+            min_size=0,
+            max_size=50,
+        )
+    )
+    right = data.draw(st.booleans())
+    include_lowest = data.draw(st.booleans())
+
+    result = pandas.cut(
+        values,
+        edges,
+        labels=False,
+        right=right,
+        include_lowest=include_lowest,
+    )
+
+    for position, value in enumerate(values):
+        if pandas.isna(value):
+            assert pandas.isna(result[position])
+            continue
+
+        expected_code = None
+        for code in range(len(edges) - 1):
+            left_edge = edges[code]
+            right_edge = edges[code + 1]
+
+            if right:
+                in_bin = left_edge < value <= right_edge
+                if include_lowest and code == 0:
+                    in_bin = left_edge <= value <= right_edge
+            else:
+                in_bin = left_edge <= value < right_edge
+
+            if in_bin:
+                expected_code = code
+                break
+
+        if expected_code is None:
+            assert pandas.isna(result[position])
+        else:
+            assert int(result[position]) == expected_code
+
+
+@given(st.data())
+def test_pandas_cut_retbins_for_scalar_bins_are_monotonic_and_cover_input(data):
+    values = data.draw(
+        st.lists(
+            st.integers(min_value=-1_000_000, max_value=1_000_000),
+            min_size=1,
+            max_size=50,
+        )
+    )
+    bin_count = data.draw(st.integers(min_value=1, max_value=20))
+
+    result, returned_bins = pandas.cut(values, bin_count, retbins=True)
+
+    assert len(result) == len(values)
+    assert len(returned_bins) == bin_count + 1
+    assert all(
+        returned_bins[i] < returned_bins[i + 1]
+        for i in range(len(returned_bins) - 1)
+    )
+    assert returned_bins[0] <= min(values)
+    assert returned_bins[-1] >= max(values)
+
+
+@given(st.data())
+def test_pandas_cut_labels_and_integer_codes_have_expected_domains(data):
+    bin_count = data.draw(st.integers(min_value=1, max_value=10))
+    edges = sorted(
+        data.draw(
+            st.lists(
+                st.integers(min_value=-1000, max_value=1000),
+                min_size=bin_count + 1,
+                max_size=bin_count + 1,
+                unique=True,
+            )
+        )
+    )
+    labels = [f"label_{i}" for i in range(bin_count)]
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                FINITE_FLOAT,
+                st.sampled_from([float(edge) for edge in edges]),
+                st.just(float("nan")),
+            ),
+            min_size=0,
+            max_size=50,
+        )
+    )
+    ordered = data.draw(st.booleans())
+
+    labeled_result = pandas.cut(
+        values,
+        edges,
+        labels=labels,
+        ordered=ordered,
+    )
+    coded_result = pandas.cut(values, edges, labels=False)
+
+    assert list(labeled_result.categories) == labels
+    assert labeled_result.ordered == ordered
+
+    for value in labeled_result:
+        if not pandas.isna(value):
+            assert value in labels
+
+    for code in coded_result:
+        if not pandas.isna(code):
+            assert int(code) == code
+            assert 0 <= int(code) < bin_count
+
+
+@given(st.data())
+def test_pandas_cut_intervalindex_categories_are_exact_and_cover_only_members(data):
+    interval_count = data.draw(st.integers(min_value=1, max_value=6))
+    base = data.draw(st.integers(min_value=-100, max_value=100))
+    closed = data.draw(st.sampled_from(["right", "left", "both", "neither"]))
+
+    tuples = []
+    probe_values = [float("nan"), float(base - 2), float(base + 3 * interval_count + 2)]
+    for i in range(interval_count):
+        left = base + 3 * i
+        right = left + data.draw(st.integers(min_value=1, max_value=2))
+        tuples.append((left, right))
+        probe_values.extend([float(left), float(right), (left + right) / 2])
+
+    bins = pandas.IntervalIndex.from_tuples(tuples, closed=closed)
+    values = data.draw(
+        st.lists(
+            st.one_of(
+                FINITE_FLOAT,
+                st.sampled_from(probe_values),
+            ),
+            min_size=0,
+            max_size=50,
+        )
+    )
+
+    result = pandas.cut(values, bins)
+
+    assert result.categories.equals(bins)
+
+    for position, value in enumerate(values):
+        if pandas.isna(value):
+            assert pandas.isna(result[position])
+            continue
+
+        matching_intervals = [
+            interval for interval in bins if _interval_contains(interval, value)
+        ]
+
+        assert len(matching_intervals) <= 1
+
+        if not matching_intervals:
+            assert pandas.isna(result[position])
+        else:
+            assert result[position] == matching_intervals[0]
+
+
+# End program

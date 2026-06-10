@@ -1,0 +1,177 @@
+```python
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _prod(shape):
+    result = 1
+    for dimension in shape:
+        result *= dimension
+    return result
+
+
+_SMALL_SHAPES = []
+
+for d0 in range(0, 6):
+    shape = (d0,)
+    if _prod(shape) <= 40:
+        _SMALL_SHAPES.append(shape)
+
+for d0 in range(0, 6):
+    for d1 in range(0, 6):
+        shape = (d0, d1)
+        if _prod(shape) <= 40:
+            _SMALL_SHAPES.append(shape)
+
+for d0 in range(0, 6):
+    for d1 in range(0, 6):
+        for d2 in range(0, 6):
+            shape = (d0, d1, d2)
+            if _prod(shape) <= 40:
+                _SMALL_SHAPES.append(shape)
+
+
+def _axis_values(shape):
+    return [None] + list(range(-len(shape), len(shape)))
+
+
+def _draw_array_and_axis(data, min_value=-1000, max_value=1000):
+    shape = data.draw(st.sampled_from(_SMALL_SHAPES))
+    size = _prod(shape)
+    values = data.draw(
+        st.lists(
+            st.integers(min_value=min_value, max_value=max_value),
+            min_size=size,
+            max_size=size,
+        )
+    )
+    array = numpy.array(values, dtype=numpy.int64).reshape(shape)
+    axis = data.draw(st.sampled_from(_axis_values(shape)))
+    return array, axis
+
+
+def _manual_cumsum(array, axis, dtype):
+    output_dtype = numpy.dtype(dtype) if dtype is not None else numpy.dtype(numpy.int64)
+
+    if axis is None:
+        total = 0
+        values = []
+        for value in array.ravel():
+            total += int(value)
+            values.append(total)
+        return numpy.array(values, dtype=output_dtype)
+
+    normalized_axis = axis % array.ndim
+    result = numpy.empty(array.shape, dtype=output_dtype)
+    prefix_shape = array.shape[:normalized_axis] + array.shape[normalized_axis + 1 :]
+
+    for prefix in numpy.ndindex(prefix_shape):
+        total = 0
+        for index_on_axis in range(array.shape[normalized_axis]):
+            index = (
+                prefix[:normalized_axis]
+                + (index_on_axis,)
+                + prefix[normalized_axis:]
+            )
+            total += int(array[index])
+            result[index] = total
+
+    return result
+
+
+@given(st.data())
+def test_numpy_cumsum_shape_and_size_property(data):
+    array, axis = _draw_array_and_axis(data)
+    dtype = data.draw(st.sampled_from([None, numpy.int64, numpy.float64]))
+
+    result = numpy.cumsum(array, axis=axis, dtype=dtype)
+
+    assert result.size == array.size
+
+    if axis is None:
+        assert result.shape == (array.size,)
+    else:
+        assert result.shape == array.shape
+
+    if dtype is not None:
+        assert result.dtype == numpy.dtype(dtype)
+
+
+@given(st.data())
+def test_numpy_cumsum_values_are_cumulative_sums_property(data):
+    array, axis = _draw_array_and_axis(data)
+    dtype = data.draw(st.sampled_from([None, numpy.int64, numpy.float64]))
+
+    result = numpy.cumsum(array, axis=axis, dtype=dtype)
+    expected = _manual_cumsum(array, axis=axis, dtype=dtype)
+
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_cumsum_first_value_matches_input_property(data):
+    array, axis = _draw_array_and_axis(data)
+
+    result = numpy.cumsum(array, axis=axis)
+
+    if axis is None:
+        if array.size == 0:
+            return
+        assert result[0] == array.ravel()[0]
+        return
+
+    normalized_axis = axis % array.ndim
+
+    if array.shape[normalized_axis] == 0:
+        return
+
+    prefix_shape = array.shape[:normalized_axis] + array.shape[normalized_axis + 1 :]
+
+    for prefix in numpy.ndindex(prefix_shape):
+        index = prefix[:normalized_axis] + (0,) + prefix[normalized_axis:]
+        assert result[index] == array[index]
+
+
+@given(st.data())
+def test_numpy_cumsum_consecutive_difference_property(data):
+    array, axis = _draw_array_and_axis(data)
+
+    result = numpy.cumsum(array, axis=axis)
+
+    if axis is None:
+        if array.size <= 1:
+            return
+        assert numpy.array_equal(numpy.diff(result), array.ravel()[1:])
+        return
+
+    normalized_axis = axis % array.ndim
+
+    if array.shape[normalized_axis] <= 1:
+        return
+
+    differences = numpy.diff(result, axis=normalized_axis)
+    expected = numpy.take(
+        array,
+        indices=list(range(1, array.shape[normalized_axis])),
+        axis=normalized_axis,
+    )
+
+    assert numpy.array_equal(differences, expected)
+
+
+@given(st.data())
+def test_numpy_cumsum_out_parameter_property(data):
+    array, axis = _draw_array_and_axis(data, min_value=-100, max_value=100)
+    out_dtype = data.draw(st.sampled_from([numpy.int64, numpy.float64]))
+
+    expected = numpy.cumsum(array, axis=axis)
+    out = numpy.empty(expected.shape, dtype=out_dtype)
+
+    result = numpy.cumsum(array, axis=axis, out=out)
+
+    assert result is out
+    assert numpy.array_equal(out, expected.astype(out_dtype))
+
+
+# End program
+```

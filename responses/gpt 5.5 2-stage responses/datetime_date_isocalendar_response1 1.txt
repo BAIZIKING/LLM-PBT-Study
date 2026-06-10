@@ -1,0 +1,9 @@
+1. The result has exactly three named components: `year`, `week`, and `weekday`.
+
+2. The `weekday` value is always in the range 1 through 7, where Monday is 1 and Sunday is 7.
+
+3. The `week` value is always in the range 1 through 53.
+
+4. The ISO `year` is always either the Gregorian year of the input date, the previous Gregorian year, or the next Gregorian year.
+
+5. The returned ISO calendar components uniquely identify the original date: converting the returned `year`, `week`, and `weekday` back to a date should produce the input date.

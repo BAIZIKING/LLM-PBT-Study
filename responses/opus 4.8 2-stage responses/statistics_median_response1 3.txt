@@ -1,0 +1,9 @@
+1. The median is always a value that lies within the range of the data, i.e., it is greater than or equal to the minimum value and less than or equal to the maximum value of the input.
+
+2. For an odd-length input, the median is an actual element of the data; for an even-length input, the median equals the average of the two middle elements of the sorted data.
+
+3. The median is invariant under reordering (permutation) of the input data, since it depends only on the sorted values.
+
+4. For input data with an odd number of elements, the number of data points strictly less than the median equals the number of data points strictly greater than the median (when there are no duplicate values).
+
+5. The median is equivariant under linear transformations: scaling all data by a constant c and shifting by a constant d transforms the median to c times the original median plus d.

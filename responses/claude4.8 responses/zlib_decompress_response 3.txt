@@ -1,0 +1,68 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To generate a wide variety of inputs and edge cases for `zlib.decompress`, I'll focus on producing **valid compressed data** paired with **matching `wbits` values**, since the most meaningful property is the round-trip (compress then decompress). Random raw bytes would almost always raise errors and wouldn't exercise the decompression logic.
+
+My strategy:
+1. **Generate diverse original payloads** using `st.binary()` with sizes ranging from empty (`min_size=0`) to fairly large, covering edge cases like empty data, single bytes, and repetitive/random content.
+2. **Cover all format families** by selecting a `wbits` window-size logarithm (8–15) and mapping it to the four format variants the API supports:
+   - zlib format: `wbits` in `+8..+15`
+   - raw format: `wbits` in `-8..-15`
+   - gzip format: `wbits` in `+24..+31` (16 + window)
+   - auto-detect (zlib/gzip): `wbits` in `+40..+47` (32 + window)
+3. **Compress using a matching `compressobj`** so the compressed stream has the correct header/trailer for the chosen format. For the auto-detect case, randomly pick zlib or gzip compression since auto-detect accepts both.
+4. **Vary `bufsize`** across a range (including small values like 1) to exercise the buffer-growth logic, since the docs say the buffer grows as needed regardless of `bufsize`.
+5. Note: the auto-detect window (`+40` family) must be paired with a window size **not smaller** than the compression window, so I use a sufficiently large window for the auto case.
+
+## Properties to Check
+
+Based on the API documentation:
+1. **Round-trip correctness**: `zlib.decompress(compressed, wbits, bufsize)` must return exactly the original uncompressed data.
+2. **Return type**: The result must be a `bytes` object.
+3. **`bufsize` independence**: The decompressed result must be identical regardless of the initial `bufsize` (the buffer grows as needed; tuning it only saves `malloc` calls and must not affect correctness).
+
+```python
+from hypothesis import given, strategies as st
+import zlib
+
+# Summary: Generate a random binary payload, then compress it with a randomly
+# chosen format family (zlib / raw / gzip / auto-detect) and matching window
+# size, producing a (compressed_data, wbits) pair guaranteed valid for
+# decompression. Also vary bufsize. Check that decompression round-trips back
+# to the original bytes, returns a bytes object, and is independent of bufsize.
+@given(st.data())
+def test_zlib_decompress(data):
+    original = data.draw(st.binary(min_size=0, max_size=2000))
+    window = data.draw(st.integers(min_value=9, max_value=15))
+    bufsize = data.draw(st.integers(min_value=1, max_value=4096))
+    fmt = data.draw(st.sampled_from(["zlib", "raw", "gzip", "auto"]))
+
+    if fmt == "zlib":
+        compress_wbits = window           # +8..+15
+        decompress_wbits = window
+    elif fmt == "raw":
+        compress_wbits = -window          # -8..-15
+        decompress_wbits = -window
+    elif fmt == "gzip":
+        compress_wbits = 16 + window      # +24..+31
+        decompress_wbits = 16 + window
+    else:  # auto: accepts either zlib or gzip
+        # randomly compress as zlib or gzip
+        use_gzip = data.draw(st.booleans())
+        compress_wbits = (16 + window) if use_gzip else window
+        decompress_wbits = 32 + window    # +40..+47
+
+    co = zlib.compressobj(level=6, wbits=compress_wbits)
+    compressed = co.compress(original) + co.flush()
+
+    # Property 1 & 2: round-trip correctness and bytes return type
+    result = zlib.decompress(compressed, wbits=decompress_wbits, bufsize=bufsize)
+    assert isinstance(result, bytes)
+    assert result == original
+
+    # Property 3: result is independent of the initial bufsize
+    result_other = zlib.decompress(compressed, wbits=decompress_wbits, bufsize=1)
+    assert result_other == result
+# End program
+```

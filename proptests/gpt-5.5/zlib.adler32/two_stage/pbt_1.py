@@ -1,0 +1,60 @@
+from hypothesis import given, strategies as st
+import zlib
+
+UINT32_MAX = 2**32 - 1
+
+
+@given(st.data())
+def test_zlib_adler32_result_is_unsigned_32_bit_integer(data):
+    payload = data.draw(st.binary(max_size=8192))
+    value = data.draw(st.integers(min_value=0, max_value=UINT32_MAX))
+
+    result = zlib.adler32(payload, value)
+
+    assert isinstance(result, int)
+    assert 0 <= result <= UINT32_MAX
+
+
+@given(st.data())
+def test_zlib_adler32_is_deterministic(data):
+    payload = data.draw(st.binary(max_size=8192))
+    value = data.draw(st.integers(min_value=0, max_value=UINT32_MAX))
+
+    result1 = zlib.adler32(payload, value)
+    result2 = zlib.adler32(payload, value)
+
+    assert result1 == result2
+
+
+@given(st.data())
+def test_zlib_adler32_default_value_is_one(data):
+    payload = data.draw(st.binary(max_size=8192))
+
+    result_with_default = zlib.adler32(payload)
+    result_with_explicit_one = zlib.adler32(payload, 1)
+
+    assert result_with_default == result_with_explicit_one
+
+
+@given(st.data())
+def test_zlib_adler32_empty_data_preserves_starting_value(data):
+    value = data.draw(st.integers(min_value=0, max_value=UINT32_MAX))
+
+    assert zlib.adler32(b"", value) == value
+    assert zlib.adler32(b"") == 1
+
+
+@given(st.data())
+def test_zlib_adler32_composes_incrementally(data):
+    payload1 = data.draw(st.binary(max_size=4096))
+    payload2 = data.draw(st.binary(max_size=4096))
+    value = data.draw(st.integers(min_value=0, max_value=UINT32_MAX))
+
+    intermediate = zlib.adler32(payload1, value)
+    incremental_result = zlib.adler32(payload2, intermediate)
+    one_shot_result = zlib.adler32(payload1 + payload2, value)
+
+    assert incremental_result == one_shot_result
+
+
+# End program

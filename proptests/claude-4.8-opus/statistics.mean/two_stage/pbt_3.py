@@ -1,0 +1,70 @@
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+# Strategy for finite, bounded floats to avoid overflow/inf/nan issues
+finite_floats = st.floats(
+    allow_nan=False,
+    allow_infinity=False,
+    min_value=-1e9,
+    max_value=1e9,
+    width=64,
+)
+
+# Non-empty lists of finite floats
+float_lists = st.lists(finite_floats, min_size=1, max_size=100)
+
+
+@given(data=float_lists)
+def test_statistics_mean_within_bounds(data):
+    result = statistics.mean(data)
+    # The mean must lie between min and max of the data (with tolerance for fp error)
+    lo, hi = min(data), max(data)
+    tol = 1e-6 * (1 + abs(lo) + abs(hi))
+    assert lo - tol <= result <= hi + tol
+# End program
+
+
+@given(value=finite_floats, n=st.integers(min_value=1, max_value=100))
+def test_statistics_mean_repeated_value(value, n):
+    data = [value] * n
+    result = statistics.mean(data)
+    # Mean of repeated identical values equals that value
+    assert math.isclose(result, value, rel_tol=1e-9, abs_tol=1e-9)
+# End program
+
+
+@given(data=float_lists, c=finite_floats)
+def test_statistics_mean_shift_invariance(data, c):
+    base = statistics.mean(data)
+    shifted = statistics.mean([x + c for x in data])
+    # Adding c to each element increases the mean by c
+    expected = base + c
+    tol = 1e-6 * (1 + abs(expected))
+    assert math.isclose(shifted, expected, rel_tol=1e-6, abs_tol=tol)
+# End program
+
+
+@given(
+    data=float_lists,
+    c=st.floats(allow_nan=False, allow_infinity=False, min_value=-1e3, max_value=1e3),
+)
+def test_statistics_mean_scale_invariance(data, c):
+    base = statistics.mean(data)
+    scaled = statistics.mean([x * c for x in data])
+    # Multiplying each element by c multiplies the mean by c
+    expected = base * c
+    tol = 1e-6 * (1 + abs(expected))
+    assert math.isclose(scaled, expected, rel_tol=1e-6, abs_tol=tol)
+# End program
+
+
+@given(data=float_lists)
+def test_statistics_mean_times_count_equals_sum(data):
+    result = statistics.mean(data)
+    total = sum(data)
+    expected = result * len(data)
+    # mean * n should equal the sum of the data
+    tol = 1e-6 * (1 + abs(total))
+    assert math.isclose(expected, total, rel_tol=1e-6, abs_tol=tol)
+# End program

@@ -1,0 +1,11 @@
+Here are five properties on the output of `datetime.fromtimestamp` suitable for property-based testing:
+
+1. The return value is always an instance of `datetime.datetime`.
+
+2. When `tz` is `None` (or omitted), the returned datetime object is naive (its `tzinfo` attribute is `None`); when `tz` is a non-None tzinfo instance, the returned datetime object is aware (its `tzinfo` attribute is not `None` and corresponds to the provided `tz`).
+
+3. Round-tripping is consistent: converting the returned datetime back to a timestamp (via `.timestamp()`) yields a value equal (within sub-second rounding) to the original input timestamp, at least for non-ambiguous times.
+
+4. The `fold` attribute of the returned datetime is always either 0 or 1.
+
+5. The conversion is monotonic/order-preserving: for two input timestamps where one is greater than the other (using the same `tz`), the resulting datetime objects preserve that ordering (greater timestamp yields a datetime that is greater than or equal to the other), accounting for leap-second-induced equality.

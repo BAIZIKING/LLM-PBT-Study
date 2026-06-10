@@ -1,0 +1,9 @@
+1. The output never contains raw `<` or `>` characters.
+
+2. Every `&` character from the input is represented in the output as `&amp;`.
+
+3. If `quote=True`, the output contains no raw double quote `"` or single quote `'` characters; they are escaped as `&quot;` and `&#x27;` respectively.
+
+4. If `quote=False`, double quote `"` and single quote `'` characters from the input are preserved unchanged in the output.
+
+5. Characters other than `&`, `<`, `>`, and, when `quote=True`, `"` and `'`, appear in the output unchanged and in the same relative order as in the input.

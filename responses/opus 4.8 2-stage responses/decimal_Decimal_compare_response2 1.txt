@@ -1,0 +1,110 @@
+```python
+from hypothesis import given, strategies as st
+import decimal
+from decimal import Decimal
+
+# Strategy for generating Decimal values, including NaN, Infinity, and large numbers.
+decimal_strategy = st.one_of(
+    st.decimals(allow_nan=True, allow_infinity=True),
+    st.integers().map(Decimal),
+    st.floats(allow_nan=True, allow_infinity=True).map(lambda x: Decimal(str(x))),
+    st.sampled_from([
+        Decimal('NaN'),
+        Decimal('-NaN'),
+        Decimal('sNaN'),
+        Decimal('Infinity'),
+        Decimal('-Infinity'),
+        Decimal('0'),
+        Decimal('-0'),
+        Decimal('1E+1000'),
+        Decimal('-1E+1000'),
+        Decimal('1E-1000'),
+    ]),
+)
+
+
+@given(st.data())
+def test_decimal_Decimal_compare_property():
+    a = data.draw(decimal_strategy) if False else None  # placeholder, replaced below
+    # The above line is replaced by proper draws below.
+
+# End program
+```
+
+Let me rewrite this correctly with the proper structure:
+
+```python
+from hypothesis import given, strategies as st
+import decimal
+from decimal import Decimal
+
+decimal_strategy = st.one_of(
+    st.decimals(allow_nan=True, allow_infinity=True),
+    st.integers().map(Decimal),
+    st.floats(allow_nan=True, allow_infinity=True).map(lambda x: Decimal(str(x))),
+    st.sampled_from([
+        Decimal('NaN'),
+        Decimal('-NaN'),
+        Decimal('Infinity'),
+        Decimal('-Infinity'),
+        Decimal('0'),
+        Decimal('-0'),
+        Decimal('1E+1000'),
+        Decimal('-1E+1000'),
+        Decimal('1E-1000'),
+    ]),
+)
+
+
+@given(st.data())
+def test_decimal_Decimal_compare_property(data):
+    a = data.draw(decimal_strategy, label="a")
+    b = data.draw(decimal_strategy, label="b")
+
+    # Use a context that does not trap NaN-related operations.
+    ctx = decimal.Context(traps=[])
+
+    try:
+        result = a.compare(b, context=ctx)
+    except decimal.InvalidOperation:
+        # sNaN may cause InvalidOperation; skip such cases gracefully.
+        return
+
+    # Property 1: The result is always a Decimal instance.
+    assert isinstance(result, Decimal)
+
+    a_is_nan = a.is_nan()
+    b_is_nan = b.is_nan()
+    either_nan = a_is_nan or b_is_nan
+
+    # Property 2: The result is one of -1, 0, 1, or NaN.
+    if result.is_nan():
+        possible = True
+    else:
+        possible = result in (Decimal('-1'), Decimal('0'), Decimal('1'))
+    assert possible, f"Unexpected result: {result}"
+
+    # Property 3: NaN iff either operand is NaN.
+    if either_nan:
+        assert result.is_nan()
+    else:
+        assert not result.is_nan()
+
+    # Property 4: Antisymmetry for non-NaN operands.
+    if not either_nan:
+        reverse = b.compare(a, context=ctx)
+        assert result == -reverse, (
+            f"Antisymmetry failed: compare(a,b)={result}, "
+            f"compare(b,a)={reverse}"
+        )
+
+    # Property 5: Consistency with standard ordering operators.
+    if not either_nan:
+        if a < b:
+            assert result == Decimal('-1')
+        elif a == b:
+            assert result == Decimal('0')
+        else:  # a > b
+            assert result == Decimal('1')
+# End program
+```

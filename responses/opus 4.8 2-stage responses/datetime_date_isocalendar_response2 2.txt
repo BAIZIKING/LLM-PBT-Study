@@ -1,0 +1,40 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+
+@given(d=st.dates())
+def test_isocalendar_returns_three_named_components(d):
+    result = d.isocalendar()
+    # Property 1: named tuple with exactly three components year, week, weekday
+    assert len(result) == 3
+    assert result.year == result[0]
+    assert result.week == result[1]
+    assert result.weekday == result[2]
+
+@given(d=st.dates())
+def test_isocalendar_week_in_valid_range(d):
+    result = d.isocalendar()
+    # Property 2: week is an integer between 1 and 53 inclusive
+    assert isinstance(result.week, int)
+    assert 1 <= result.week <= 53
+
+@given(d=st.dates())
+def test_isocalendar_weekday_in_valid_range(d):
+    result = d.isocalendar()
+    # Property 3: weekday is an integer between 1 and 7 inclusive
+    assert isinstance(result.weekday, int)
+    assert 1 <= result.weekday <= 7
+
+@given(d=st.dates())
+def test_isocalendar_weekday_matches_isoweekday(d):
+    result = d.isocalendar()
+    # Property 4: weekday must match the date's isoweekday()
+    assert result.weekday == d.isoweekday()
+
+@given(d=st.dates())
+def test_isocalendar_year_near_gregorian_year(d):
+    result = d.isocalendar()
+    # Property 5: ISO year is within +/-1 of the Gregorian year
+    assert result.year in (d.year - 1, d.year, d.year + 1)
+# End program
+```

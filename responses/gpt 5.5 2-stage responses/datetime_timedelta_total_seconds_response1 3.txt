@@ -1,0 +1,9 @@
+1. The output is a `float` representing the duration expressed in seconds.
+
+2. For any `timedelta` `td`, the output equals `td / timedelta(seconds=1)`.
+
+3. For any `timedelta` `td`, the output equals `td.days * 86400 + td.seconds + td.microseconds / 1_000_000`, subject to floating-point precision limits.
+
+4. For a zero-duration `timedelta`, the output is exactly `0.0`.
+
+5. For positive durations the output is positive, for negative durations the output is negative, and equal durations always produce equal outputs.

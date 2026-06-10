@@ -1,0 +1,75 @@
+# Strategy Explanation
+
+## Generation Strategy
+
+To exercise `statistics.variance` thoroughly, I want to generate lists of at least two real-valued numbers covering a wide variety of cases:
+
+1. **Value types**: Use floats (with reasonable bounds to avoid `inf`/`nan` and overflow issues). I'll restrict to finite floats and avoid NaN to keep results meaningful and verifiable.
+2. **List size**: Generate lists with `min_size=2` (since fewer than 2 raises `StatisticsError`, which is a separate concern).
+3. **Edge cases naturally covered**:
+   - Lists where all elements are identical (variance should be 0).
+   - Lists with negative, positive, and zero values.
+   - Small lists (size 2) and larger ones.
+4. **Bounded magnitudes**: Restrict floats to a moderate range (e.g., `-1e6` to `1e6`) so that float rounding errors stay manageable and we can validate mathematical properties reliably.
+
+## Properties to Check
+
+Based on the documentation, the following invariant properties hold:
+
+1. **Non-negativity**: Variance is a measure of spread, so it must be `>= 0` (allowing for tiny float error).
+2. **Zero for constant data**: If all data points are equal, the variance must be exactly 0.
+3. **Consistency with `xbar`**: Passing the actual mean as `xbar` must yield (approximately) the same result as letting the function compute the mean itself.
+4. **Definition / Bessel's correction**: The result must match the manual formula `sum((x - mean)**2) / (n - 1)`.
+5. **Translation invariance**: Adding a constant to every element does not change the variance.
+
+# Property Test
+
+```python
+from hypothesis import given, strategies as st
+import statistics
+import math
+
+# Summary: Generate lists (min size 2) of bounded finite floats to test variance.
+# We check non-negativity, zero-variance for constant data, consistency of the
+# xbar argument with auto-computed mean, agreement with the manual N-1 formula,
+# and translation invariance (shifting all values by a constant).
+@given(st.data())
+def test_statistics_variance(data):
+    values = data.draw(
+        st.lists(
+            st.floats(min_value=-1e6, max_value=1e6,
+                      allow_nan=False, allow_infinity=False),
+            min_size=2, max_size=50,
+        )
+    )
+
+    result = statistics.variance(values)
+    n = len(values)
+    mean = sum(values) / n
+
+    # Property 1: Variance is non-negative.
+    assert result >= -1e-9, f"Variance should be non-negative, got {result}"
+
+    # Property 2: Constant data has zero variance.
+    if all(v == values[0] for v in values):
+        assert math.isclose(result, 0.0, abs_tol=1e-9), \
+            f"Constant data should have variance 0, got {result}"
+
+    # Property 3: Passing the actual mean as xbar gives the same result.
+    result_with_xbar = statistics.variance(values, mean)
+    assert math.isclose(result, result_with_xbar, rel_tol=1e-9, abs_tol=1e-9), \
+        f"Variance with xbar ({result_with_xbar}) should match auto ({result})"
+
+    # Property 4: Matches the manual N-1 (Bessel's correction) formula.
+    expected = sum((x - mean) ** 2 for x in values) / (n - 1)
+    assert math.isclose(result, expected, rel_tol=1e-9, abs_tol=1e-6), \
+        f"Variance {result} should match manual formula {expected}"
+
+    # Property 5: Translation invariance (shift all values by a constant).
+    shift = 123.456
+    shifted = [v + shift for v in values]
+    result_shifted = statistics.variance(shifted)
+    assert math.isclose(result, result_shifted, rel_tol=1e-6, abs_tol=1e-6), \
+        f"Variance should be translation invariant: {result} vs {result_shifted}"
+# End program
+```

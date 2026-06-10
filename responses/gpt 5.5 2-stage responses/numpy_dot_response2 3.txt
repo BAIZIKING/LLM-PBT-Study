@@ -1,0 +1,203 @@
+```python
+from hypothesis import given, strategies as st
+import numpy
+
+
+def _prod(shape):
+    result = 1
+    for size in shape:
+        result *= size
+    return result
+
+
+@given(st.data())
+def test_numpy_dot_1d_inner_product_without_complex_conjugation(data):
+    n = data.draw(st.integers(min_value=0, max_value=10))
+
+    a_pairs = data.draw(
+        st.lists(
+            st.tuples(st.integers(-10, 10), st.integers(-10, 10)),
+            min_size=n,
+            max_size=n,
+        )
+    )
+    b_pairs = data.draw(
+        st.lists(
+            st.tuples(st.integers(-10, 10), st.integers(-10, 10)),
+            min_size=n,
+            max_size=n,
+        )
+    )
+
+    a_values = [complex(real, imag) for real, imag in a_pairs]
+    b_values = [complex(real, imag) for real, imag in b_pairs]
+
+    a = numpy.array(a_values, dtype=numpy.complex128)
+    b = numpy.array(b_values, dtype=numpy.complex128)
+
+    result = numpy.dot(a, b)
+    expected = sum((x * y for x, y in zip(a_values, b_values)), 0j)
+
+    assert result == expected
+
+
+@given(st.data())
+def test_numpy_dot_2d_matrix_product_shape_and_values(data):
+    m = data.draw(st.integers(min_value=0, max_value=5))
+    n = data.draw(st.integers(min_value=0, max_value=5))
+    p = data.draw(st.integers(min_value=0, max_value=5))
+
+    a_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=m * n, max_size=m * n)
+    )
+    b_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=n * p, max_size=n * p)
+    )
+
+    a = numpy.array(a_flat, dtype=numpy.int64).reshape((m, n))
+    b = numpy.array(b_flat, dtype=numpy.int64).reshape((n, p))
+
+    result = numpy.dot(a, b)
+
+    expected = numpy.zeros((m, p), dtype=numpy.int64)
+    for i in range(m):
+        for j in range(p):
+            expected[i, j] = sum(a[i, k] * b[k, j] for k in range(n))
+
+    assert result.shape == (m, p)
+    assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_dot_with_scalar_is_equivalent_to_multiply(data):
+    scalar = data.draw(st.integers(-10, 10))
+
+    ndim = data.draw(st.integers(min_value=0, max_value=3))
+    shape = tuple(
+        data.draw(st.lists(st.integers(0, 4), min_size=ndim, max_size=ndim))
+    )
+
+    size = _prod(shape)
+    values = data.draw(
+        st.lists(st.integers(-10, 10), min_size=size, max_size=size)
+    )
+
+    array = numpy.array(values, dtype=numpy.int64).reshape(shape)
+    zero_dim_scalar = numpy.array(scalar, dtype=numpy.int64)
+
+    left_result = numpy.dot(zero_dim_scalar, array)
+    right_result = numpy.dot(array, zero_dim_scalar)
+    expected = numpy.multiply(scalar, array)
+
+    assert numpy.array_equal(left_result, expected)
+    assert numpy.array_equal(right_result, expected)
+
+
+@given(st.data())
+def test_numpy_dot_nd_array_with_1d_array_sums_over_last_axis(data):
+    prefix_ndim = data.draw(st.integers(min_value=0, max_value=3))
+    prefix_shape = tuple(
+        data.draw(
+            st.lists(
+                st.integers(min_value=1, max_value=4),
+                min_size=prefix_ndim,
+                max_size=prefix_ndim,
+            )
+        )
+    )
+    n = data.draw(st.integers(min_value=0, max_value=5))
+
+    a_shape = prefix_shape + (n,)
+    a_size = _prod(a_shape)
+
+    a_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=a_size, max_size=a_size)
+    )
+    b_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=n, max_size=n)
+    )
+
+    a = numpy.array(a_flat, dtype=numpy.int64).reshape(a_shape)
+    b = numpy.array(b_flat, dtype=numpy.int64)
+
+    result = numpy.dot(a, b)
+
+    if prefix_shape == ():
+        expected = sum(a[t] * b[t] for t in range(n))
+        assert result.shape == ()
+        assert result == expected
+    else:
+        expected = numpy.zeros(prefix_shape, dtype=numpy.int64)
+        for index in numpy.ndindex(prefix_shape):
+            expected[index] = sum(a[index + (t,)] * b[t] for t in range(n))
+
+        assert result.shape == prefix_shape
+        assert numpy.array_equal(result, expected)
+
+
+@given(st.data())
+def test_numpy_dot_nd_arrays_sum_over_last_and_second_to_last_axes(data):
+    a_prefix_ndim = data.draw(st.integers(min_value=0, max_value=2))
+    b_prefix_ndim = data.draw(st.integers(min_value=0, max_value=2))
+
+    a_prefix_shape = tuple(
+        data.draw(
+            st.lists(
+                st.integers(min_value=1, max_value=3),
+                min_size=a_prefix_ndim,
+                max_size=a_prefix_ndim,
+            )
+        )
+    )
+    b_prefix_shape = tuple(
+        data.draw(
+            st.lists(
+                st.integers(min_value=1, max_value=3),
+                min_size=b_prefix_ndim,
+                max_size=b_prefix_ndim,
+            )
+        )
+    )
+
+    n = data.draw(st.integers(min_value=0, max_value=4))
+    p = data.draw(st.integers(min_value=1, max_value=4))
+
+    a_shape = a_prefix_shape + (n,)
+    b_shape = b_prefix_shape + (n, p)
+
+    a_size = _prod(a_shape)
+    b_size = _prod(b_shape)
+
+    a_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=a_size, max_size=a_size)
+    )
+    b_flat = data.draw(
+        st.lists(st.integers(-10, 10), min_size=b_size, max_size=b_size)
+    )
+
+    a = numpy.array(a_flat, dtype=numpy.int64).reshape(a_shape)
+    b = numpy.array(b_flat, dtype=numpy.int64).reshape(b_shape)
+
+    result = numpy.dot(a, b)
+
+    expected_shape = a_prefix_shape + b_prefix_shape + (p,)
+    expected = numpy.zeros(expected_shape, dtype=numpy.int64)
+
+    for index in numpy.ndindex(expected_shape):
+        a_index = index[:len(a_prefix_shape)]
+        b_prefix_index = index[
+            len(a_prefix_shape):len(a_prefix_shape) + len(b_prefix_shape)
+        ]
+        p_index = index[-1]
+
+        expected[index] = sum(
+            a[a_index + (t,)] * b[b_prefix_index + (t, p_index)]
+            for t in range(n)
+        )
+
+    assert result.shape == expected_shape
+    assert numpy.array_equal(result, expected)
+
+
+# End program
+```

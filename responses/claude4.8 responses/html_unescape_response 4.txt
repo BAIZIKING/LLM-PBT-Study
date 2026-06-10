@@ -1,0 +1,55 @@
+## Generation Strategy
+
+To exercise `html.unescape` thoroughly, I want inputs that contain a wide variety of character references mixed with arbitrary text:
+
+1. **Plain Unicode text** — `st.text()` to cover arbitrary characters, including ones that look like references but aren't complete.
+2. **Named character references** — sampled directly from `html.entities.html5` (the official HTML5 named reference table), e.g. `&gt;`, `&amp;`. This guarantees we hit valid named references and their known expansions.
+3. **Numeric references** — built from random codepoints in both decimal (`&#62;`) and hexadecimal (`&#x3e;`) forms, including edge cases (0, surrogates, out-of-range values) to test the "invalid reference" rules.
+4. **Composite strings** — concatenations of the above fragments so a single input can contain many references interleaved with text.
+
+## Properties to Check
+
+Based on the documentation, the key behaviors:
+
+1. **Idempotence-ish / known expansions**: For a known named reference like `&amp;`, unescaping must produce its documented character. We can build a string from known named refs and verify each maps correctly by comparing against the `html5` table.
+2. **Roundtrip with escape**: For any plain text, `html.escape` (which escapes `& < > " '`) followed by `html.unescape` must return the original text — escape/unescape are inverses on those characters.
+3. **Determinism / total function**: `unescape` always returns a `str` and never raises on any input.
+
+I'll combine these: generate composite strings, assert the result is always a `str` (totality), and additionally verify the escape→unescape roundtrip on the plain-text portion.
+
+```python
+from hypothesis import given, strategies as st
+import html
+from html.entities import html5
+
+# Summary: Generate composite strings mixing arbitrary text, official HTML5
+# named references, and decimal/hex numeric references (including edge
+# codepoints). Verify unescape is total (always returns str, never raises),
+# correctly expands known named references, and is the inverse of html.escape
+# on plain text.
+@given(st.data())
+def test_html_unescape(data):
+    # Strategy components
+    plain_text = st.text()
+    named_ref = st.sampled_from(list(html5.keys())).map(lambda k: "&" + k)
+    dec_ref = st.integers(min_value=0, max_value=0x11FFFF).map(lambda n: f"&#{n};")
+    hex_ref = st.integers(min_value=0, max_value=0x11FFFF).map(lambda n: f"&#x{n:x};")
+
+    fragment = st.one_of(plain_text, named_ref, dec_ref, hex_ref)
+    composite = data.draw(st.lists(fragment, max_size=20)).__iter__()
+    s = "".join(composite)
+
+    # Property 1: totality — always returns a str, never raises.
+    result = html.unescape(s)
+    assert isinstance(result, str)
+
+    # Property 2: known named references expand correctly.
+    name = data.draw(st.sampled_from(list(html5.keys())))
+    expected = html5[name]
+    assert html.unescape("&" + name) == expected
+
+    # Property 3: escape then unescape is identity on arbitrary text.
+    text = data.draw(st.text())
+    assert html.unescape(html.escape(text, quote=True)) == text
+# End program
+```

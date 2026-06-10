@@ -1,0 +1,9 @@
+1. For any valid `data` and starting `value`, the result is an integer in the unsigned 32-bit range: `0 <= result <= 2**32 - 1`.
+
+2. The function is deterministic: calling `zlib.adler32` with the same `data` and same starting `value` always produces the same result.
+
+3. Omitting `value` is equivalent to passing `1` as the starting value.
+
+4. For empty `data`, the checksum is unchanged from the starting value; with no explicit `value`, the result is `1`.
+
+5. Checksums compose incrementally: computing the checksum of `data1`, then using that result as the starting value for `data2`, gives the same result as computing the checksum of `data1 + data2` in one call.

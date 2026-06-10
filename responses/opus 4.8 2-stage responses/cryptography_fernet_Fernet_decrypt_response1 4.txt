@@ -1,0 +1,9 @@
+1. The output of `decrypt` is always of type `bytes`.
+
+2. Decrypting a token produced by `encrypt` on some plaintext returns exactly that original plaintext (round-trip property).
+
+3. If the token was created more than `ttl` seconds ago (and `ttl` is not None), `decrypt` raises `cryptography.fernet.InvalidToken` instead of returning output.
+
+4. If the token is malformed, tampered with, or has an invalid signature, `decrypt` raises `cryptography.fernet.InvalidToken` rather than returning a value.
+
+5. If `token` is not of type `bytes` or `str`, `decrypt` raises a `TypeError` rather than returning a value.

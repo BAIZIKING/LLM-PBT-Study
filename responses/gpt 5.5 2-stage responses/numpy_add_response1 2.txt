@@ -1,0 +1,9 @@
+1. The output shape is the common broadcasted shape of `x1` and `x2`; if both inputs are scalars, the output is a scalar.
+
+2. At every broadcasted position, the output value equals the element-wise sum of the corresponding values from `x1` and `x2`.
+
+3. For numeric inputs, addition is commutative: `numpy.add(x1, x2)` produces the same values as `numpy.add(x2, x1)`, subject to normal NumPy dtype and floating-point behavior.
+
+4. Adding zero preserves values: `numpy.add(x, 0)` or `numpy.add(x, zeros_like_broadcastable)` produces values equal to `x` after broadcasting.
+
+5. When `where` is supplied with an initialized `out`, positions where `where` is `True` contain the computed sums, and positions where `where` is `False` retain their original `out` values.

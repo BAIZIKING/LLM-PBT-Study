@@ -1,0 +1,88 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `statistics.geometric_mean`, I will use the following approach:
+
+1. **Valid inputs (positive numbers):** Generate lists of positive floats/ints to test the core functionality. I'll use a reasonable range (e.g., 0.001 to 1e6) to avoid overflow/underflow while still covering varied magnitudes.
+
+2. **Edge cases that should raise errors:**
+   - **Empty lists** → should raise `StatisticsError`
+   - **Lists containing zero** → should raise `StatisticsError`
+   - **Lists containing negative values** → should raise `StatisticsError`
+
+I'll use `st.one_of` to combine these different categories, allowing Hypothesis to explore both valid and invalid inputs in a single test.
+
+**Properties to Check:**
+
+Based on the API documentation, the key properties are:
+
+1. **Error conditions:** If the input is empty, contains a zero, or contains a negative value, `StatisticsError` must be raised.
+
+2. **Mathematical correctness for valid inputs:** For positive data, the geometric mean should equal `exp(mean(log(x_i)))`, equivalently the nth root of the product. I'll verify this against an independent computation using `math.fsum` of logarithms.
+
+3. **Bounds property:** The geometric mean of positive values must lie between the minimum and maximum of the data (inclusive), since it's a measure of central tendency.
+
+4. **Single element:** The geometric mean of a single positive value should equal that value.
+
+## Property Test
+
+```python
+from hypothesis import given, strategies as st
+import math
+import statistics
+import pytest
+
+# Summary: Generate lists that are either all-positive (valid), or contain
+# edge cases (empty, zero, or negative values) which should raise StatisticsError.
+# For valid inputs, verify the geometric mean equals exp(mean(log(x))), lies
+# within [min, max], and equals the element itself for single-element lists.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    # Strategy for valid positive numbers
+    positive_numbers = st.floats(
+        min_value=1e-3, max_value=1e6,
+        allow_nan=False, allow_infinity=False
+    )
+    valid_lists = st.lists(positive_numbers, min_size=1, max_size=20)
+
+    # Strategy for invalid lists: empty, or containing zero/negative
+    nonpositive_numbers = st.floats(
+        min_value=-1e6, max_value=0.0,
+        allow_nan=False, allow_infinity=False
+    )
+    any_numbers = st.one_of(positive_numbers, nonpositive_numbers)
+    invalid_lists = st.one_of(
+        st.just([]),  # empty
+        st.lists(any_numbers, min_size=1, max_size=20).filter(
+            lambda xs: any(x <= 0 for x in xs)
+        ),
+    )
+
+    sample = data.draw(st.one_of(valid_lists, invalid_lists))
+
+    # Determine whether this input should error per the documentation
+    should_error = (len(sample) == 0) or any(x <= 0 for x in sample)
+
+    if should_error:
+        with pytest.raises(statistics.StatisticsError):
+            statistics.geometric_mean(sample)
+    else:
+        result = statistics.geometric_mean(sample)
+
+        # Result must be a positive float
+        assert result > 0
+
+        # Property: geometric mean lies within [min, max] (allowing tolerance)
+        lo, hi = min(sample), max(sample)
+        assert lo <= result + 1e-6
+        assert result <= hi + 1e-6
+
+        # Property: matches exp(mean(log(x))) computed independently
+        expected = math.exp(math.fsum(math.log(x) for x in sample) / len(sample))
+        assert math.isclose(result, expected, rel_tol=1e-6, abs_tol=1e-9)
+
+        # Property: single-element list returns that element
+        if len(sample) == 1:
+            assert math.isclose(result, sample[0], rel_tol=1e-6, abs_tol=1e-9)
+# End program
+```

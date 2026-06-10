@@ -1,0 +1,9 @@
+1. The output is always a Python string.
+
+2. If the input contains no ampersand character (`&`), the output is exactly the same as the input.
+
+3. The output length, measured in Unicode code points, is never greater than the input length.
+
+4. Substrings that are not recognized as HTML character references are preserved unchanged in the output.
+
+5. For any valid Unicode code point that HTML5 does not treat specially or invalidly, equivalent decimal and hexadecimal numeric references produce the same corresponding Unicode character in the output.

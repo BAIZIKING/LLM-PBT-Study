@@ -1,0 +1,51 @@
+from hypothesis import given, strategies as st
+import statistics
+from fractions import Fraction
+
+safe_fractions = st.fractions(
+    min_value=Fraction(-10_000),
+    max_value=Fraction(10_000),
+    max_denominator=100,
+)
+
+non_empty_fraction_lists = st.lists(
+    safe_fractions,
+    min_size=1,
+    max_size=30,
+)
+
+@given(st.data())
+def test_statistics_mean_equals_sum_divided_by_count(data):
+    values = data.draw(non_empty_fraction_lists)
+    expected = sum(values, Fraction(0)) / len(values)
+    assert statistics.mean(values) == expected
+
+@given(st.data())
+def test_statistics_mean_is_invariant_under_reordering(data):
+    values = data.draw(non_empty_fraction_lists)
+    reordered = data.draw(st.permutations(values))
+    assert statistics.mean(values) == statistics.mean(reordered)
+
+@given(st.data())
+def test_statistics_mean_of_identical_values_is_that_value(data):
+    value = data.draw(safe_fractions)
+    count = data.draw(st.integers(min_value=1, max_value=30))
+    values = [value] * count
+    assert statistics.mean(values) == value
+
+@given(st.data())
+def test_statistics_mean_lies_between_minimum_and_maximum(data):
+    values = data.draw(non_empty_fraction_lists)
+    result = statistics.mean(values)
+    assert min(values) <= result <= max(values)
+
+@given(st.data())
+def test_statistics_mean_respects_affine_transformations(data):
+    values = data.draw(non_empty_fraction_lists)
+    scale = data.draw(safe_fractions)
+    offset = data.draw(safe_fractions)
+
+    transformed = [(scale * value) + offset for value in values]
+
+    assert statistics.mean(transformed) == (scale * statistics.mean(values)) + offset
+# End program

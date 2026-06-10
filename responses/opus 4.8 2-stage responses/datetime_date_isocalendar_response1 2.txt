@@ -1,0 +1,9 @@
+1. The output is a named tuple with exactly three components: `year`, `week`, and `weekday`.
+
+2. The `week` component is always an integer between 1 and 53 (inclusive).
+
+3. The `weekday` component is always an integer between 1 and 7 (inclusive), where 1 represents Monday and 7 represents Sunday.
+
+4. The `weekday` value must match the day-of-week of the input date (e.g., it equals the date's `isoweekday()`), so a Monday yields 1 and a Sunday yields 7.
+
+5. The ISO `year` is equal to, one less than, or one greater than the Gregorian year of the input date (it can differ near the start or end of the calendar year due to ISO week boundaries).

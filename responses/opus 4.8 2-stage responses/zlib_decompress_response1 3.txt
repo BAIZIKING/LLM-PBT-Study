@@ -1,0 +1,9 @@
+1. The output is always a `bytes` object.
+
+2. Round-trip property: decompressing data that was produced by `zlib.compress` (with a compatible wbits/format) yields exactly the original uncompressed bytes.
+
+3. For input that is not validly compressed data (or uses an incompatible wbits format/header), the function raises a `zlib.error` exception.
+
+4. The output is independent of the `bufsize` argument: decompressing the same data with different valid `bufsize` values produces identical results.
+
+5. When `wbits` is set to an automatic-detection mode (e.g., 0 for zlib auto window size, or 32+8..15 for auto zlib/gzip), the output matches what is produced when decompressing the same stream with the explicit corresponding wbits value.

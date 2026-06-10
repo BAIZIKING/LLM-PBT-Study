@@ -1,0 +1,64 @@
+from hypothesis import given, strategies as st
+import decimal
+import math
+from decimal import Decimal
+
+
+# Property 1: The output is always an instance of Decimal.
+@given(
+    st.one_of(
+        st.floats(allow_nan=True, allow_infinity=True),
+        st.integers(min_value=-10**50, max_value=10**50),
+    )
+)
+def test_decimal_Decimal_from_float_returns_decimal(f):
+    result = Decimal.from_float(f)
+    assert isinstance(result, Decimal)
+# End program
+
+
+# Property 2: For any finite float input, the output equals the exact value of
+# the float, and converting back yields the original float.
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_exact_value(f):
+    result = Decimal.from_float(f)
+    # Converting back to float yields the original float.
+    assert float(result) == f
+    # The output equals the exact decimal value of the input float.
+    assert result == Decimal(f)
+# End program
+
+
+# Property 3: The sign of the output matches the sign of the input.
+@given(st.floats(allow_nan=False, allow_infinity=False))
+def test_decimal_Decimal_from_float_sign(f):
+    result = Decimal.from_float(f)
+    # Use copysign to detect sign including signed zeros.
+    input_negative = math.copysign(1.0, f) < 0
+    output_negative = result.is_signed()
+    assert input_negative == output_negative
+# End program
+
+
+# Property 4: Special float values map to their decimal equivalents.
+@given(st.sampled_from([float('nan'), float('inf'), float('-inf')]))
+def test_decimal_Decimal_from_float_special_values(f):
+    result = Decimal.from_float(f)
+    if math.isnan(f):
+        assert result.is_nan()
+    elif f > 0:
+        assert result.is_infinite() and not result.is_signed()
+    else:
+        assert result.is_infinite() and result.is_signed()
+# End program
+
+
+# Property 5: For an integer input, the output is numerically equal to the
+# integer and has no fractional part.
+@given(st.integers(min_value=-10**50, max_value=10**50))
+def test_decimal_Decimal_from_float_integer(n):
+    result = Decimal.from_float(n)
+    assert result == Decimal(n)
+    # No fractional part: equals its own integral value.
+    assert result == result.to_integral_value()
+# End program

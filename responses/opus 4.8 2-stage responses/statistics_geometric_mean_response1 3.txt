@@ -1,0 +1,9 @@
+1. The output is always a non-negative float (specifically, a positive float for valid input, since all values must be positive).
+
+2. For a dataset where all elements are equal to some value c, the geometric mean equals c.
+
+3. The geometric mean is always bounded between the minimum and maximum values of the input data (inclusive).
+
+4. Multiplying every element in the data by a positive constant k multiplies the geometric mean by exactly k (scaling property).
+
+5. The geometric mean is less than or equal to the arithmetic mean of the same dataset (AM-GM inequality).

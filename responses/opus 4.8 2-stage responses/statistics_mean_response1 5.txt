@@ -1,0 +1,9 @@
+1. The mean of a list is always greater than or equal to the minimum element and less than or equal to the maximum element of the data.
+
+2. Adding a constant value to every element in the data increases the mean by exactly that constant value.
+
+3. Multiplying every element in the data by a constant factor multiplies the mean by that same factor.
+
+4. The mean of a list containing a single repeated value (or any list where all elements are equal) equals that value.
+
+5. The mean multiplied by the number of data points equals the sum of all the data points.

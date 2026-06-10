@@ -1,0 +1,148 @@
+## Strategy Explanation
+
+**Generation Strategy:**
+To generate a wide variety of inputs and edge cases for `Decimal.fma`, I'll create a custom strategy that builds `Decimal` values from multiple sources:
+- Small and large integers
+- Fractional values (from floats)
+- Special values like zero, negative numbers
+- Decimal strings with various precisions
+- Edge cases like very large/small magnitudes
+
+I'll use `st.one_of()` to mix integer-based decimals, float-based decimals, and string-based decimals. I'll avoid special values (NaN, Infinity) initially to keep the property checks deterministic, then constrain magnitudes to avoid overflow/excessive precision issues that could trigger context exceptions.
+
+**Properties to Check:**
+Based on the API documentation, `fma(other, third)` returns `self*other + third` with **no rounding of the intermediate product**. The key properties are:
+
+1. **Mathematical equivalence with exact intermediate**: `self.fma(other, third)` should equal computing the product exactly (without intermediate rounding) then adding `third`. We can verify this by comparing against a high-precision computation where the multiplication doesn't lose precision.
+
+2. **Documented example**: `Decimal(2).fma(3, 5) == Decimal('11')`.
+
+The cleanest invariant is that `fma` differs from naive `(self * other) + third` only by the absence of intermediate rounding. Using a context with sufficient precision, the multiplication is exact, so `fma` should equal the exactly-computed `self*other + third`.
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate Decimals from integers, floats, and numeric strings with
+# bounded magnitude/precision (no NaN/Inf). Verify fma(other, third) equals the
+# product computed WITHOUT intermediate rounding plus third, by comparing fma's
+# default-context result to an exact computation performed in a high-precision
+# context where self*other is exact.
+@given(st.data())
+def test_decimal_Decimal_fma():
+    decimals = st.one_of(
+        st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e6, max_value=1e6).map(lambda f: Decimal(str(f))),
+        st.from_regex(r"-?[0-9]{1,8}(\.[0-9]{1,8})?", fullmatch=True).map(Decimal),
+    )
+    self_val = data := None  # placeholder to keep linter calm
+    self_val = st_self = None
+
+    # draw the three operands
+    a = (yield_a := None)
+    a = (b := None)
+    a = (c := None)
+
+    self_val = (s := None)
+
+    # Actually draw values
+    s = (data := None)
+    # Use data.draw to obtain operands
+    pass
+
+```
+
+Let me rewrite that cleanly:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate Decimals from integers, floats, and numeric strings with
+# bounded magnitude/precision (no NaN/Inf). Verify fma(other, third) equals the
+# product computed WITHOUT intermediate rounding plus third: compute the exact
+# product in a very-high-precision context (so multiplication is exact), add
+# third, and compare to the result of fma run in that same high-precision
+# context (so the final add isn't lost either).
+@given(st.data())
+def test_decimal_Decimal_fma():
+    decimals = st.one_of(
+        st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e6, max_value=1e6).map(lambda f: Decimal(str(f))),
+        st.from_regex(r"-?[0-9]{1,8}(\.[0-9]{1,8})?", fullmatch=True).map(Decimal),
+    )
+    data = st.data()  # not used directly; pattern below uses the injected one
+
+# End program
+```
+
+The framework injects `data`. Here is the final, correct single test:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Generate Decimals from integers, floats, and numeric strings with
+# bounded magnitude/precision (no NaN/Inf). In a very-high-precision context the
+# intermediate product self*other is exact; therefore fma(other, third) must
+# equal (self*other)+third computed in that same context. We compare both inside
+# one high-precision localcontext to isolate the "no intermediate rounding"
+# property. Also assert the documented example Decimal(2).fma(3,5)==Decimal('11').
+@given(st.data())
+def test_decimal_Decimal_fma():
+    decimals = st.one_of(
+        st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e6, max_value=1e6).map(lambda f: Decimal(str(f))),
+        st.from_regex(r"-?[0-9]{1,8}(\.[0-9]{1,8})?", fullmatch=True).map(Decimal),
+    )
+    self_val = st.data().example() if False else None  # noqa: F841 (placeholder)
+
+    # documented example
+    assert Decimal(2).fma(3, 5) == Decimal('11')
+
+    self_val = (lambda d: d)(st.data())  # unused
+    # draw operands via the injected data object
+    drawn = test_decimal_Decimal_fma.hypothesis  # not used
+
+    return None
+```
+
+I apologize — let me give the single clean program without scratch code:
+
+```python
+from hypothesis import given, strategies as st
+from decimal import Decimal, localcontext
+
+# Summary: Build Decimals from bounded integers, finite floats, and numeric
+# strings (no NaN/Inf, modest magnitude/precision). The documented contract is
+# that fma computes self*other+third WITHOUT rounding the intermediate product.
+# In a very-high-precision context the product self*other is exact, so
+# fma(other, third) must equal (self*other)+third evaluated in that same
+# context. We assert this equality, plus the documented example.
+@given(st.data())
+def test_decimal_Decimal_fma(data):
+    decimals = st.one_of(
+        st.integers(min_value=-10**12, max_value=10**12).map(Decimal),
+        st.floats(allow_nan=False, allow_infinity=False,
+                  min_value=-1e6, max_value=1e6).map(lambda f: Decimal(str(f))),
+        st.from_regex(r"-?[0-9]{1,8}(\.[0-9]{1,8})?", fullmatch=True).map(Decimal),
+    )
+
+    a = data.draw(decimals)
+    b = data.draw(decimals)
+    c = data.draw(decimals)
+
+    # Documented example.
+    assert Decimal(2).fma(3, 5) == Decimal('11')
+
+    with localcontext() as ctx:
+        ctx.prec = 200  # high precision so a*b is exact and the add isn't lost
+        fma_result = a.fma(b, c, context=ctx)
+        plain_result = (a * b) + c
+
+    assert fma_result == plain_result
+# End program
+```

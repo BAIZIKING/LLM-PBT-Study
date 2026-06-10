@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `DataFrame.drop_duplicates`:
+
+1. **No duplicate rows remain in the output**: After applying `drop_duplicates`, there should be no duplicate rows in the result when considering the relevant columns (the `subset` if specified, otherwise all columns), unless `keep=False` in which case all rows that originally had duplicates are entirely absent.
+
+2. **Output is a subset of input rows**: Every row in the output DataFrame must exist as a row in the original input DataFrame (the function only removes rows, never adds or modifies them), and the columns and their order remain unchanged.
+
+3. **Output size is bounded and consistent with uniqueness**: The number of rows in the output is less than or equal to the number of rows in the input; furthermore, when `keep` is `'first'` or `'last'`, the output row count equals the number of unique combinations in the considered columns, and when `keep=False`, it equals the number of combinations that appeared exactly once.
+
+4. **`keep='first'` vs `keep='last'` preserve correct occurrences**: With `keep='first'`, for each group of duplicate rows the retained row corresponds to the earliest occurrence (lowest original index); with `keep='last'`, the retained row corresponds to the latest occurrence (highest original index).
+
+5. **`ignore_index` controls index labeling**: If `ignore_index=True`, the output index is exactly `0, 1, …, n-1` where `n` is the number of output rows; if `ignore_index=False`, the output retains the original index labels of the kept rows.

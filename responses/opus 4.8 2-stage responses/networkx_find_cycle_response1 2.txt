@@ -1,0 +1,9 @@
+1. The returned cycle must form a valid closed path: the edges, when traversed in order, must connect end-to-end (the head/endpoint of each edge connects to the tail/endpoint of the next edge), and the last edge must connect back to the start of the first edge.
+
+2. Every edge in the returned cycle must actually exist in the input graph G (each (u, v) or (u, v, key) corresponds to a real edge in G).
+
+3. When orientation is not None ('original', 'reverse', or 'ignore'), each returned edge tuple must include a final direction entry that is either 'forward' or 'reverse'; when orientation is None, no such direction entry is present and the edge tuples have the base length (2 for graphs, 3 for multigraphs).
+
+4. If a source node is provided, the returned cycle must contain (pass through) that source node, i.e., the source node appears as an endpoint of at least one edge in the returned cycle.
+
+5. If the function returns a cycle (does not raise NetworkXNoCycle), the graph must genuinely contain a cycle under the given orientation; conversely, if NetworkXNoCycle is raised, the graph (under the given orientation, and reachable from source if specified) must be acyclic.

@@ -1,0 +1,11 @@
+Here are five properties suitable for property-based testing of `numpy.sum`:
+
+1. **Identity/Reconstruction property**: Summing all elements of an array (with `axis=None`) yields the same scalar result as iteratively/manually adding each element together, within floating-point tolerance.
+
+2. **Shape reduction property**: When summing along a specific `axis`, the output shape equals the input shape with that axis removed; and when `keepdims=True`, the reduced axis is retained with size 1 instead.
+
+3. **Initial value property**: The result of `np.sum(a, initial=k)` equals `np.sum(a) + k`, since the `initial` value is added as a starting point to the total sum.
+
+4. **Empty array / neutral element property**: Summing an empty array returns 0 (the additive neutral element), and summing an array containing all zeros returns 0.
+
+5. **Axis decomposition / consistency property**: For a 2-D array, summing over `axis=None` equals summing the result of `np.sum(a, axis=0)` (or equivalently summing `np.sum(a, axis=1)`), i.e., reducing across all axes in stages gives the same total as reducing all at once.

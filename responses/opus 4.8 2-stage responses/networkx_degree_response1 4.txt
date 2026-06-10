@@ -1,0 +1,11 @@
+Here are five properties of the output of `networkx_degree(G, nbunch=None, weight=None)`:
+
+1. **Degree sum equals twice the edge count (no weight, all nodes):** When `nbunch=None` and `weight=None`, the sum of all degrees returned equals twice the number of edges in `G` (the handshaking lemma), with each self-loop contributing 2 to its node's degree.
+
+2. **Coverage of all nodes when nbunch is None:** When `nbunch=None`, the degree view contains exactly one entry for every node in `G`, and the set of nodes in the output equals the set of nodes in `G`.
+
+3. **Restriction to nbunch:** When `nbunch` is provided as an iterable of nodes, the output contains entries for exactly those nodes from `nbunch` that exist in `G` (in the same order they appear in nbunch), and the degree value for each matches the degree that node has in the full degree view.
+
+4. **Single-node case returns an integer/number:** When `nbunch` is a single node present in `G`, the function returns a single numeric degree value (rather than a view), and this value is non-negative.
+
+5. **Weighted degree equals sum of incident edge weights:** When `weight` is specified, the degree of each node equals the sum of the weight attribute over its incident edges (with self-loops counted according to NetworkX's convention), and the weighted degree reduces to the unweighted degree when all edge weights are 1.

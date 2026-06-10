@@ -1,0 +1,9 @@
+1. The output of `zlib.compress` is always a `bytes` object.
+
+2. Decompressing the output (with the corresponding `wbits`/format) yields back exactly the original input `data` (round-trip property).
+
+3. When `wbits` is in the range +9 to +15, the output begins with a valid zlib header and ends with a checksum trailer; when in +25 to +31, the output begins with a valid gzip header (e.g., the magic bytes `0x1f 0x8b`); when negative, the output contains neither header nor trailer.
+
+4. Compressing the same `data` with the same `level` and `wbits` arguments produces identical output (deterministic).
+
+5. For typical/compressible inputs, higher compression levels (e.g., 9) produce output that is no larger than that produced by lower levels (e.g., 1), and level 0 produces output at least as large as the original data.

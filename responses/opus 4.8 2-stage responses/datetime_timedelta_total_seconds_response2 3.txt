@@ -1,0 +1,55 @@
+```python
+from hypothesis import given, strategies as st
+import datetime
+from datetime import timedelta
+
+# Strategy for timedeltas, kept within a range that avoids
+# microsecond-accuracy loss (well under the ~270 year limit) and overflows.
+# This keeps total_seconds well within float exact-integer range too.
+safe_timedeltas = st.timedeltas(
+    min_value=timedelta(days=-100 * 365),
+    max_value=timedelta(days=100 * 365),
+)
+
+
+@given(td=safe_timedeltas)
+def test_total_seconds_returns_float(td):
+    # Property 1: The output is always a float.
+    result = td.total_seconds()
+    assert isinstance(result, float)
+
+
+@given(td=safe_timedeltas)
+def test_total_seconds_equals_division_form(td):
+    # Property 2: Output equals td / timedelta(seconds=1).
+    assert td.total_seconds() == td / timedelta(seconds=1)
+
+
+@given(td=safe_timedeltas)
+def test_total_seconds_equals_component_sum(td):
+    # Property 3: Output equals days*86400 + seconds + microseconds/1_000_000.
+    expected = td.days * 86400 + td.seconds + td.microseconds / 1_000_000
+    assert td.total_seconds() == expected
+
+
+@given(td=safe_timedeltas)
+def test_total_seconds_sign_matches_duration(td):
+    # Property 4: Sign of output matches sign of the duration.
+    result = td.total_seconds()
+    if td == timedelta(0):
+        assert result == 0.0
+    elif td > timedelta(0):
+        assert result > 0
+    else:
+        assert result < 0
+
+
+@given(td1=safe_timedeltas, td2=safe_timedeltas)
+def test_total_seconds_additive(td1, td2):
+    # Property 5: (td1 + td2).total_seconds() ~= td1.total_seconds() + td2.total_seconds().
+    combined = (td1 + td2).total_seconds()
+    summed = td1.total_seconds() + td2.total_seconds()
+    # Allow for floating-point rounding error.
+    assert abs(combined - summed) <= 1e-6 * max(1.0, abs(combined), abs(summed))
+# End program
+```

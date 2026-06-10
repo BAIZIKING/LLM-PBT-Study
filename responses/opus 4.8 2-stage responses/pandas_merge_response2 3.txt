@@ -1,0 +1,240 @@
+```python
+from hypothesis import given, strategies as st, settings, HealthCheck
+import pandas as pd
+import pandas.testing as pdt
+
+
+# A strategy for "join key" values - small, hashable, non-null values
+# to keep merges meaningful and avoid the null-matching warning behavior.
+key_values = st.integers(min_value=0, max_value=20)
+
+# A strategy for "payload" (non-key) values - bounded to avoid overflow issues.
+payload_values = st.integers(min_value=-1000, max_value=1000)
+
+
+def build_df(keys, payloads, key_name, payload_name):
+    """Construct a DataFrame from a list of keys and matching payloads."""
+    return pd.DataFrame({key_name: keys, payload_name: payloads})
+
+
+@st.composite
+def df_pair(draw, key_name="key", left_payload="lval", right_payload="rval",
+            max_rows=8):
+    """Generate a pair of DataFrames sharing a common key column name."""
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    left_vals = draw(st.lists(payload_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+    right_vals = draw(st.lists(payload_values, min_size=n_right, max_size=n_right))
+
+    left = build_df(left_keys, left_vals, key_name, left_payload)
+    right = build_df(right_keys, right_vals, key_name, right_payload)
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 1: Cross merge row count == len(left) * len(right)
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(suppress_health_check=[HealthCheck.too_slow])
+def test_pandas_merge_cross_row_count():
+    @given(df_pair())
+    def inner(pair):
+        left, right = pair
+        # cross merge disallows on/key specifications; payload column names differ.
+        result = pd.merge(left, right, how="cross")
+        assert len(result) == len(left) * len(right)
+    inner()
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, settings, HealthCheck
+import pandas as pd
+
+
+key_values = st.integers(min_value=0, max_value=20)
+payload_values = st.integers(min_value=-1000, max_value=1000)
+
+
+@st.composite
+def df_pair(draw, key_name="key", left_payload="lval", right_payload="rval",
+            max_rows=8):
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    left_vals = draw(st.lists(payload_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+    right_vals = draw(st.lists(payload_values, min_size=n_right, max_size=n_right))
+    left = pd.DataFrame({key_name: left_keys, left_payload: left_vals})
+    right = pd.DataFrame({key_name: right_keys, right_payload: right_vals})
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 2: Inner merge keys == intersection of left/right keys
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(suppress_health_check=[HealthCheck.too_slow])
+def test_pandas_merge_inner_keys_are_intersection():
+    @given(df_pair())
+    def inner(pair):
+        left, right = pair
+        result = pd.merge(left, right, how="inner", on="key")
+        result_keys = set(result["key"].tolist())
+        expected = set(left["key"].tolist()) & set(right["key"].tolist())
+        assert result_keys == expected
+    inner()
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, settings, HealthCheck
+import pandas as pd
+
+
+key_values = st.integers(min_value=0, max_value=20)
+payload_values = st.integers(min_value=-1000, max_value=1000)
+
+
+@st.composite
+def df_pair(draw, key_name="key", left_payload="lval", right_payload="rval",
+            max_rows=8):
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    left_vals = draw(st.lists(payload_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+    right_vals = draw(st.lists(payload_values, min_size=n_right, max_size=n_right))
+    left = pd.DataFrame({key_name: left_keys, left_payload: left_vals})
+    right = pd.DataFrame({key_name: right_keys, right_payload: right_vals})
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 3: Left/right merge preserve all keys from the respective side
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(suppress_health_check=[HealthCheck.too_slow])
+def test_pandas_merge_left_right_key_preservation():
+    @given(df_pair())
+    def inner(pair):
+        left, right = pair
+        left_keys = set(left["key"].tolist())
+        right_keys = set(right["key"].tolist())
+
+        res_left = pd.merge(left, right, how="left", on="key")
+        # Every left key appears, and no foreign keys are introduced.
+        assert set(res_left["key"].tolist()) == left_keys
+        # A left merge yields at least as many rows as the left frame.
+        assert len(res_left) >= len(left)
+
+        res_right = pd.merge(left, right, how="right", on="key")
+        assert set(res_right["key"].tolist()) == right_keys
+        assert len(res_right) >= len(right)
+    inner()
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, settings, HealthCheck
+import pandas as pd
+
+
+key_values = st.integers(min_value=0, max_value=20)
+payload_values = st.integers(min_value=-1000, max_value=1000)
+
+
+@st.composite
+def df_pair_overlap(draw, max_rows=8):
+    """Pair of DataFrames sharing a key column AND an overlapping payload column."""
+    key_name = "key"
+    shared_payload = "val"  # overlapping non-key column -> triggers suffixes
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    left_vals = draw(st.lists(payload_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+    right_vals = draw(st.lists(payload_values, min_size=n_right, max_size=n_right))
+    left = pd.DataFrame({key_name: left_keys, shared_payload: left_vals})
+    right = pd.DataFrame({key_name: right_keys, shared_payload: right_vals})
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 4: Column composition with suffixes
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(suppress_health_check=[HealthCheck.too_slow])
+def test_pandas_merge_columns_with_suffixes():
+    @given(df_pair_overlap())
+    def inner(pair):
+        left, right = pair
+        suffixes = ("_x", "_y")
+        result = pd.merge(left, right, how="inner", on="key", suffixes=suffixes)
+        cols = set(result.columns)
+        # The key column is merged on, so appears once unsuffixed.
+        # The overlapping 'val' column appears with both suffixes.
+        expected = {"key", "val_x", "val_y"}
+        assert cols == expected
+    inner()
+# End program
+```
+
+```python
+from hypothesis import given, strategies as st, settings, HealthCheck
+import pandas as pd
+
+
+key_values = st.integers(min_value=0, max_value=20)
+payload_values = st.integers(min_value=-1000, max_value=1000)
+
+
+@st.composite
+def df_pair(draw, max_rows=8):
+    n_left = draw(st.integers(min_value=0, max_value=max_rows))
+    n_right = draw(st.integers(min_value=0, max_value=max_rows))
+    left_keys = draw(st.lists(key_values, min_size=n_left, max_size=n_left))
+    left_vals = draw(st.lists(payload_values, min_size=n_left, max_size=n_left))
+    right_keys = draw(st.lists(key_values, min_size=n_right, max_size=n_right))
+    right_vals = draw(st.lists(payload_values, min_size=n_right, max_size=n_right))
+    left = pd.DataFrame({"key": left_keys, "lval": left_vals})
+    right = pd.DataFrame({"key": right_keys, "rval": right_vals})
+    return left, right
+
+
+# ---------------------------------------------------------------------------
+# Property 5: Indicator column correctness
+# ---------------------------------------------------------------------------
+@given(st.data())
+@settings(suppress_health_check=[HealthCheck.too_slow])
+def test_pandas_merge_indicator_correctness():
+    @given(df_pair())
+    def inner(pair):
+        left, right = pair
+        left_keys = set(left["key"].tolist())
+        right_keys = set(right["key"].tolist())
+
+        result = pd.merge(left, right, how="outer", on="key", indicator=True)
+
+        # Only the three documented labels may appear.
+        assert set(result["_merge"].unique()).issubset(
+            {"left_only", "right_only", "both"}
+        )
+
+        for _, row in result.iterrows():
+            k = row["key"]
+            in_left = k in left_keys
+            in_right = k in right_keys
+            label = row["_merge"]
+            if in_left and in_right:
+                assert label == "both"
+            elif in_left:
+                assert label == "left_only"
+            else:
+                assert label == "right_only"
+    inner()
+# End program
+```

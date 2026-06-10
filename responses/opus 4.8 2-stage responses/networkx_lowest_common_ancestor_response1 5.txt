@@ -1,0 +1,9 @@
+1. If the function returns a value other than `default`, that returned node must be an ancestor of both `node1` and `node2` (or equal to them, since a node is considered an ancestor of itself in this context).
+
+2. If `node1` and `node2` have no common ancestor in the graph, the function must return exactly the `default` value provided.
+
+3. The returned lowest common ancestor must be a "lowest" one, meaning no other common ancestor of `node1` and `node2` is a descendant of the returned node (i.e., the returned node is the deepest/closest common ancestor).
+
+4. The function is symmetric with respect to its node arguments: calling it with `(G, node1, node2)` yields the same result as calling it with `(G, node2, node1)`.
+
+5. When `node1` equals `node2`, and that node has any ancestor (including itself), the returned lowest common ancestor must be that node itself.

@@ -1,0 +1,9 @@
+1. The output is always of type `bytes`.
+
+2. The output is URL-safe base64-encoded (i.e., it can be successfully decoded using a URL-safe base64 decoder and contains only valid URL-safe base64 characters).
+
+3. Decrypting the output token with the same Fernet key returns the original input data exactly.
+
+4. Encrypting the same input data twice produces different tokens (due to embedded timestamp and random IV), i.e., the output is non-deterministic.
+
+5. The output token is never empty and has a minimum length consistent with the Fernet format (containing version byte, timestamp, IV, ciphertext, and HMAC when base64-decoded).

@@ -1,0 +1,180 @@
+from hypothesis import given, strategies as st, settings
+import hypothesis.extra.pandas as pdst
+import pandas
+import numpy as np
+import math
+
+
+# Strategy for generating DataFrames with sortable columns
+def dataframe_strategy(min_cols=1, max_cols=4, allow_nan=True):
+    """Generate a DataFrame with a few columns of varied dtypes."""
+
+    @st.composite
+    def _gen(draw):
+        n_cols = draw(st.integers(min_value=min_cols, max_value=max_cols))
+        n_rows = draw(st.integers(min_value=0, max_value=8))
+
+        # Element strategies that avoid overflow issues
+        int_strat = st.integers(min_value=-(10**9), max_value=10**9)
+        float_strat = st.floats(
+            min_value=-1e9, max_value=1e9,
+            allow_nan=allow_nan, allow_infinity=False, width=64
+        )
+        str_strat = st.text(min_size=0, max_size=5)
+
+        columns = {}
+        for c in range(n_cols):
+            col_name = f"col{c}"
+            col_type = draw(st.sampled_from(["int", "float", "str"]))
+            if col_type == "int":
+                col_data = draw(st.lists(int_strat, min_size=n_rows, max_size=n_rows))
+            elif col_type == "float":
+                col_data = draw(st.lists(float_strat, min_size=n_rows, max_size=n_rows))
+            else:
+                col_data = draw(st.lists(str_strat, min_size=n_rows, max_size=n_rows))
+            columns[col_name] = col_data
+
+        return pandas.DataFrame(columns)
+
+    return _gen()
+
+
+def normalize_value(v):
+    """Make values hashable/comparable for multiset comparison, treating NaN uniformly."""
+    if isinstance(v, float) and math.isnan(v):
+        return ("__nan__",)
+    return v
+
+
+def row_to_key(row):
+    return tuple(normalize_value(v) for v in row)
+
+
+def multiset_of_rows(df):
+    from collections import Counter
+    return Counter(row_to_key(tuple(r)) for r in df.to_numpy())
+
+
+@given(st.data())
+@settings(max_examples=200)
+def test_pandas_DataFrame_sort_values_property(data):
+    df = data.draw(dataframe_strategy())
+
+    if df.shape[1] == 0:
+        return
+
+    columns = list(df.columns)
+    # Choose by: subset of columns
+    by = data.draw(
+        st.lists(st.sampled_from(columns), min_size=1, max_size=len(columns), unique=True)
+    )
+
+    # ascending: bool or list of bool matching len(by)
+    ascending_choice = data.draw(st.sampled_from(["bool", "list"]))
+    if ascending_choice == "bool":
+        ascending = data.draw(st.booleans())
+    else:
+        ascending = data.draw(
+            st.lists(st.booleans(), min_size=len(by), max_size=len(by))
+        )
+
+    na_position = data.draw(st.sampled_from(["first", "last"]))
+    ignore_index = data.draw(st.booleans())
+    inplace = data.draw(st.booleans())
+
+    # Keep an original copy to test immutability when not inplace
+    original = df.copy(deep=True)
+
+    if inplace:
+        df_to_sort = df.copy(deep=True)
+        ret = df_to_sort.sort_values(
+            by=by, ascending=ascending, na_position=na_position,
+            ignore_index=ignore_index, inplace=True
+        )
+        # Property 5: inplace returns None
+        assert ret is None
+        result = df_to_sort
+    else:
+        result = df.sort_values(
+            by=by, ascending=ascending, na_position=na_position,
+            ignore_index=ignore_index, inplace=False
+        )
+        # Property 5: original unchanged when not inplace
+        assert df.equals(original) or (
+            df.isna().equals(original.isna())
+            and df.fillna(0).equals(original.fillna(0))
+        )
+
+    # Property 1: same shape and same columns
+    assert result.shape == df.shape
+    assert list(result.columns) == columns
+
+    # Property 2: multiset of rows preserved
+    assert multiset_of_rows(result) == multiset_of_rows(original)
+
+    # Property 3: sorted ordering of the by-columns
+    # Build ascending list
+    if isinstance(ascending, bool):
+        asc_list = [ascending] * len(by)
+    else:
+        asc_list = list(ascending)
+
+    # Check ordering pair-wise across consecutive rows
+    n = result.shape[0]
+    for i in range(n - 1):
+        for col, asc in zip(by, asc_list):
+            a = result.iloc[i][col]
+            b = result.iloc[i + 1][col]
+            a_nan = isinstance(a, float) and math.isnan(a)
+            b_nan = isinstance(b, float) and math.isnan(b)
+
+            # Property 4: NaN placement
+            if a_nan and not b_nan:
+                # a is NaN, b is not -> NaN should be at position consistent with na_position
+                if na_position == "last":
+                    # NaN before non-NaN means there's a tie issue only if previous keys equal;
+                    # for first sort column, NaN-last means a should not come before b
+                    # break out only if this is the primary differentiating column
+                    pass
+                # we treat tie-broken cols separately below
+                break
+            if b_nan and not a_nan:
+                # non-NaN then NaN
+                if na_position == "first":
+                    pass
+                break
+            if a_nan and b_nan:
+                # both NaN, equal on this column, continue to next sort key
+                continue
+            # both non-NaN: compare
+            if a == b:
+                continue
+            elif asc:
+                assert a <= b
+                break
+            else:
+                assert a >= b
+                break
+
+    # Property 4 (explicit, primary column NaN placement check)
+    primary = by[0]
+    primary_vals = list(result[primary])
+    nan_mask = [isinstance(v, float) and math.isnan(v) for v in primary_vals]
+    if any(nan_mask) and not all(nan_mask):
+        if na_position == "last":
+            # all NaNs must come after all non-NaNs in primary column
+            last_nonnan = max(i for i, m in enumerate(nan_mask) if not m)
+            first_nan = min(i for i, m in enumerate(nan_mask) if m)
+            assert first_nan > last_nonnan
+        else:  # first
+            first_nonnan = min(i for i, m in enumerate(nan_mask) if not m)
+            last_nan = max(i for i, m in enumerate(nan_mask) if m)
+            assert last_nan < first_nonnan
+
+    # Property 5: ignore_index behavior
+    if ignore_index:
+        assert list(result.index) == list(range(n))
+    else:
+        # index labels are a permutation of original index labels
+        assert sorted(result.index.tolist()) == sorted(original.index.tolist())
+# End program

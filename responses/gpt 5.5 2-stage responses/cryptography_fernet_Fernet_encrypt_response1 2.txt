@@ -1,0 +1,9 @@
+1. The returned Fernet token is of type `bytes`.
+
+2. The returned token is URL-safe base64-encoded data.
+
+3. Decrypting the returned token with the same `Fernet` key returns exactly the original input bytes.
+
+4. The returned token contains a plaintext creation timestamp corresponding to the time of encryption.
+
+5. The returned token provides authenticity: if the token bytes are modified, decryption with the same key should fail rather than return altered plaintext.

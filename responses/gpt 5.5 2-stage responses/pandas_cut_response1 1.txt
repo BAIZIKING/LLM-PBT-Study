@@ -1,0 +1,9 @@
+1. The output has the same number of elements as `x`; if `x` is a Series, the result preserves the original index.
+
+2. Every non-missing input value that falls inside exactly one bin is assigned to the corresponding interval, label, or integer bin code; missing values and out-of-bounds values produce missing output values.
+
+3. When `retbins=True`, the returned bins are monotonic bin edges or the original `IntervalIndex`; for scalar `bins`, the returned bin array has length `bins + 1` and covers the minimum and maximum of `x`.
+
+4. When `labels` is provided, all non-missing output values are drawn only from those labels; when `labels=False`, all non-missing output values are integer bin indicators between `0` and `number_of_bins - 1`.
+
+5. When interval categories are returned, the categories correspond exactly to the computed or supplied bins, respect `right` and `include_lowest` where applicable, and reflect the `ordered` setting for categorical outputs.

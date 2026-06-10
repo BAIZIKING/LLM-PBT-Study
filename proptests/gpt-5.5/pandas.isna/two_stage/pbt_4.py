@@ -1,0 +1,150 @@
+from hypothesis import given, strategies as st
+import pandas
+import numpy as np
+import datetime as dt
+
+_BOOL_TYPES = (bool, np.bool_)
+
+
+def _missing_scalars():
+    return st.one_of(
+        st.none(),
+        st.just(float("nan")),
+        st.just(np.float64("nan")),
+        st.just(pandas.NA),
+        st.just(pandas.NaT),
+        st.just(np.datetime64("NaT")),
+    )
+
+
+def _non_missing_scalars():
+    return st.one_of(
+        st.booleans(),
+        st.integers(min_value=-10**9, max_value=10**9),
+        st.floats(
+            min_value=-10**9,
+            max_value=10**9,
+            allow_nan=False,
+            allow_infinity=False,
+            width=32,
+        ),
+        st.text(max_size=20),
+        st.datetimes(
+            min_value=dt.datetime(1900, 1, 1),
+            max_value=dt.datetime(2100, 12, 31, 23, 59, 59),
+        ),
+    )
+
+
+def _scalar_values():
+    return st.one_of(_missing_scalars(), _non_missing_scalars())
+
+
+def _tagged_scalar_values():
+    return st.one_of(
+        _missing_scalars().map(lambda value: (value, True)),
+        _non_missing_scalars().map(lambda value: (value, False)),
+    )
+
+
+def _assert_all_boolean_and_not_missing(values):
+    array = np.asarray(values, dtype=object)
+    assert all(isinstance(value, _BOOL_TYPES) for value in array.ravel())
+    assert not np.asarray(pandas.isna(array), dtype=bool).any()
+
+
+@given(st.data())
+def test_pandas_isna_scalar_output_is_boolean(data):
+    value = data.draw(_scalar_values())
+    result = pandas.isna(value)
+
+    assert isinstance(result, _BOOL_TYPES)
+
+
+@given(st.data())
+def test_pandas_isna_array_like_output_shape_and_boolean_values(data):
+    length = data.draw(st.integers(min_value=0, max_value=25))
+    values = data.draw(st.lists(_scalar_values(), min_size=length, max_size=length))
+
+    list_result = pandas.isna(values)
+    assert isinstance(list_result, np.ndarray)
+    assert list_result.shape == (length,)
+    _assert_all_boolean_and_not_missing(list_result)
+
+    index = pandas.Index(values, dtype=object)
+    index_result = pandas.isna(index)
+    assert isinstance(index_result, np.ndarray)
+    assert index_result.shape == (length,)
+    _assert_all_boolean_and_not_missing(index_result)
+
+    rows = data.draw(st.integers(min_value=0, max_value=6))
+    columns = data.draw(st.integers(min_value=0, max_value=6))
+    size = rows * columns
+    matrix_values = data.draw(
+        st.lists(_scalar_values(), min_size=size, max_size=size)
+    )
+    array = np.asarray(matrix_values, dtype=object).reshape((rows, columns))
+
+    array_result = pandas.isna(array)
+    assert isinstance(array_result, np.ndarray)
+    assert array_result.shape == array.shape
+    _assert_all_boolean_and_not_missing(array_result)
+
+
+@given(st.data())
+def test_pandas_isna_series_preserves_type_index_and_length(data):
+    length = data.draw(st.integers(min_value=0, max_value=25))
+    values = data.draw(st.lists(_scalar_values(), min_size=length, max_size=length))
+    index = data.draw(st.lists(st.text(max_size=10), min_size=length, max_size=length))
+
+    series = pandas.Series(values, index=index, dtype=object)
+    result = pandas.isna(series)
+
+    assert isinstance(result, pandas.Series)
+    assert result.index.equals(series.index)
+    assert len(result) == len(series)
+    assert all(isinstance(value, _BOOL_TYPES) for value in result.to_numpy(dtype=object))
+    assert not bool(result.isna().any())
+
+
+@given(st.data())
+def test_pandas_isna_dataframe_preserves_type_axes_and_shape(data):
+    rows = data.draw(st.integers(min_value=0, max_value=6))
+    columns = data.draw(st.integers(min_value=0, max_value=6))
+    size = rows * columns
+
+    values = data.draw(st.lists(_scalar_values(), min_size=size, max_size=size))
+    index = data.draw(st.lists(st.text(max_size=10), min_size=rows, max_size=rows))
+    column_labels = data.draw(
+        st.lists(st.text(max_size=10), min_size=columns, max_size=columns)
+    )
+
+    array = np.asarray(values, dtype=object).reshape((rows, columns))
+    dataframe = pandas.DataFrame(array, index=index, columns=column_labels)
+    result = pandas.isna(dataframe)
+
+    assert isinstance(result, pandas.DataFrame)
+    assert result.index.equals(dataframe.index)
+    assert result.columns.equals(dataframe.columns)
+    assert result.shape == dataframe.shape
+    assert all(
+        isinstance(value, _BOOL_TYPES)
+        for value in result.to_numpy(dtype=object).ravel()
+    )
+    assert not bool(result.isna().to_numpy().any())
+
+
+@given(st.data())
+def test_pandas_isna_marks_only_known_missing_values_as_true(data):
+    pairs = data.draw(st.lists(_tagged_scalar_values(), min_size=0, max_size=30))
+    values = [value for value, _ in pairs]
+    expected = [is_missing for _, is_missing in pairs]
+
+    result = pandas.isna(values)
+
+    assert [bool(value) for value in np.asarray(result, dtype=object).ravel()] == expected
+    for value, is_missing in pairs:
+        assert bool(pandas.isna(value)) == is_missing
+
+
+# End program

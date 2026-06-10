@@ -1,0 +1,81 @@
+from hypothesis import given, strategies as st
+import math
+import statistics
+from decimal import Decimal
+from fractions import Fraction
+
+# Summary: Generate finite numeric datasets containing ints, floats, Decimals, and
+# Fractions, with explicit edge cases such as empty data, zero, negative values,
+# very small positives, and very large positives. Randomly wrap the generated
+# values as a list, tuple, or generator to cover both sequences and iterables.
+# Check that empty data or data containing zero/negative values raises
+# StatisticsError, and that positive non-empty data returns a float matching
+# exp(mean(log(float(x)))) within floating-point tolerance.
+@given(st.data())
+def test_statistics_geometric_mean(data):
+    edge_numbers = st.sampled_from([
+        0,
+        -0.0,
+        1,
+        -1,
+        2,
+        -2,
+        1e-300,
+        1e300,
+        Decimal("0"),
+        Decimal("1"),
+        Decimal("-1"),
+        Fraction(1, 3),
+        Fraction(-1, 3),
+    ])
+
+    numbers = st.one_of(
+        edge_numbers,
+        st.integers(min_value=-10**12, max_value=10**12),
+        st.floats(allow_nan=False, allow_infinity=False, width=64),
+        st.decimals(
+            min_value=Decimal("-1000000000000"),
+            max_value=Decimal("1000000000000"),
+            allow_nan=False,
+            allow_infinity=False,
+            places=6,
+        ),
+        st.fractions(
+            min_value=Fraction(-10**6, 1),
+            max_value=Fraction(10**6, 1),
+            max_denominator=10**6,
+        ),
+    )
+
+    values = data.draw(st.lists(numbers, max_size=30), label="values")
+    container_type = data.draw(
+        st.sampled_from(["list", "tuple", "generator"]),
+        label="container_type",
+    )
+
+    if container_type == "list":
+        dataset = list(values)
+    elif container_type == "tuple":
+        dataset = tuple(values)
+    else:
+        dataset = (x for x in values)
+
+    converted = [float(x) for x in values]
+
+    if not converted or any(x <= 0.0 for x in converted):
+        try:
+            statistics.geometric_mean(dataset)
+        except statistics.StatisticsError:
+            return
+        assert False, "Expected StatisticsError for empty data or non-positive values"
+
+    result = statistics.geometric_mean(dataset)
+    expected = math.exp(math.fsum(math.log(x) for x in converted) / len(converted))
+
+    assert isinstance(result, float)
+
+    if math.isfinite(expected):
+        assert math.isclose(result, expected, rel_tol=1e-12, abs_tol=0.0)
+    else:
+        assert result == expected
+# End program

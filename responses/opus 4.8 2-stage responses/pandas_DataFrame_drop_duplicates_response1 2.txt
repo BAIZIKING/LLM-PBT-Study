@@ -1,0 +1,9 @@
+1. The output DataFrame contains no duplicate rows when considering the columns specified by `subset` (or all columns if `subset` is None), according to the `keep` rule—specifically, if `keep` is 'first' or 'last' there is at most one row per unique combination of the subset columns, and if `keep` is False there are zero rows for any combination that appeared more than once in the input.
+
+2. The output DataFrame is always a subset of the input rows: every row in the output appears in the input (with identical values), and no new rows are introduced.
+
+3. When `keep='first'`, each retained row corresponds to the first occurrence (lowest original index position) of its unique subset-column combination; when `keep='last'`, each retained row corresponds to the last occurrence (highest original index position).
+
+4. When `inplace=False`, the function returns a DataFrame and leaves the original DataFrame unmodified; when `inplace=True`, the function returns None and modifies the original DataFrame to match what would have been returned.
+
+5. When `ignore_index=True`, the output's index is exactly the range 0, 1, …, n-1 where n is the number of output rows; when `ignore_index=False`, the output's index values are preserved from the corresponding original input rows.

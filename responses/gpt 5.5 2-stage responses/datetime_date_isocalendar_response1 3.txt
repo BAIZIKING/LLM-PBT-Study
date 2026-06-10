@@ -1,0 +1,9 @@
+1. The result has exactly three components named `year`, `week`, and `weekday`.
+
+2. `weekday` is always an integer from `1` through `7`, where Monday is `1` and Sunday is `7`.
+
+3. `week` is always an integer from `1` through `53`.
+
+4. For an input date `d`, the returned `weekday` equals `d.weekday() + 1`.
+
+5. For an input date `d`, converting back with `date.fromisocalendar(result.year, result.week, result.weekday)` produces the original date `d`.

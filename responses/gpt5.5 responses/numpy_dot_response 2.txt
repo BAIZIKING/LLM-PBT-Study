@@ -1,0 +1,141 @@
+```python
+from hypothesis import given, strategies as st
+import numpy as np
+import hypothesis.extra.numpy as hnp
+
+# Summary: Generate array_like inputs covering 0-D scalars, 1-D vectors, 2-D matrices,
+# and higher-dimensional arrays up to rank 4. For non-scalar inputs, sometimes generate
+# compatible contracted dimensions and sometimes generate incompatible dimensions to
+# check ValueError behavior. Values include small int64, float64, and complex128 numbers,
+# including complex values to verify that numpy.dot does not conjugate. For valid inputs,
+# sometimes provide a correct C-contiguous out array and verify it is returned and filled.
+@given(st.data())
+def test_numpy_dot(data):
+    dtype = data.draw(st.sampled_from([
+        np.dtype("int64"),
+        np.dtype("float64"),
+        np.dtype("complex128"),
+    ]), label="dtype")
+
+    if np.issubdtype(dtype, np.integer):
+        elements = st.integers(-5, 5)
+    elif np.issubdtype(dtype, np.floating):
+        elements = st.floats(
+            min_value=-5,
+            max_value=5,
+            allow_nan=False,
+            allow_infinity=False,
+            width=64,
+        )
+    else:
+        elements = st.complex_numbers(
+            min_magnitude=0,
+            max_magnitude=5,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+
+    rank_a = data.draw(st.integers(0, 4), label="rank_a")
+    rank_b = data.draw(st.integers(0, 4), label="rank_b")
+
+    def random_shape(rank):
+        if rank == 0:
+            return ()
+        return tuple(data.draw(st.integers(0, 3), label="dimension") for _ in range(rank))
+
+    shape_a = list(random_shape(rank_a))
+    shape_b = list(random_shape(rank_b))
+
+    compatible = True
+
+    if rank_a > 0 and rank_b > 0:
+        contracted_dim = data.draw(st.integers(0, 3), label="contracted_dim")
+        make_compatible = data.draw(st.booleans(), label="make_compatible")
+
+        if make_compatible:
+            other_contract_dim = contracted_dim
+        else:
+            other_contract_dim = data.draw(
+                st.sampled_from([d for d in range(4) if d != contracted_dim]),
+                label="mismatched_contract_dim",
+            )
+            compatible = False
+
+        shape_a[-1] = contracted_dim
+        if rank_b == 1:
+            shape_b[0] = other_contract_dim
+        else:
+            shape_b[-2] = other_contract_dim
+
+    shape_a = tuple(shape_a)
+    shape_b = tuple(shape_b)
+
+    a_array = data.draw(
+        hnp.arrays(dtype=dtype, shape=shape_a, elements=elements),
+        label="a_array",
+    )
+    b_array = data.draw(
+        hnp.arrays(dtype=dtype, shape=shape_b, elements=elements),
+        label="b_array",
+    )
+
+    def maybe_array_like(array, shape):
+        # Convert some generated arrays to Python scalars/lists to exercise array_like
+        # behavior. Avoid list conversion for shapes with zero dimensions, because
+        # Python lists cannot always preserve such shapes, e.g. shape (0, 2).
+        can_convert_to_list = shape == () or all(dim > 0 for dim in shape)
+        if can_convert_to_list and data.draw(st.booleans(), label="use_python_array_like"):
+            return array.tolist()
+        return array
+
+    a = maybe_array_like(a_array, shape_a)
+    b = maybe_array_like(b_array, shape_b)
+
+    def expected_dot(x, y):
+        x = np.asarray(x)
+        y = np.asarray(y)
+
+        # If either argument is scalar, numpy.dot is equivalent to multiplication.
+        if x.ndim == 0 or y.ndim == 0:
+            return np.multiply(x, y)
+
+        # If both arguments are 1-D, numpy.dot is the inner product with no conjugation.
+        if x.ndim == 1 and y.ndim == 1:
+            return np.sum(x * y)
+
+        # If b is 1-D, sum-product over the last axis of a and the only axis of b.
+        if y.ndim == 1:
+            return np.sum(x * y, axis=-1)
+
+        # General N-D / M-D case:
+        # sum over the last axis of x and the second-to-last axis of y.
+        x_reshaped = x.reshape(
+            x.shape[:-1] + (1,) * (y.ndim - 2) + (x.shape[-1],) + (1,)
+        )
+        y_reshaped = y.reshape(
+            (1,) * (x.ndim - 1) + y.shape[:-2] + (y.shape[-2], y.shape[-1])
+        )
+        return np.sum(x_reshaped * y_reshaped, axis=-2)
+
+    if not compatible:
+        try:
+            np.dot(a, b)
+        except ValueError:
+            return
+        raise AssertionError("numpy.dot should raise ValueError for mismatched contracted dimensions")
+
+    expected = expected_dot(a, b)
+
+    use_out = data.draw(st.booleans(), label="use_out")
+    if use_out:
+        out = np.empty(np.asarray(expected).shape, dtype=np.asarray(expected).dtype, order="C")
+        actual = np.dot(a, b, out=out)
+        assert actual is out
+    else:
+        actual = np.dot(a, b)
+
+    assert np.shape(actual) == np.shape(expected)
+    np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
+
+# End program
+```

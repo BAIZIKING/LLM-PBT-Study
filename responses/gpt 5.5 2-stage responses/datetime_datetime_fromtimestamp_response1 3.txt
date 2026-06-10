@@ -1,0 +1,9 @@
+1. If the call succeeds, the result is an instance of `datetime.datetime`.
+
+2. If `tz` is `None` or omitted, the returned `datetime` is naive: its `tzinfo` is `None`.
+
+3. If `tz` is provided, the returned `datetime` is timezone-aware and represents the timestamp in that timezone.
+
+4. For a successful call, converting the returned `datetime` back to a POSIX timestamp should produce the original `timestamp`, allowing for floating-point and microsecond rounding precision.
+
+5. For the same `timestamp`, successful calls with different non-`None` timezones should represent the same absolute instant, even if their local date/time fields differ.

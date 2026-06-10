@@ -1,0 +1,72 @@
+from hypothesis import given, strategies as st
+import networkx as nx
+
+# Summary: Generate random graphs (with optional weights, self-loops, empty cases),
+# then pick nbunch as None / a single node / a list of nodes, and weight as None / "weight".
+# Verify the degree view covers the right nodes, single-node queries return numbers,
+# sub-views agree with the full view, and the handshake lemma holds.
+@given(st.data())
+def test_networkx_degree(data):
+    # Generate node labels
+    n_nodes = data.draw(st.integers(min_value=0, max_value=8))
+    nodes = list(range(n_nodes))
+
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+
+    # Generate edges (possibly self-loops) if there are nodes
+    if nodes:
+        edges = data.draw(
+            st.lists(
+                st.tuples(st.sampled_from(nodes), st.sampled_from(nodes)),
+                max_size=15,
+            )
+        )
+        for u, v in edges:
+            w = data.draw(st.floats(min_value=0.0, max_value=100.0,
+                                    allow_nan=False, allow_infinity=False))
+            G.add_edge(u, v, weight=w)
+
+    # Choose weight parameter
+    weight = data.draw(st.sampled_from([None, "weight"]))
+
+    # Choose nbunch form
+    if nodes:
+        nbunch_kind = data.draw(st.sampled_from(["none", "single", "list"]))
+    else:
+        nbunch_kind = "none"
+
+    # Full degree view as reference
+    full_view = G.degree(weight=weight)
+    full_dict = dict(full_view)
+
+    if nbunch_kind == "none":
+        # Property 1: covers exactly all nodes of G
+        assert set(full_dict.keys()) == set(G.nodes())
+
+        # Property 5: handshake lemma when counting (weight=None)
+        if weight is None:
+            total = sum(full_dict.values())
+            assert total == 2 * G.number_of_edges()
+
+    elif nbunch_kind == "single":
+        node = data.draw(st.sampled_from(nodes))
+        deg = G.degree(node, weight=weight)
+        # Property 2: single node returns a number
+        assert isinstance(deg, (int, float))
+        # Property 4: consistency with full view
+        assert deg == full_dict[node]
+
+    else:  # list nbunch
+        sub = data.draw(st.lists(st.sampled_from(nodes), max_size=n_nodes))
+        sub_view = G.degree(sub, weight=weight)
+        sub_dict = dict(sub_view)
+
+        # Property 3: returned nodes are a subset of requested (existing) nodes
+        assert set(sub_dict.keys()).issubset(set(sub))
+        assert set(sub_dict.keys()).issubset(set(G.nodes()))
+
+        # Property 4: consistency with full view
+        for node, deg in sub_dict.items():
+            assert deg == full_dict[node]
+# End program

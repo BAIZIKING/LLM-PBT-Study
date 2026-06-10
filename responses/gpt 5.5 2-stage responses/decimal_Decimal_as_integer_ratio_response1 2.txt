@@ -1,0 +1,9 @@
+1. For any finite, non-NaN Decimal input, the result is a pair `(n, d)` where both `n` and `d` are integers.
+
+2. The denominator `d` is always positive.
+
+3. The integers `n` and `d` are in lowest terms, meaning `gcd(abs(n), d) == 1`.
+
+4. The fraction `n / d` represents the input Decimal exactly, with no rounding or loss of precision.
+
+5. The sign of the value is carried only by the numerator: `n` is negative if and only if the input Decimal is negative, while `d` remains positive.

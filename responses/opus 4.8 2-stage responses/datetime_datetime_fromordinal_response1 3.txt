@@ -1,0 +1,9 @@
+1. The returned object is a `datetime` instance whose hour, minute, second, and microsecond components are all 0.
+
+2. The returned datetime's `tzinfo` is None.
+
+3. Calling `.toordinal()` on the returned datetime yields back the original input ordinal (round-trip consistency).
+
+4. For inputs outside the valid range (ordinal < 1 or ordinal > datetime.max.toordinal()), a ValueError is raised.
+
+5. The returned datetime corresponds exactly to midnight (00:00:00) of the date produced by `date.fromordinal(ordinal)`, meaning its date components (year, month, day) match those of the equivalent date.

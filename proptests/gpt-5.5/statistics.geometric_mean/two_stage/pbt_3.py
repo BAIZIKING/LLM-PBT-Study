@@ -1,0 +1,88 @@
+from hypothesis import given, strategies as st
+import statistics
+
+POSITIVE_FLOATS = st.floats(
+    min_value=1e-100,
+    max_value=1e100,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+SMALLER_POSITIVE_FLOATS = st.floats(
+    min_value=1e-50,
+    max_value=1e50,
+    allow_nan=False,
+    allow_infinity=False,
+)
+
+POSITIVE_FLOAT_LISTS = st.lists(
+    POSITIVE_FLOATS,
+    min_size=1,
+    max_size=50,
+)
+
+SMALLER_POSITIVE_FLOAT_LISTS = st.lists(
+    SMALLER_POSITIVE_FLOATS,
+    min_size=1,
+    max_size=50,
+)
+
+
+def is_close(a, b, rel_tol=1e-12, abs_tol=0.0):
+    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
+
+@given(st.data())
+def test_statistics_geometric_mean_returns_positive_float(data):
+    values = data.draw(POSITIVE_FLOAT_LISTS)
+
+    result = statistics.geometric_mean(values)
+
+    assert isinstance(result, float)
+    assert result > 0.0
+    assert result < float("inf")
+
+
+@given(st.data())
+def test_statistics_geometric_mean_lies_between_minimum_and_maximum(data):
+    values = data.draw(POSITIVE_FLOAT_LISTS)
+
+    result = statistics.geometric_mean(values)
+    minimum = min(values)
+    maximum = max(values)
+
+    assert result >= minimum or is_close(result, minimum)
+    assert result <= maximum or is_close(result, maximum)
+
+
+@given(st.data())
+def test_statistics_geometric_mean_singleton_equals_that_value(data):
+    value = data.draw(POSITIVE_FLOATS)
+
+    result = statistics.geometric_mean([value])
+
+    assert is_close(result, float(value))
+
+
+@given(st.data())
+def test_statistics_geometric_mean_is_unchanged_by_reordering(data):
+    values = data.draw(POSITIVE_FLOAT_LISTS)
+
+    result = statistics.geometric_mean(values)
+    reordered_result = statistics.geometric_mean(list(reversed(values)))
+
+    assert is_close(result, reordered_result)
+
+
+@given(st.data())
+def test_statistics_geometric_mean_scales_with_positive_constant(data):
+    values = data.draw(SMALLER_POSITIVE_FLOAT_LISTS)
+    scale = data.draw(SMALLER_POSITIVE_FLOATS)
+
+    result = statistics.geometric_mean(values)
+    scaled_result = statistics.geometric_mean([scale * value for value in values])
+
+    assert is_close(scaled_result, scale * result)
+
+
+# End program

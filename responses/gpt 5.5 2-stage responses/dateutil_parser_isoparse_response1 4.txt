@@ -1,0 +1,9 @@
+1. For any valid supported ISO-8601 input, the result is a `datetime.datetime` instance.
+
+2. Any components omitted from the input are set to their lowest valid values in the output, such as month/day defaulting to `1` and hour/minute/second/microsecond defaulting to `0`.
+
+3. Equivalent basic and extended date/time representations produce equal datetimes, for example `YYYYMMDD` and `YYYY-MM-DD`, or `hhmmss` and `hh:mm:ss`.
+
+4. Fractional seconds using either `.` or `,` as the decimal separator produce the same `microsecond` value, padded to six digits when fewer than six digits are provided.
+
+5. Time zone outputs match the encoded offset: `Z` and zero offsets such as `+00:00` produce UTC tzinfo with zero offset, while nonzero offsets produce a tzinfo whose `utcoffset()` equals the specified offset.

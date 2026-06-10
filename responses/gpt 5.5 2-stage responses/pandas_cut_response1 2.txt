@@ -1,0 +1,9 @@
+1. The output has one bin result for each element of `x`; if `x` is a Series, the result preserves the original Series index.
+
+2. Any missing value in `x`, and any value outside the provided bin range, is represented as missing/NA in the output.
+
+3. Every non-missing output value corresponds to the unique bin interval that contains the original input value, respecting `right` and `include_lowest`.
+
+4. When `labels=False`, non-missing outputs are integer bin indicators in the range `0` to `number_of_bins - 1`; when labels are provided, non-missing outputs are drawn only from those labels.
+
+5. When `retbins=True`, the returned bins match the effective bin edges used for assignment: they are ordered, reflect dropped duplicate edges when `duplicates='drop'`, and equal the input bins when an `IntervalIndex` is supplied.

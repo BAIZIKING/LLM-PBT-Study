@@ -1,0 +1,89 @@
+from hypothesis import given, strategies as st, assume
+import decimal
+from decimal import Decimal
+import math
+
+
+# Strategy for finite, non-NaN, non-infinity Decimals.
+# We build them from sign, digits, and exponent to control magnitude and avoid overflow.
+finite_decimals = st.decimals(
+    allow_nan=False,
+    allow_infinity=False,
+    # Limit magnitude/precision to avoid extremely large or slow conversions.
+    min_value=Decimal("-1e50"),
+    max_value=Decimal("1e50"),
+    places=None,
+)
+
+
+@given(d=finite_decimals)
+def test_decimal_Decimal_as_integer_ratio_property_denominator_positive(d):
+    # Property 1: The denominator d is always a positive integer.
+    n, den = d.as_integer_ratio()
+    assert isinstance(den, int)
+    assert den > 0
+# End program
+
+
+@given(d=finite_decimals)
+def test_decimal_Decimal_as_integer_ratio_property_lowest_terms(d):
+    # Property 2: The fraction is in lowest terms (gcd(abs(n), d) == 1).
+    n, den = d.as_integer_ratio()
+    assert math.gcd(abs(n), den) == 1
+# End program
+
+
+@given(d=finite_decimals)
+def test_decimal_Decimal_as_integer_ratio_property_exact(d):
+    # Property 3: The conversion is exact, i.e., original == n / d.
+    n, den = d.as_integer_ratio()
+    # Use a context with enough precision to perform exact comparison.
+    with decimal.localcontext() as ctx:
+        ctx.prec = 200
+        reconstructed = Decimal(n) / Decimal(den)
+        assert reconstructed == d
+# End program
+
+
+@given(d=finite_decimals)
+def test_decimal_Decimal_as_integer_ratio_property_sign(d):
+    # Property 4: Sign of numerator matches sign of original Decimal value.
+    n, den = d.as_integer_ratio()
+    if d > 0:
+        assert n > 0
+    elif d < 0:
+        assert n < 0
+    else:
+        assert n == 0
+# End program
+
+
+@given(st.data())
+def test_decimal_Decimal_as_integer_ratio_property_types_and_errors(data):
+    # Property 5: n and d are ints for finite inputs; OverflowError on
+    # infinities and ValueError on NaNs.
+    kind = data.draw(st.sampled_from(["finite", "inf", "ninf", "nan"]))
+    if kind == "finite":
+        d = data.draw(finite_decimals)
+        n, den = d.as_integer_ratio()
+        assert isinstance(n, int)
+        assert isinstance(den, int)
+    elif kind == "inf":
+        try:
+            Decimal("Infinity").as_integer_ratio()
+            assert False, "Expected OverflowError"
+        except OverflowError:
+            pass
+    elif kind == "ninf":
+        try:
+            Decimal("-Infinity").as_integer_ratio()
+            assert False, "Expected OverflowError"
+        except OverflowError:
+            pass
+    else:  # nan
+        try:
+            Decimal("NaN").as_integer_ratio()
+            assert False, "Expected ValueError"
+        except ValueError:
+            pass
+# End program

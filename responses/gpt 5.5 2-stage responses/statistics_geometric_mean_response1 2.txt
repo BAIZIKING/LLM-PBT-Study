@@ -1,0 +1,9 @@
+1. For any non-empty dataset of finite positive numbers, the result is a positive `float`.
+
+2. For any dataset of finite positive numbers, the result lies between the minimum and maximum input values, allowing for floating-point rounding error.
+
+3. Reordering the same positive input values does not change the result, except for possible floating-point rounding differences.
+
+4. Multiplying every positive input value by the same positive constant multiplies the geometric mean by that constant, up to floating-point rounding error.
+
+5. For an empty dataset, or any dataset containing zero or a negative value, the function raises `StatisticsError` instead of returning a numeric result.
