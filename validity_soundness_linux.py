@@ -145,6 +145,8 @@ def _make_counting_runner(func):
             raise
         except KeyboardInterrupt:
             raise
+        except MemoryError:
+            print("Memory Error")
         except BaseException:
             # SystemExit, GeneratorExit, BaseExceptionGroup, etc. — count and continue
             # rather than letting them escape to Hypothesis (which would print a
@@ -378,7 +380,7 @@ def main():
         print(f"No tests found. Available models: {available}")
         sys.exit(1)
 
-    workers = min(cpu_count(), len(tests))
+    workers = min(cpu_count() // 2, len(tests))
 
     rows = []
 
