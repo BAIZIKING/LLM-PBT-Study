@@ -380,7 +380,7 @@ def main():
         print(f"No tests found. Available models: {available}")
         sys.exit(1)
 
-    workers = min(cpu_count() // 2, len(tests))
+    workers = min(1, len(tests)) # maybe it is better this way
 
     rows = []
 
